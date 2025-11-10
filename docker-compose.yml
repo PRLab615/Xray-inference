@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Redis 服务
+  redis:
+    image: redis:7-alpine
+    container_name: xray_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - xray_network
+
+  # API 服务进程 (P1)
+  api:
+    build: .
+    container_name: xray_api
+    command: python main_api.py
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./models:/app/models
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - xray_network
+
+  # Worker 服务进程 (P2)
+  worker:
+    build: .
+    container_name: xray_worker
+    command: python main_worker.py
+    volumes:
+      - .:/app
+      - ./models:/app/models
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - xray_network
+
+volumes:
+  redis_data:
+
+networks:
+  xray_network:
+    driver: bridge
+
