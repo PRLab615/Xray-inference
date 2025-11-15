@@ -1,8 +1,9 @@
 # 全局配置文件
+# 支持环境变量覆盖：REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
 
 # Redis 配置
 redis:
-  host: "localhost"
+  host: "localhost"  # Docker: 使用 "redis"
   port: 6379
   db: 0
   password: null
