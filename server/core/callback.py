@@ -40,25 +40,34 @@ class CallbackManager:
     
     def send_callback(self, callback_url: str, payload: Dict[str, Any]) -> bool:
         """
-        发送回调请求到指定 URL
+        发送回调请求到指定 URL（v2 协议）
         
         Args:
             callback_url: 回调 URL（HTTP/HTTPS）
-            payload: 回调负载，包含 taskId, data, error
+            payload: 回调负载，包含 taskId, status, timestamp, metadata, requestParameters, data, error
             
         Returns:
             bool: 回调是否成功（HTTP 200 视为成功）
             
         Note:
-            - 第一版实现单次尝试，不含重试
-            - 超时、连接错误、HTTP 错误均视为失败
+            - v2 新增：添加 X-Timestamp header（Unix 时间戳）
+            - 超时时间已调整为 3 秒（config.yaml）
+            - 单次尝试，不含重试（重试机制延后到 v3）
             - 仅 HTTP 200 视为成功，其他状态码视为失败
         """
+        import time
+        
         try:
+            # 构造 Headers（包含 X-Timestamp）
+            headers = {
+                'X-Timestamp': str(int(time.time()))  # Unix 时间戳（秒）
+            }
+            
             logger.info(f"Sending callback to: {callback_url}")
             response = self.session.post(
                 callback_url,
                 json=payload,
+                headers=headers,  # 添加自定义 headers
                 timeout=self.timeout
             )
             
