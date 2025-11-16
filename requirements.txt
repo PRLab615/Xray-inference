@@ -1,0 +1,30 @@
+# Web Framework
+# 测试通过版本: fastapi-0.121.1, uvicorn-0.38.0, pydantic-2.10+
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.8.0
+pydantic-settings>=2.1.0
+
+# Task Queue
+# 测试通过版本: celery-5.5.3, redis-7.0.1
+celery>=5.3.0
+redis>=5.0.0
+
+# HTTP Client
+httpx>=0.25.0
+requests>=2.31.0
+
+# Configuration
+pyyaml>=6.0
+
+# AI/ML (Placeholder - 根据实际模型需求调整)
+# 测试通过版本: opencv-python-4.12.0.88
+numpy>=1.26.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+
+# Utilities
+# 测试通过版本: python-multipart-0.0.20
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+
