@@ -26,9 +26,19 @@ worker:
 
 # 回调配置
 callback:
-  timeout: 30  # seconds
+  timeout: 3  # ⚠️ 从 v1 的 30 秒改为 3 秒（对齐接口定义）
 
 # 任务配置
 task:
   result_ttl: 3600  # Redis 中任务元数据 TTL（秒）
+
+# 图像下载配置（v2 新增）
+image_download:
+  timeout: 30                    # 下载超时时间（秒）
+  max_size_mb: 50                # 最大文件大小（MB）
+  allowed_extensions:            # 允许的图像格式
+    - .jpg
+    - .jpeg
+    - .png
+    - .dcm
 
