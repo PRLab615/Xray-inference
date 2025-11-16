@@ -1,43 +1,34 @@
 # 全局配置文件
+# 支持环境变量覆盖：REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
 
 # Redis 配置
 redis:
-  host: "localhost"
+  host: "localhost"  # Docker: 使用 "redis"
   port: 6379
   db: 0
   password: null
 
-# 队列配置
-queue:
-  name: "xray_inference_queue"
+# Celery 配置
+celery:
+  broker_url: "redis://localhost:6379/0"
   result_backend: "redis://localhost:6379/1"
 
 # API 配置
 api:
   host: "0.0.0.0"
   port: 8000
-  workers: 4
+  upload_dir: "./tmp/uploads"
 
 # Worker 配置
 worker:
   concurrency: 2
-  max_tasks_per_child: 100
+  loglevel: "info"
 
 # 回调配置
 callback:
-  max_retries: 3
-  retry_delay: 5  # seconds
   timeout: 30  # seconds
-
-# 模型路径配置
-models:
-  pano:
-    base_path: "./models/pano"
-  ceph:
-    base_path: "./models/ceph"
 
 # 任务配置
 task:
-  max_timeout: 300  # seconds
-  result_ttl: 86400  # 24 hours
+  result_ttl: 3600  # Redis 中任务元数据 TTL（秒）
 
