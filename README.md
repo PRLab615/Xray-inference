@@ -1,12 +1,28 @@
 # Xray Inference Service
 
-口腔X光片AI推理服务
+口腔X光片AI推理服务 - 异步双进程架构
+
+## 🚀 快速启动
+
+```bash
+# 一键启动（Redis + API + Worker）
+docker-compose up -d
+
+# 发送推理请求
+curl -X POST http://localhost:18000/api/v1/analyze \
+  -F "taskId=$(uuidgen)" \
+  -F "taskType=pano" \
+  -F "callbackUrl=http://your-callback-url.com" \
+  -F "image=@xray.jpg"
+```
+
+**服务组成**: Redis (消息队列) + API (接收请求) + Worker (执行推理)
 
 ## 架构概述
 
 本服务采用异步双进程模型：
-- **API 服务进程 (P1)**: 处理 HTTP 请求，立即返回 202 响应
-- **Worker 服务进程 (P2)**: 执行 AI 计算，完成后触发回调
+- **API 服务 (P1)**: 接收HTTP请求，立即返回202
+- **Worker 服务 (P2)**: 异步执行AI推理，完成后回调
 
 ## 目录结构
 
@@ -29,22 +45,17 @@
 └── tools/                  # 工具脚本
 ```
 
-## 快速开始
+## 详细使用
 
-### 使用 Docker Compose（推荐）
+### 查看服务状态
 
 ```bash
-# 启动所有服务
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
+docker-compose ps      # 查看运行状态
+docker-compose logs -f # 查看实时日志
+docker-compose down    # 停止所有服务
 ```
 
-### 本地开发
+### 本地开发（不使用Docker）
 
 1. 安装依赖：
 ```bash
