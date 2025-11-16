@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Celery 应用实例定义
 配置任务队列系统
@@ -46,8 +47,8 @@ def create_celery_app() -> Celery:
         worker_prefetch_multiplier=1,  # 每次只取一个任务
     )
     
-    # 自动发现任务
-    celery_app.autodiscover_tasks(['server'], force=True)
+    # 注意：不在这里 autodiscover_tasks，避免循环导入
+    # 任务注册将在 main_worker.py 中通过显式导入 server.tasks 完成
     
     logger.info("Celery app created successfully")
     logger.info(f"Broker: {celery_config['broker_url']}")
