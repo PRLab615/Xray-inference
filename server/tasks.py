@@ -180,10 +180,10 @@ def analyze_task(self, task_id: str):
     try:
         data_dict = load_mock_data(task_type)
         logger.info(f"Mock data loaded for {task_type}: {task_id}")
-        
+    
         # 4. 构造 CallbackPayload v2
         payload_v2 = {
-            "taskId": task_id,
+        "taskId": task_id,
             "status": "SUCCESS",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "metadata": client_metadata,
@@ -192,9 +192,9 @@ def analyze_task(self, task_id: str):
                 "imageUrl": image_url
             },
             "data": data_dict,
-            "error": None
-        }
-        
+        "error": None
+    }
+    
     except Exception as e:
         # v2 暂不实现错误回调
         logger.error(f"Failed to load mock data: {task_id}, {e}")
