@@ -52,14 +52,111 @@ def generate_standard_output(inference_results: Dict[str, Any]) -> Dict[str, Any
     
     # v3 占位：返回空结构（符合规范的字段名）
     data_dict = {
-        "Metadata": {},
-        "AnatomyResults": [],
-        "JointAndMandible": {},
-        "MaxillarySinus": [],
-        "PeriodontalCondition": {},
-        "MissingTeeth": [],
-        "ThirdMolarSummary": {},
-        "ToothAnalysis": []
+        # 元数据
+        "Metadata": {
+            "ImageName": "",
+            "DiagnosisID": "",
+            "AnalysisTime": ""
+        },
+        
+        # 解剖结构分割结果
+        "AnatomyResults": [],  # [{"Label": "condyle_left", "Confidence": 0.0, "SegmentationMask": {...}}]
+        
+        # 关节和下颌骨评估
+        "JointAndMandible": {
+            "CondyleAssessment": {
+                "condyle_Left": {
+                    "Morphology": 0,  # 0=正常, 1=异常
+                    "IsSymmetrical": False,
+                    "Detail": "",
+                    "Confidence": 0.0
+                },
+                "condyle_Right": {
+                    "Morphology": 0,
+                    "IsSymmetrical": False,
+                    "Detail": "",
+                    "Confidence": 0.0
+                },
+                "OverallSymmetry": 0,  # 0=基本对称, 1=左侧大于右侧, 2=右侧大于左侧
+                "Confidence_Overall": 0.0
+            },
+            "RamusSymmetry": False,  # 下颌升支对称性
+            "GonialAngleSymmetry": False,  # 下颌角对称性
+            "Detail": "",
+            "Confidence": 0.0
+        },
+        
+        # 上颌窦评估
+        "MaxillarySinus": [
+            # {
+            #     "Side": "left" | "right",
+            #     "Pneumatization": 0-2,  # 气化程度
+            #     "TypeClassification": "I" | "II" | "III",
+            #     "Inflammation": False,
+            #     "RootEntryToothFDI": [],
+            #     "Detail": "",
+            #     "Confidence_Pneumatization": 0.0,
+            #     "Confidence_Inflammation": 0.0
+            # }
+        ],
+        
+        # 牙周状况
+        "PeriodontalCondition": {
+            "CEJ_to_ABC_Distance_mm": 0.0,
+            "BoneAbsorptionLevel": 0,  # 0=正常, 1=轻度, 2=中度, 3=重度
+            "Detail": "",
+            "AbsorptionRatio": 0.0,
+            "Confidence": 0.0
+        },
+        
+        # 缺失牙齿
+        "MissingTeeth": [
+            # {"FDI": "37", "Reason": "missing" | "retained_deciduous", "Detail": ""}
+        ],
+        
+        # 智齿评估（18, 28, 38, 48）
+        "ThirdMolarSummary": {
+            # "18": {
+            #     "Level": 0-4,  # 0=正常, 1=阻生, 2=牙胚, 3=待萌出, 4=未见
+            #     "Impactions": "Impacted" | None,
+            #     "Detail": "",
+            #     "Confidence": 0.0
+            # }
+        },
+        
+        # 牙齿分析（每颗牙齿的详细信息）
+        "ToothAnalysis": [
+            # {
+            #     "FDI": "16",
+            #     "Confidence": 0.0,
+            #     "SegmentationMask": {...},
+            #     "Properties": [
+            #         # {"Value": "rct_treated", "Description": "根管治疗过", "Confidence": 0.0},
+            #         # {"Value": "periapical_lesion", "Description": "根尖周病变", "Confidence": 0.0},
+            #         # {"Value": "root_absorption", "Description": "牙根吸收", "Confidence": 0.0},
+            #         # {"Value": "crown_restored", "Description": "牙冠修复", "Confidence": 0.0},
+            #         # {"Value": "implant", "Description": "种植牙", "Confidence": 0.0},
+            #         # {"Value": "retained_deciduous", "Description": "滞留乳牙", "Confidence": 0.0},
+            #         # {"Value": "caries", "Description": "龋齿", "Confidence": 0.0},
+            #         # {"Value": "restoration", "Description": "填充体", "Confidence": 0.0},
+            #         # {"Value": "impacted", "Description": "阻生", "Confidence": 0.0}
+            #     ],
+            #     "RootCondition": {
+            #         "Absorption": False,
+            #         "Confidence": 0.0,
+            #         "Morphology": 0,  # 0=正常, 1=弯曲
+            #         "Confidence_Morphology": 0.0,
+            #         "AlveolarBoneAbsorption": {
+            #             "Level": 0,  # 0=正常, 1=轻度, 2=中度, 3=重度
+            #             "Detail": "",
+            #             "Confidence": 0.0
+            #         }
+            #     },
+            #     "KeyPoints": [],
+            #     "Measurements": [],
+            #     "Pathologies": []
+            # }
+        ]
     }
     
     logger.warning("generate_standard_output not fully implemented (TODO)")
