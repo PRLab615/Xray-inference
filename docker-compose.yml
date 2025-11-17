@@ -51,6 +51,16 @@ services:
       - redis
     restart: unless-stopped
 
+  # Flask 回调服务器 (前端展示)
+  frontend:
+    build: .
+    container_name: xray_frontend
+    command: python web/Xray_web/app.py
+    network_mode: "host"
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
   # 测试回调接收服务器 (用于测试)
   callback-server:
     build: .
