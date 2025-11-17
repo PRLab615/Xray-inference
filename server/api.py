@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from server import load_config
 from server.schemas import AnalyzeRequest, AnalyzeResponse, ErrorResponse, PatientInfo
+from typing import Optional
 import logging
 import os
 import time
@@ -129,10 +130,10 @@ async def analyze(
     taskId: str = Form(..., description="任务唯一标识（客户端提供，UUID v4 格式）"),
     taskType: str = Form(..., description="任务类型（panoramic/cephalometric）"),
     callbackUrl: str = Form(..., description="回调 URL（HTTP/HTTPS）"),
-    image: UploadFile = File(None, description="图像文件（可选，优先使用）"),
-    imageUrl: str = Form(None, description="图像 URL（可选，image 不存在时使用）"),
-    metadata: str = Form(None, description="客户端自定义元数据（JSON 字符串，可选）"),
-    patientInfo: str = Form(None, description="患者信息（JSON 字符串，cephalometric 必需）")
+    image: Optional[UploadFile] = File(default=None, description="图像文件（可选，优先使用）"),
+    imageUrl: Optional[str] = Form(default=None, description="图像 URL（可选，image 不存在时使用）"),
+    metadata: Optional[str] = Form(default=None, description="客户端自定义元数据（JSON 字符串，可选）"),
+    patientInfo: Optional[str] = Form(default=None, description="患者信息（JSON 字符串，cephalometric 必需）")
 ):
     """
     接收推理请求（v2 混合协议：支持文件上传或 URL 下载）
