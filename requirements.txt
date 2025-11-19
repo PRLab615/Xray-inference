@@ -17,6 +17,12 @@ requests>=2.31.0
 # Configuration
 pyyaml>=6.0
 
+# Web Framework (for frontend)
+flask>=3.0.0
+
+# Cloud Storage (for model weight downloading)
+boto3>=1.34.0
+
 # AI/ML (Placeholder - 根据实际模型需求调整)
 # 测试通过版本: opencv-python-4.12.0.88
 # 注意: 使用 opencv-python-headless 避免 GUI 依赖（适合服务器环境）

@@ -43,6 +43,16 @@ services:
     container_name: xray_worker
     command: python main_worker.py
     network_mode: "host"
+    
+    # GPU 配置：允许容器访问宿主机的所有 GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  # 使用所有可用GPU，可改为 count: 1 只使用1个GPU
+              capabilities: [gpu]
+    
     volumes:
       - .:/app
       - ./models:/app/models

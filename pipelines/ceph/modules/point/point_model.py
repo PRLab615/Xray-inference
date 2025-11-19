@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from ultralytics import YOLO
-from pipelines.ceph.utils.ceph_report_utils import calculate_measurements
+from pipelines.ceph.utils.ceph_report import calculate_measurements
 from pipelines.ceph.modules.point.pre_post import (
     preprocess_image,
     postprocess_results,

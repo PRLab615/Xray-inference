@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import numpy as np
 
 if TYPE_CHECKING:
-    from pipelines.ceph.ce_model import LandmarkResult
+    from pipelines.ceph.modules.point.point_model import LandmarkResult
 else:
     # 运行时延迟导入以避免循环依赖
     LandmarkResult = None  # type: ignore
@@ -109,7 +109,7 @@ def postprocess_results(
     missing = [name for name in KEYPOINT_NAMES if name not in detected]
 
     # 延迟导入 LandmarkResult 以避免循环依赖
-    from pipelines.ceph.ce_model import LandmarkResult  # type: ignore
+    from pipelines.ceph.modules.point.point_model import LandmarkResult  # type: ignore
     
     return LandmarkResult(
         coordinates=coordinates,
@@ -138,7 +138,7 @@ def create_empty_result(
         LandmarkResult: 空结果对象
     """
     # 延迟导入 LandmarkResult 以避免循环依赖
-    from pipelines.ceph.ce_model import LandmarkResult  # type: ignore
+    from pipelines.ceph.modules.point.point_model import LandmarkResult  # type: ignore
     
     coordinates = {
         name: np.array([np.nan, np.nan], dtype=float) for name in KEYPOINT_NAMES

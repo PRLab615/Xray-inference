@@ -31,7 +31,7 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && 
 
 # 从 requirements.txt 安装所有依赖（包括深度学习框架）
 # 注意：torch 和 ultralytics 的安装可能需要几分钟
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install  -r requirements.txt
 
 # Copy application code
 COPY . .
