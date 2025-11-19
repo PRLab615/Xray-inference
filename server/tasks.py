@@ -8,6 +8,8 @@ v3: 使用真实 Pipeline，移除 mock 数据
 import logging
 import os
 from datetime import datetime, timezone
+from typing import Any, Dict, Type
+
 from server.worker import celery_app
 from server.core.persistence import TaskPersistence
 from server.core.callback import CallbackManager
@@ -18,6 +20,105 @@ from pipelines.pano.pano_pipeline import PanoPipeline
 from pipelines.ceph.ceph_pipeline import CephPipeline
 
 logger = logging.getLogger(__name__)
+
+
+_PIPELINE_CACHE: Dict[str, Any] = {}
+_PIPELINE_SETTINGS: Dict[str, Dict[str, Any]] = {}
+_PIPELINES_INITIALIZED = False
+_PIPELINE_BUILDERS: Dict[str, Type] = {
+    'panoramic': PanoPipeline,
+    'cephalometric': CephPipeline,
+}
+
+
+def _extract_init_kwargs(settings: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(settings, dict):
+        return {}
+
+    init_kwargs = settings.get('init_kwargs')
+    if isinstance(init_kwargs, dict) and init_kwargs:
+        return init_kwargs
+
+    modules = settings.get('modules')
+    if isinstance(modules, dict):
+        default_module = settings.get('default_module')
+        candidate = modules.get(default_module) if default_module else None
+
+        if not isinstance(candidate, dict):
+            for module_cfg in modules.values():
+                if not isinstance(module_cfg, dict):
+                    continue
+                if module_cfg.get('enabled', True):
+                    candidate = module_cfg
+                    break
+            else:
+                # 若找不到启用的模块，则按第一个有效配置兜底
+                for module_cfg in modules.values():
+                    if isinstance(module_cfg, dict):
+                        candidate = module_cfg
+                        break
+
+        if isinstance(candidate, dict):
+            return dict(candidate)
+
+    # 兼容旧配置：除控制字段外全部视为构造参数
+    exclude = {'preload', 'enabled', 'modules', 'default_module'}
+    return {key: value for key, value in settings.items() if key not in exclude}
+
+
+def _preload_pipelines() -> None:
+    global _PIPELINE_SETTINGS, _PIPELINES_INITIALIZED
+    if _PIPELINES_INITIALIZED:
+        return
+
+    config = load_config()
+    pipeline_config = config.get('pipelines', {})
+    _PIPELINE_SETTINGS = pipeline_config
+
+    for task_type, builder in _PIPELINE_BUILDERS.items():
+        settings = pipeline_config.get(task_type, {})
+        should_preload = settings.get('preload', True) if isinstance(settings, dict) else True
+        init_kwargs = _extract_init_kwargs(settings)
+
+        if not should_preload:
+            logger.warning(
+                "Pipeline preload disabled for %s. It will be created on first use.",
+                task_type
+            )
+            continue
+
+        logger.info("Preloading %s pipeline with kwargs=%s", task_type, init_kwargs)
+        _PIPELINE_CACHE[task_type] = builder(**init_kwargs)
+
+    _PIPELINES_INITIALIZED = True
+
+
+def get_pipeline(task_type: str):
+    pipeline = _PIPELINE_CACHE.get(task_type)
+    if pipeline:
+        return pipeline
+
+    builder = _PIPELINE_BUILDERS.get(task_type)
+    if not builder:
+        raise ValueError(f"Unknown task_type: {task_type}")
+
+    settings = _PIPELINE_SETTINGS.get(task_type, {})
+    init_kwargs = _extract_init_kwargs(settings)
+    logger.info(
+        "Lazy-loading %s pipeline (preload disabled) with kwargs=%s",
+        task_type,
+        init_kwargs
+    )
+    pipeline = builder(**init_kwargs)
+    _PIPELINE_CACHE[task_type] = pipeline
+    return pipeline
+
+
+try:
+    _preload_pipelines()
+except Exception:
+    logger.exception("Failed to preload pipelines during worker bootstrap")
+    raise
 
 
 @celery_app.task(name='server.tasks.analyze_task', bind=True)
@@ -74,18 +175,18 @@ def analyze_task(self, task_id: str):
         
         # 3. 根据 taskType 实例化 Pipeline 并执行推理（v3 新增）
         try:
+            pipeline = get_pipeline(task_type)
+
             if task_type == 'panoramic':
                 # 全景片推理
-                logger.info(f"Instantiating PanoPipeline for {task_id}")
-                pipeline = PanoPipeline()
+                logger.info(f"Running PanoPipeline for {task_id}")
                 data_dict = pipeline.run(image_path=image_path)
-                
+
             elif task_type == 'cephalometric':
                 # 侧位片推理（需要 patient_info）
-                logger.info(f"Instantiating CephPipeline for {task_id}")
-                pipeline = CephPipeline()
+                logger.info(f"Running CephPipeline for {task_id}")
                 data_dict = pipeline.run(image_path=image_path, patient_info=patient_info)
-                
+
             else:
                 logger.error(f"Unknown task_type: {task_type}")
                 return
