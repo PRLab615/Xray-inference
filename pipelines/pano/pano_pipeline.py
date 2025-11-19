@@ -17,11 +17,20 @@ class PanoPipeline(BasePipeline):
     
     负责协调各个子模块完成全景片的完整分析流程，并生成符合规范的 JSON 输出。
     子模块包括：牙齿分割、骨密度分析、关节检测等。
+    
+    架构设计（v3.2）：
+        - 在初始化时，一次性加载所有 enabled 的模块
+        - 支持多模块并存（teeth_seg, bone_density, joint 等）
+        - 通过 modules 参数接收配置
     """
     
-    def __init__(self):
+    def __init__(self, *, modules: dict = None):
         """
         初始化全景片 Pipeline
+        
+        Args:
+            modules: 模块配置字典（可选）
+                格式与 CephPipeline 相同，当前为空字典（子模块未实现）
         
         Note:
             - v3: 初始化基础结构，子模块用 TODO 占位
@@ -29,13 +38,20 @@ class PanoPipeline(BasePipeline):
         """
         super().__init__()
         self.pipeline_type = "panoramic"
+        self.modules = {}  # 存储所有已初始化的模块实例
+        
+        # v3: 全景片子模块暂未实现，保留架构接口
+        if modules:
+            logger.info(f"Received modules config: {list(modules.keys())}, but not implemented yet")
         
         # TODO: v4 初始化子模块
-        # self.teeth_seg_module = TeethSegModule()
-        # self.bone_density_module = BoneDensityModule()
-        # self.joint_detection_module = JointDetectionModule()
+        # if modules:
+        #     self._initialize_modules(modules)
+        # 示例：
+        # if 'teeth_seg' in modules and modules['teeth_seg'].get('enabled'):
+        #     self.modules['teeth_seg'] = self._init_teeth_seg_module(modules['teeth_seg'])
         
-        logger.info("PanoPipeline initialized")
+        logger.info("PanoPipeline initialized (子模块待实现)")
     
     def run(self, image_path: str) -> dict:
         """

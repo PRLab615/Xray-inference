@@ -17,7 +17,9 @@ services:
 
   # API 服务进程 (P1)
   api:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: xray_api
     command: python main_api.py
     network_mode: "host"
@@ -35,10 +37,22 @@ services:
 
   # Worker 服务进程 (P2)
   worker:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: xray_worker
     command: python main_worker.py
     network_mode: "host"
+    
+    # GPU 配置：允许容器访问宿主机的所有 GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all  # 使用所有可用GPU，可改为 count: 1 只使用1个GPU
+              capabilities: [gpu]
+    
     volumes:
       - .:/app
       - ./models:/app/models
@@ -53,7 +67,9 @@ services:
 
   # Flask 回调服务器 (前端展示)
   frontend:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: xray_frontend
     command: python web/Xray_web/app.py
     network_mode: "host"
@@ -63,7 +79,9 @@ services:
 
   # 测试回调接收服务器 (用于测试)
   callback-server:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: xray_callback_test
     command: python test_callback_server.py
     network_mode: "host"
@@ -74,7 +92,9 @@ services:
 
   # 测试执行服务 (用于运行测试脚本)
   test:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: xray_test
     network_mode: "host"
     volumes:
