@@ -42,3 +42,38 @@ image_download:
     - .png
     - .dcm
 
+# Pipeline/模型配置（v3.1）
+pipelines:
+  panoramic:
+    preload: true                # Worker 启动时即初始化全景片 Pipeline
+    init_kwargs: {}              # 兼容现有 PanoPipeline 构造参数
+    models:
+      - name: "detector"
+        enabled: true
+        notes: "默认全景片检测模型"
+        init_kwargs: {}
+  cephalometric:
+    preload: true                # Worker 启动时即初始化侧位片 Pipeline
+    default_module: "point"      # 指定默认用于推理的模块
+    modules:
+      point:
+        enabled: true
+        description: "标志点检测模型"
+        weights_key: "weights/cephalometric/point_best_19.pt"
+        weights_force_download: false
+        device: "0"
+        image_size: 1024
+        conf: 0.25
+        iou: 0.6
+        max_det: 1
+      seg:
+        enabled: false
+        description: "轮廓/结构分割模型（预留）"
+        weights_key: "weights/cephalometric/seg/best.pt"
+        weights_force_download: false
+        device: "0"
+        input_size: 1024
+        conf: 0.35
+        iou: 0.5
+        classes: []
+
