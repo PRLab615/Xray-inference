@@ -1,11 +1,25 @@
 # Dockerfile for Xray Inference Service
-# 第一版：轻量级镜像，用于步骤3-8的开发测试
-FROM python:3.11-slim
+# v3: 支持真实 AI 推理（包括深度学习依赖）
+# 使用 bookworm 版本以确保包版本一致
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# 暂时只安装基本依赖（OpenCV 相关依赖在真正使用时再添加）
+# 配置阿里云 Debian 镜像源（解决网络问题）
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources || \
+    (echo "deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    echo "deb https://mirrors.aliyun.com/debian-security/ bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list)
+
+# 安装 OpenCV 和 PyTorch 需要的系统依赖
+# libGL.so.1 来自 libgl1，ultralytics 的 cv2 需要它
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgomp1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -15,23 +29,9 @@ COPY requirements.txt .
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip config set install.trusted-host pypi.tuna.tsinghua.edu.cn
 
-# 先安装基础依赖（不安装 OpenCV，避免编译问题）
-RUN pip install --no-cache-dir \
-    fastapi>=0.104.0 \
-    uvicorn[standard]>=0.24.0 \
-    pydantic>=2.8.0 \
-    pydantic-settings>=2.1.0 \
-    celery>=5.3.0 \
-    redis>=5.0.0 \
-    httpx>=0.25.0 \
-    requests>=2.31.0 \
-    pyyaml>=6.0 \
-    python-multipart>=0.0.6 \
-    python-dotenv>=1.0.0 \
-    flask
-
-# 注意：numpy, opencv-python, pillow 在真正需要 AI 推理时再安装
-# 第一版使用 mock 推理，不需要这些依赖
+# 从 requirements.txt 安装所有依赖（包括深度学习框架）
+# 注意：torch 和 ultralytics 的安装可能需要几分钟
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

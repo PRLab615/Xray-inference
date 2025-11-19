@@ -32,38 +32,24 @@ _PIPELINE_BUILDERS: Dict[str, Type] = {
 
 
 def _extract_init_kwargs(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从配置中提取 Pipeline 初始化参数
+    
+    新架构（v3.2）：
+        - 直接传递 modules 配置给 Pipeline
+        - Pipeline 负责初始化所有 enabled 的模块
+        - 不再使用 default_module 或 init_kwargs
+    """
     if not isinstance(settings, dict):
         return {}
-
-    init_kwargs = settings.get('init_kwargs')
-    if isinstance(init_kwargs, dict) and init_kwargs:
-        return init_kwargs
-
+    
     modules = settings.get('modules')
     if isinstance(modules, dict):
-        default_module = settings.get('default_module')
-        candidate = modules.get(default_module) if default_module else None
-
-        if not isinstance(candidate, dict):
-            for module_cfg in modules.values():
-                if not isinstance(module_cfg, dict):
-                    continue
-                if module_cfg.get('enabled', True):
-                    candidate = module_cfg
-                    break
-            else:
-                # 若找不到启用的模块，则按第一个有效配置兜底
-                for module_cfg in modules.values():
-                    if isinstance(module_cfg, dict):
-                        candidate = module_cfg
-                        break
-
-        if isinstance(candidate, dict):
-            return dict(candidate)
-
-    # 兼容旧配置：除控制字段外全部视为构造参数
-    exclude = {'preload', 'enabled', 'modules', 'default_module'}
-    return {key: value for key, value in settings.items() if key not in exclude}
+        # 直接传递完整的 modules 配置
+        return {'modules': modules}
+    
+    # 兼容旧配置：空配置
+    return {}
 
 
 def _preload_pipelines() -> None:

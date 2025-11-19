@@ -5,9 +5,31 @@
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+def calculate_measurements(coordinates: Dict[str, np.ndarray]) -> List[Dict[str, Any]]:
+    """
+    根据关键点坐标计算头影测量值
+    
+    Args:
+        coordinates: 关键点坐标字典，key 为关键点名称，value 为坐标数组
+        
+    Returns:
+        list: 测量结果列表
+        
+    Note:
+        - v3: 占位实现，返回空列表
+        - v4: 完整实现（根据关键点计算角度、距离等测量值）
+    """
+    logger.info(f"Calculating measurements from {len(coordinates)} landmarks")
+    logger.warning("calculate_measurements not fully implemented (TODO)")
+    
+    # v3 占位：返回空列表
+    return []
 
 
 def generate_standard_output(
