@@ -1,11 +1,12 @@
+# -*- coding: utf-8 -*-
 """
-骨密度分析模块
+髁突分割模块 (Condyle Segmentation)
+使用 ONNX 模型进行髁突分割
 """
 
-# TODO: 实现骨密度分析功能
-# - 骨密度检测
-# - 骨质疏松评估
-pass
+from .joint_predictor import JointPredictor
+
+__all__ = ['JointPredictor']
 
 
 

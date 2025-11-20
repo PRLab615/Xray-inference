@@ -30,52 +30,55 @@ def generate_standard_output(
 ) -> Dict[str, Any]:
     """
     主组装函数：接收所有模块结果，生成最终 JSON
+    
+    Args:
+        metadata: 元数据 (ImageName, DiagnosisID, AnalysisTime)
+        inference_results: 各模块推理结果
+            - condyle_seg: 髁突分割结果
+            - condyle_det: 髁突检测结果
+            - mandible: 下颌骨分割结果
     """
     # 1. 初始化基础骨架 (严格按照接口定义顺序)
     report = {
         "Metadata": _format_metadata(metadata),
-        "AnatomyResults": [],
-        "JointAndMandible": _get_joint_mandible_default(),  # 合并了关节和下颌骨默认值
-        "MaxillarySinus": [],
-        "PeriodontalCondition": _get_periodontal_default(),
-        "MissingTeeth": [],
-        "ThirdMolarSummary": {},
-        "ImplantAnalysis": _get_implant_default(),  # 【新增】确保种植体字段存在
-        "ToothAnalysis": []
+        "AnatomyResults": [],  # TODO: 等牙齿模块集成
+        "JointAndMandible": _get_joint_mandible_default(),
+        "MaxillarySinus": [],  # 格式确认但无模型，先空数组
+        "PeriodontalCondition": _get_periodontal_default(),  # TODO: 等牙齿模块集成
+        "MissingTeeth": [],  # TODO: 等牙齿模块集成
+        "ThirdMolarSummary": {},  # TODO: 等牙齿模块集成
+        "ImplantAnalysis": _get_implant_default(),  # TODO: 等种植体模块集成
+        "ToothAnalysis": []  # TODO: 等牙齿模块集成
     }
 
-    # 2. 组装关节 (Joint - 髁突部分)
-    if "joint" in inference_results:
-        joint_res = inference_results["joint"]
-        if "standard_data" in joint_res:
-            # 注意：这里是一个深度合并的过程，不能直接覆盖，否则会弄丢下颌骨的数据
-            # 但由于我们是分步填充，这里假设 joint_res 只包含 CondyleAssessment 部分
-            # 更稳健的做法是 update
-            report["JointAndMandible"].update(joint_res["standard_data"])
+    # 2. 组装髁突部分 (CondyleAssessment)
+    # 合并 condyle_seg 和 condyle_det 的结果
+    condyle_seg = inference_results.get("condyle_seg", {})
+    condyle_det = inference_results.get("condyle_det", {})
+    
+    if condyle_seg or condyle_det:
+        condyle_data = format_joint_report(condyle_seg, condyle_det)
+        # 只更新 CondyleAssessment 部分，不覆盖下颌骨字段
+        report["JointAndMandible"]["CondyleAssessment"] = condyle_data["CondyleAssessment"]
 
-    # 3. 组装下颌骨 (Mandible - 升支/下颌角部分)
-    if "mandible" in inference_results:
-        mandible_res = inference_results["mandible"]
-        if "mandible_standard_data" in mandible_res:
-            # 将下颌骨数据合并进去 (RamusSymmetry, GonialAngleSymmetry, Detail...)
-            # 注意 Detail 需要拼接
-            existing_detail = report["JointAndMandible"].get("Detail", "")
-            new_detail = mandible_res["mandible_standard_data"].get("Detail", "")
-
-            report["JointAndMandible"].update(mandible_res["mandible_standard_data"])
-
-            # 拼接 Detail 描述
-            if existing_detail and new_detail:
-                report["JointAndMandible"]["Detail"] = f"{existing_detail}；{new_detail}"
-            elif new_detail:
-                report["JointAndMandible"]["Detail"] = new_detail
-
-    # 4. 组装种植体 (Implant)
-    if "implant" in inference_results:
-        implant_res = inference_results["implant"]
-        # 假设 implant predictor 返回了 standard_data
-        if "standard_data" in implant_res:
-            report["ImplantAnalysis"] = implant_res["standard_data"]
+    # 3. 组装下颌骨部分 (Mandible - 升支/下颌角部分)
+    mandible_res = inference_results.get("mandible", {})
+    if mandible_res and "analysis" in mandible_res:
+        mandible_data = format_mandible_report(mandible_res["analysis"])
+        
+        # 合并下颌骨数据，注意 Detail 的拼接
+        existing_detail = report["JointAndMandible"].get("Detail", "")
+        new_detail = mandible_data.get("Detail", "")
+        
+        report["JointAndMandible"]["RamusSymmetry"] = mandible_data["RamusSymmetry"]
+        report["JointAndMandible"]["GonialAngleSymmetry"] = mandible_data["GonialAngleSymmetry"]
+        report["JointAndMandible"]["Confidence"] = mandible_data["Confidence"]
+        
+        # 拼接 Detail
+        if existing_detail and new_detail:
+            report["JointAndMandible"]["Detail"] = f"{existing_detail}；{new_detail}"
+        elif new_detail:
+            report["JointAndMandible"]["Detail"] = new_detail
 
     return report
 
@@ -84,26 +87,96 @@ def generate_standard_output(
 # 2. 格式化函数 (Predictor 调用)
 # =============================================================================
 
-def format_joint_report(raw_features: dict, analysis: dict) -> dict:
-    """格式化髁突(Condyle)部分"""
-    SYM_NORMAL, SYM_LEFT_BIG, SYM_RIGHT_BIG = 0, 1, 2
-
-    # 获取默认结构
-    joint_data = _get_joint_mandible_default()  # 包含完整的 JointAndMandible 结构
-
-    # ... (此处省略之前已确认正确的提取置信度、形态学逻辑，保持不变) ...
-    # 简写以展示结构：
-    left = raw_features.get("left", {})
-    right = raw_features.get("right", {})
-
-    # 填充 CondyleAssessment
-    # ... (逻辑同前) ...
-
-    # 填充 OverallSymmetry
-    # ... (逻辑同前) ...
-
-    # 返回的只是 JointAndMandible 的结构，Predictor 会把它放在 standard_data 里
-    return joint_data
+def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
+    """
+    格式化髁突(Condyle)部分
+    
+    Args:
+        condyle_seg: 髁突分割结果 {raw_features: {left: {...}, right: {...}}, analysis: {...}}
+        condyle_det: 髁突检测结果 {left: {class_id, confidence, bbox}, right: {...}}
+        
+    Returns:
+        dict: 包含 CondyleAssessment 的字典
+    """
+    # 获取检测结果中的形态学分类 (class_id: 0=正常, 1=吸收, 2=疑似)
+    det_left = condyle_det.get("left", {})
+    det_right = condyle_det.get("right", {})
+    
+    left_morphology = det_left.get("class_id", 0)
+    right_morphology = det_right.get("class_id", 0)
+    left_conf_det = det_left.get("confidence", 0.0)
+    right_conf_det = det_right.get("confidence", 0.0)
+    
+    # 调试日志：检查检测模块的置信度
+    logger.debug(f"[format_joint_report] Detection confidence - Left: {left_conf_det}, Right: {right_conf_det}")
+    
+    # 获取分割结果中的置信度和存在性
+    seg_features = condyle_seg.get("raw_features", {})
+    seg_left = seg_features.get("left", {})
+    seg_right = seg_features.get("right", {})
+    
+    left_exists = seg_left.get("exists", False)
+    right_exists = seg_right.get("exists", False)
+    left_conf_seg = seg_left.get("confidence", 0.0)
+    right_conf_seg = seg_right.get("confidence", 0.0)
+    
+    # 调试日志：检查分割模块的置信度
+    logger.debug(f"[format_joint_report] Segmentation confidence - Left: {left_conf_seg} (exists: {left_exists}), Right: {right_conf_seg} (exists: {right_exists})")
+    
+    # 综合置信度 (取检测和分割的平均值)
+    # 注意：如果分割模块检测到了，则取两个模块的平均值；否则只用检测模块的置信度
+    if left_exists and left_conf_seg > 0:
+        left_confidence = (left_conf_det + left_conf_seg) / 2
+    else:
+        left_confidence = left_conf_det
+    
+    if right_exists and right_conf_seg > 0:
+        right_confidence = (right_conf_det + right_conf_seg) / 2
+    else:
+        right_confidence = right_conf_det
+    
+    # 调试日志：检查综合置信度
+    logger.debug(f"[format_joint_report] Final confidence - Left: {left_confidence}, Right: {right_confidence}")
+    
+    # 生成详细描述
+    left_detail = MORPHOLOGY_MAP.get(left_morphology, MORPHOLOGY_MAP[0])["detail"]
+    right_detail = MORPHOLOGY_MAP.get(right_morphology, MORPHOLOGY_MAP[0])["detail"]
+    
+    # 判断对称性
+    seg_analysis = condyle_seg.get("analysis", {})
+    is_symmetric = seg_analysis.get("is_symmetric", True)
+    
+    # 判断整体对称性 (0=对称, 1=左侧大, 2=右侧大)
+    overall_symmetry = 0
+    if not is_symmetric:
+        metrics = seg_analysis.get("metrics", {})
+        left_area = metrics.get("left_area", 0)
+        right_area = metrics.get("right_area", 0)
+        if left_area > right_area:
+            overall_symmetry = 1  # 左侧大
+        elif right_area > left_area:
+            overall_symmetry = 2  # 右侧大
+    
+    # 构建 CondyleAssessment
+    # 确保置信度始终为浮点数格式（保留2位小数）
+    condyle_assessment = {
+        "condyle_Left": {
+            "Morphology": left_morphology,
+            "IsSymmetrical": is_symmetric,
+            "Detail": left_detail,
+            "Confidence": float(round(left_confidence, 2))
+        },
+        "condyle_Right": {
+            "Morphology": right_morphology,
+            "IsSymmetrical": is_symmetric,
+            "Detail": right_detail,
+            "Confidence": float(round(right_confidence, 2))
+        },
+        "OverallSymmetry": overall_symmetry,
+        "Confidence_Overall": float(round(max(left_confidence, right_confidence), 2))
+    }
+    
+    return {"CondyleAssessment": condyle_assessment}
 
 
 def format_mandible_report(analysis_result: dict) -> dict:
@@ -111,11 +184,13 @@ def format_mandible_report(analysis_result: dict) -> dict:
     【严格对齐检查】格式化下颌骨(Mandible)部分
     对应接口中的 JointAndMandible 下半部分
     """
+    confidence = float(analysis_result.get("Confidence", 0.0))
+    
     return {
         "RamusSymmetry": bool(analysis_result.get("RamusSymmetry", False)),
         "GonialAngleSymmetry": bool(analysis_result.get("GonialAngleSymmetry", False)),
         "Detail": str(analysis_result.get("Detail", "未检测到下颌骨结构")),
-        "Confidence": float(analysis_result.get("Confidence", 0.0))
+        "Confidence": float(round(confidence, 2))
     }
 
 
@@ -176,8 +251,18 @@ def _get_joint_mandible_default() -> dict:
     """
     return {
         "CondyleAssessment": {
-            "condyle_Left": {"Morphology": 0, "IsSymmetrical": True, "Detail": "未见明显异常", "Confidence": 0.0},
-            "condyle_Right": {"Morphology": 0, "IsSymmetrical": True, "Detail": "未见明显异常", "Confidence": 0.0},
+            "condyle_Left": {
+                "Morphology": 0, 
+                "IsSymmetrical": False, 
+                "Detail": "髁突形态正常", 
+                "Confidence": 0.0
+            },
+            "condyle_Right": {
+                "Morphology": 0, 
+                "IsSymmetrical": False, 
+                "Detail": "髁突形态正常", 
+                "Confidence": 0.0
+            },
             "OverallSymmetry": 0,
             "Confidence_Overall": 0.0
         },

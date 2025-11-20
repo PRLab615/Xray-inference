@@ -59,6 +59,17 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# 类名到形态学分类的映射
+# YOLO模型输出的类名格式: condyle_normal, condyle_resorption, condyle_suspect
+CLASS_NAME_TO_MORPHOLOGY = {
+    'condyle_normal': 0,      # 正常
+    'condyle_resorption': 1,  # 吸收
+    'condyle_suspect': 2,     # 疑似异常
+    'normal': 0,              # 兼容简化版
+    'resorption': 1,
+    'suspect': 2
+}
+
 
 class JointPredictor:
     """
@@ -144,6 +155,10 @@ class JointPredictor:
             max_conf_left = -1.0
             max_conf_right = -1.0
 
+            # 获取图像宽度，用于判断左右侧
+            image_width = result.orig_shape[1]  # (Height, Width)
+            image_center_x = image_width / 2
+
             if result.boxes:
                 for box in result.boxes:
                     # 转为标准 Python 数据类型
@@ -152,29 +167,39 @@ class JointPredictor:
                     cls_id = int(box.cls.cpu().numpy()[0])
                     cls_name = result.names.get(cls_id, f"Class_{cls_id}")
 
+                    # 计算BBox中心点的x坐标
+                    bbox_center_x = (bbox[0] + bbox[2]) / 2
+
+                    # 从类名推导形态学分类 (morphology)
+                    # 优先使用类名映射，如果找不到则使用原始class_id
+                    morphology = CLASS_NAME_TO_MORPHOLOGY.get(cls_name.lower(), cls_id)
+
                     feature_data = {
                         "bbox": bbox,
                         "class_name": cls_name,
                         "confidence": conf,
-                        "class_id": cls_id  # 关键：传递 Class ID (0, 1, 2)
+                        "class_id": morphology  # 使用形态学分类 (0=正常, 1=吸收, 2=疑似)
                     }
 
                     all_raw_features.append(feature_data)
 
-                    # --- 选择最佳检测结果 (按置信度) ---
-                    cls_name_lower = cls_name.lower()
-
-                    if 'left' in cls_name_lower:
+                    # --- 根据BBox位置判断左右侧 (左半部分=左侧，右半部分=右侧) ---
+                    if bbox_center_x < image_center_x:
+                        # 左侧髁突
                         if conf > max_conf_left:
                             max_conf_left = conf
                             best_left_feature = feature_data
-                    elif 'right' in cls_name_lower:
+                    else:
+                        # 右侧髁突
                         if conf > max_conf_right:
                             max_conf_right = conf
                             best_right_feature = feature_data
                     # ------------------------------------
 
             logger.info(f"Inference done. Detected {len(all_raw_features)} objects.")
+            logger.info(f"Image dimensions: {result.orig_shape}, center_x: {image_center_x}")
+            logger.info(f"Left feature selected: {bool(best_left_feature)} (conf: {max_conf_left if best_left_feature else 'N/A'})")
+            logger.info(f"Right feature selected: {bool(best_right_feature)} (conf: {max_conf_right if best_right_feature else 'N/A'})")
 
             # 3. 准备分析元数据 (此处只模拟)
             analysis = {

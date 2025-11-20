@@ -1,241 +1,279 @@
 {
-    "taskId": "task-uuid-pano-...",
-    "status": "SUCCESS",
-    "timestamp": "2025-10-28T14:35:10Z",
-    "metadata": { 
-       "patientId": "P-12345",  
-       "orderId": "O-67890"  
-    }, 
-      "requestParameters": { 
-        "taskType": "panoramic",  
-        "imageUrl": "https://example.com/images/pano-001.jpg" 
-    },
-    "data": {
-        "Metadata": {
-          "ImageName": "panoramic_xray_001.jpg",
-          "DiagnosisID": "AI-DX-20251027-002",
-          "AnalysisTime": "2025-10-27T12:00:00Z"
-        },
-        
-        "AnatomyResults": [
-          {
-            "Label": "condyle_left",
-            "Confidence": 0.99,
-            "SegmentationMask": {
-              "Type": "Polygon",
-              "Label": "condyle_left", 
-              "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]],
-              "SerializedMask": "rle:..."
-            }
-          }
-        ],
-        
-        "JointAndMandible": {
-          "CondyleAssessment": {
-            "condyle_Left": {
-              "Morphology": 1,
-              "IsSymmetrical": false,
-              "Detail": "左侧髁突形态吸收，灰度外围低密度影像",
-              "Confidence": 0.92
-            },
-            "condyle_Right": {
-              "Morphology": 0,
-              "IsSymmetrical": false,
-              "Detail": "右侧髁突形态正常",
-              "Confidence": 0.98
-            },
-            "OverallSymmetry": 1,
-            "Confidence_Overall": 0.92
-          },
-          
-          "RamusSymmetry": false,
-          "GonialAngleSymmetry": true,
-          "Detail": "下颌升支不对称，左右下颌角对称",
-          "Confidence": 0.90
-        },
-        
-        "MaxillarySinus": [
-          {
-            "Side": "left",
-            "Pneumatization": 2,
-            "TypeClassification": "III",
-            "Inflammation": true,
-            "RootEntryToothFDI": ["26"],
-            "Detail": "左上颌窦过度气化，26牙位牙根进入上颌窦，疑似炎症，建议耳鼻喉科会诊。",
-            "Confidence_Pneumatization": 0.95,
-            "Confidence_Inflammation": 0.85
-          },
-          {
-            "Side": "right",
-            "Pneumatization": 0,
-            "TypeClassification": "I",
-            "Inflammation": false,
-            "RootEntryToothFDI": [],
-            "Detail": "右上颌窦气化正常。",
-            "Confidence_Pneumatization": 0.99,
-            "Confidence_Inflammation": 0.99
-          }
-        ],
-      
-        
-        "PeriodontalCondition": {
-          "CEJ_to_ABC_Distance_mm": 1.8,
-          "BoneAbsorptionLevel": 0,
-          "Detail": "釉牙骨质界到牙槽骨嵴顶小于2mm",
-          "AbsorptionRatio": 0.1,
-          "Confidence": 0.94
-        },
-        
-        "MissingTeeth": [
-          {
-            "FDI": "37", 
-            "Reason": "missing",
-            "Detail": "37牙位缺牙"
-          }
-        ],
-        "ThirdMolarSummary": {
-          "18": {
-            "Level": 1,
-            "Impactions":"Impacted",
-            "Detail": "阻生"
-          },
-          "28": {
-            "Level": 2, 
-            "Impactions": null,
-             "Detail": "牙胚状态（未形成牙根）",
-            "Confidence": 0.95
-          },
-          "38": {
-            "Level": 3,
-            "Impactions": null,
-            "Detail": "待萌出（垂直生长，无阻碍）",
-            "Confidence": 0.90
-          },
-          "48": {
-            "Level": 4,
-            "Impactions": null,
-             "Detail": "未见智齿",
-            "Confidence": 0.98 
-          } 
-        },
-        "ToothAnalysis": [
-          {
-            "FDI": "16",
-            "Confidence": 0.99,
-            "SegmentationMask": {
-              "Type": "Polygon",
-              "Label": "tooth-16",
-              "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
-              "SerializedMask": "rle:..." 
-            },
-            
-            "Properties": [
-              {"Value": "rct_treated", "Description": "根管治疗过", "Confidence": 0.99},
-              {"Value": "periapical_lesion", "Description": "根尖周病变", "Confidence": 0.85},
-              {"Value": "root_absorption", "Description": "牙根吸收", "Confidence": 0.95},
-              {"Value": "crown_restored", "Description": "牙冠修复牙", "Confidence": 0.98},
-              {"Value": "root_morphology_curved", "Description": "牙根形态弯曲", "Confidence": 0.90}
-            ],
-            
-            "RootCondition": {
-              "Absorption": true, "Confidence": 0.95,
-              "Morphology": 1, "Confidence_Morphology": 0.90,
-              "AlveolarBoneAbsorption": {
-                "Level": 1,
-                "Detail": "牙槽骨吸收超过牙根的1/3，但在牙根的2/3范围内",
-                "Confidence": 0.88
-              }
-            },
-            
-            "KeyPoints": [
-              {"ID": "16_cej_m", "Label": "cej_mesial", "X": 105, "Y": 310, "Description": "釉牙骨质界-近中"}, 
-              {"ID": "16_abc_m", "Label": "abc_mesial", "X": 108, "Y": 315, "Description": "牙槽嵴顶-近中"}, 
-              {"ID": "16_apex_m", "Label": "apex_mesial", "X": 110, "Y": 450, "Description": "根尖-近中"}, 
-              {"ID": "16_abs_1", "Label": "absorption", "X": 112, "Y": 440, "Description": "牙根吸收点"}
-            ],
-      
-            "Measurements": [
-              {
-                "Label": "alveolar_bone_loss_mesial",
-                "Type": "Distance",
-                "Value_mm": 2.5,
-                "Value_px": 5,
-                "StartKeyPointID": "16_cej_m",
-                "EndKeyPointID": "16_abc_m",
-                "Confidence": 0.95
-              }
-            ],
-            
-            "Pathologies": [
-              {
-                "Label": "crown",
-                "Confidence": 0.97,
-                "BBox": [100, 300, 120, 330],
-                "RelatedKeyPoints": ["16_cej_m"],
-                "RelatedPathologies": []
-              }
-            ]
-          },
-          {
-            "FDI": "36", 
-            "Confidence": 0.95, 
-            "SegmentationMask": { "Label": "tooth-36" },
-            "Properties": [ 
-              {"Value": "periapical_lesion", "Description": "根尖周病变", "Confidence": 0.75}, 
-              {"Value": "caries", "Description": "龋齿", "Confidence": 0.90}, 
-              {"Value": "restoration", "Description": "填充体", "Confidence": 0.98} 
-            ],
-            "RootCondition": { 
-              "Absorption": false, "Confidence": 0.99, 
-              "Morphology": 0, "Confidence_Morphology": 0.99, 
-              "AlveolarBoneAbsorption": {
-                "Level": 0, 
-                "Detail": "",
-                "Confidence": 0.99
-              }
-            },
-            "Pathologies": [ 
-              {
-                "Label": "caries",
-                "Confidence": 0.90,
-                "BBox": [0,0,0,0],
-                "RelatedKeyPoints": [],
-                "RelatedPathologies": ["p36_restoration"] 
-              },
-              {
-                "ID": "p36_restoration", 
-                "Label": "restoration",
-                "Confidence": 0.98,
-                "BBox": [0,0,0,0],
-                "RelatedKeyPoints": [],
-                "RelatedPathologies": []
-              }
-            ]
-          },
-          {
-            "FDI": "48",
-            "Confidence": 0.92, 
-            "SegmentationMask": { "Label": "tooth-48" },
-            "Properties": [ 
-              {"Value": "impacted", "Description": "阻生", "Confidence": 0.99},
-              {"Value": "horizontal", "Description": "水平阻生", "Confidence": 0.98},
-              {"Value": "periapical_lesion", "Description": "根尖周低密度影", "Confidence": 0.80} 
-            ],
-            "RootCondition": { 
-              "Absorption": false, "Confidence": 0.99, 
-              "Morphology": 0, "Confidence_Morphology": 0.99, 
-              "AlveolarBoneAbsorption": {
-                "Level": 0, 
-                "Detail": "",
-                "Confidence": 0.99
-              }
-            },
-            "KeyPoints": [],
-            "Measurements": [],
-            "Pathologies": [] 
-          }
-        ]
+  // =========================================================================
+  // 1. 元数据 (Metadata)
+  // =========================================================================
+  "Metadata": { 
+    "ImageName": "panoramic_xray_001.jpg", 
+    "DiagnosisID": "AI-DX-20251027-002", 
+    "AnalysisTime": "2025-10-27T12:00:00Z" 
+  },
+  
+  // =========================================================================
+  // 2. 解剖结构分割结果 (AnatomyResults)
+  // =========================================================================
+  "AnatomyResults": [ 
+    {
+      "Label": "condyle_left", 
+      "Confidence": 0.99, 
+      "SegmentationMask": { 
+        "Type": "Polygon", 
+        "Label": "condyle_left", 
+        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]], 
+        "SerializedMask": "rle:..." 
       }
-    ,
-    "error": null
-  }
+    }
+  ],
+  
+  // =========================================================================
+  // 3. 颌骨与关节诊断 (JointAndMandible, MaxillarySinus)
+  // =========================================================================
+  "JointAndMandible": { 
+    "CondyleAssessment": { 
+      "condyle_Left": { 
+        "Morphology": 1, 
+        "IsSymmetrical": false, 
+        "Detail": "左侧髁突形态吸收，灰度外围低密度影像", 
+        "Confidence": 0.92 
+      },
+      "condyle_Right": { 
+        "Morphology": 0, 
+        "IsSymmetrical": false, 
+        "Detail": "右侧髁突形态正常", 
+        "Confidence": 0.98 
+      },
+      "OverallSymmetry": 1,  
+      "Confidence_Overall": 0.92 
+    },
+    
+    "RamusSymmetry": false, 
+    "GonialAngleSymmetry": true, 
+    "Detail": "下颌升支不对称，左右下颌角对称", 
+    "Confidence": 0.90 
+  },
+  
+  "MaxillarySinus": [ 
+    {
+      "Side": "left", 
+      "Pneumatization": 2, 
+      "TypeClassification": "III", 
+      "Inflammation": true, 
+      "RootEntryToothFDI": ["26"], 
+      "Detail": "左上颌窦过度气化，26牙位牙根进入上颌窦，疑似炎症，建议耳鼻喉科会诊。", 
+      "Confidence_Pneumatization": 0.95, 
+      "Confidence_Inflammation": 0.85 
+    },
+    {
+      "Side": "right", 
+      "Pneumatization": 0, 
+      "TypeClassification": "I", 
+      "Inflammation": false, 
+      "RootEntryToothFDI": [], 
+      "Detail": "右上颌窦气化正常。", 
+      "Confidence_Pneumatization": 0.99, 
+      "Confidence_Inflammation": 0.99 
+    }
+  ],
+
+  // =========================================================================
+  // 4. 牙周与缺牙 (Periodontal, Missing, Wisdom)
+  // =========================================================================
+  "PeriodontalCondition": { 
+    "CEJ_to_ABC_Distance_mm": 1.8,           
+    "BoneAbsorptionLevel": 0,    
+    "Detail": "釉牙骨质界到牙槽骨嵴顶小于2mm", 
+    "AbsorptionRatio": 0.1,                  
+    "Confidence": 0.94                       
+  },
+  
+  "MissingTeeth": [ 
+    {
+      "FDI": "37", 
+      "Reason": "missing", 
+      "Detail": "37牙位缺牙" 
+    }
+  ],
+
+  "ThirdMolarSummary": { 
+    "18": {
+      "Level": 1, 
+      "Impactions":"Impacted", 
+      "Detail": "阻生"
+    },
+    "28": {
+      "Level": 2, 
+      "Impactions": null,
+       "Detail": "牙胚状态（未形成牙根）",
+      "Confidence": 0.95
+    },
+    "38": {
+      "Level": 3, 
+      "Impactions": null,
+      "Detail": "待萌出（垂直生长，无阻碍）",
+      "Confidence": 0.90
+    },
+    "48": {
+      "Level": 4, 
+      "Impactions": null,
+       "Detail": "未见智齿",
+      "Confidence": 0.98 
+    } 
+  },
+
+  // =========================================================================
+  // 5. 【新增】种植体分析 (ImplantAnalysis)
+  // =========================================================================
+  "ImplantAnalysis": {
+    // 字段含义: 种植体总数量
+    "TotalCount": 2, 
+    
+    // 字段含义: 自动生成的分析文本，对应代码中的 analysis_text
+    "Detail": "第一象限存在种植体，个数为1；第三象限存在种植体，个数为1", 
+    
+    // 字段含义: 各象限的统计分布 (Q1=第一象限, Q2=第二象限, Q3=第三象限, Q4=第四象限)
+    "QuadrantCounts": {
+      "Q1": 1,
+      "Q2": 0,
+      "Q3": 1,
+      "Q4": 0
+    },
+    
+    // 字段含义: 单个种植体的详细检测列表
+    "Items": [
+      {
+        "ID": "implant_1", // 唯一标识
+        "Quadrant": 1, // 字段含义: 所属象限
+        "Confidence": 0.95, // 字段含义: 检测置信度
+        "BBox": [100, 200, 150, 300], // 字段含义: [x1, y1, x2, y2] 坐标
+        "Detail": "第一象限检测到种植体" // 单项描述
+      },
+      {
+        "ID": "implant_2",
+        "Quadrant": 3,
+        "Confidence": 0.92,
+        "BBox": [400, 500, 450, 600],
+        "Detail": "第三象限检测到种植体"
+      }
+    ]
+  },
+
+  // =========================================================================
+  // 6. 单牙诊断结果 (ToothAnalysis)
+  // =========================================================================
+  "ToothAnalysis": [ 
+    {
+      "FDI": "16", 
+      "Confidence": 0.99, 
+      "SegmentationMask": { 
+        "Type": "Polygon",
+        "Label": "tooth-16", 
+        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
+        "SerializedMask": "rle:..." 
+      },
+      
+      "Properties": [ 
+        {"Value": "rct_treated", "Description": "根管治疗过", "Confidence": 0.99}, 
+        {"Value": "periapical_lesion", "Description": "根尖周病变", "Confidence": 0.85}, 
+        {"Value": "root_absorption", "Description": "牙根吸收", "Confidence": 0.95}, 
+        {"Value": "crown_restored", "Description": "牙冠修复牙", "Confidence": 0.98}, 
+        {"Value": "root_morphology_curved", "Description": "牙根形态弯曲", "Confidence": 0.90} 
+      ],
+      
+      "RootCondition": { 
+        "Absorption": true, "Confidence": 0.95, 
+        "Morphology": 1, "Confidence_Morphology": 0.90, 
+        "AlveolarBoneAbsorption": { 
+          "Level": 1, 
+          "Detail": "牙槽骨吸收超过牙根的1/3，但在牙根的2/3范围内", 
+          "Confidence": 0.88 
+        }
+      },
+      
+      "KeyPoints": [ 
+        {"ID": "16_cej_m", "Label": "cej_mesial", "X": 105, "Y": 310, "Description": "釉牙骨质界-近中"}, 
+        {"ID": "16_abc_m", "Label": "abc_mesial", "X": 108, "Y": 315, "Description": "牙槽嵴顶-近中"}, 
+        {"ID": "16_apex_m", "Label": "apex_mesial", "X": 110, "Y": 450, "Description": "根尖-近中"}, 
+        {"ID": "16_abs_1", "Label": "absorption", "X": 112, "Y": 440, "Description": "牙根吸收点"}
+      ],
+
+      "Measurements": [ 
+        {
+          "Label": "alveolar_bone_loss_mesial", 
+          "Type": "Distance", 
+          "Value_mm": 2.5, 
+          "Value_px": 5,   
+          "StartKeyPointID": "16_cej_m", 
+          "EndKeyPointID": "16_abc_m", 
+          "Confidence": 0.95 
+        }
+      ],
+      
+      "Pathologies": [ 
+        {
+          "Label": "crown", 
+          "Confidence": 0.97, 
+          "BBox": [100, 300, 120, 330], 
+          "RelatedKeyPoints": ["16_cej_m"], 
+          "RelatedPathologies": [] 
+        }
+      ]
+    },
+    {
+      "FDI": "36", 
+      "Confidence": 0.95, 
+      "SegmentationMask": { "Label": "tooth-36" },
+      "Properties": [ 
+        {"Value": "periapical_lesion", "Description": "根尖周病变", "Confidence": 0.75}, 
+        {"Value": "caries", "Description": "龋齿", "Confidence": 0.90}, 
+        {"Value": "restoration", "Description": "填充体", "Confidence": 0.98} 
+      ],
+      "RootCondition": { 
+        "Absorption": false, "Confidence": 0.99, 
+        "Morphology": 0, "Confidence_Morphology": 0.99, 
+        "AlveolarBoneAbsorption": {
+          "Level": 0, 
+          "Detail": "",
+          "Confidence": 0.99
+        }
+      },
+      "Pathologies": [ 
+        {
+          "Label": "caries", 
+          "Confidence": 0.90,
+          "BBox": [0,0,0,0],
+          "RelatedKeyPoints": [],
+          "RelatedPathologies": ["p36_restoration"] 
+        },
+        {
+          "ID": "p36_restoration", 
+          "Label": "restoration", 
+          "Confidence": 0.98,
+          "BBox": [0,0,0,0],
+          "RelatedKeyPoints": [],
+          "RelatedPathologies": []
+        }
+      ]
+    },
+    {
+      "FDI": "48",
+      "Confidence": 0.92, 
+      "SegmentationMask": { "Label": "tooth-48" },
+      "Properties": [ 
+        {"Value": "impacted", "Description": "阻生", "Confidence": 0.99}, 
+        {"Value": "horizontal", "Description": "水平阻生", "Confidence": 0.98}, 
+        {"Value": "periapical_lesion", "Description": "根尖周低密度影", "Confidence": 0.80} 
+      ],
+      "RootCondition": { 
+        "Absorption": false, "Confidence": 0.99, 
+        "Morphology": 0, "Confidence_Morphology": 0.99, 
+        "AlveolarBoneAbsorption": {
+          "Level": 0, 
+          "Detail": "",
+          "Confidence": 0.99
+        }
+      },
+      "KeyPoints": [],
+      "Measurements": [],
+      "Pathologies": [] 
+    }
+  ]
+}
