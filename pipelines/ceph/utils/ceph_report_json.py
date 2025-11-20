@@ -42,7 +42,7 @@ def generate_standard_output(
             "MissingLandmarks": landmark_section["MissingLabels"],
         },
         "MissingPointHandling": {
-            "Method": "SkipMeasurement",
+            "Method": "插值估算",
             "ConfidenceThreshold": 0.15,
             "InterpolationAllowed": False,
         },
@@ -102,7 +102,6 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
         entries.append(
             {
                 "Label": label,
-                #"Key": key,
                 "X": x_value,
                 "Y": y_value,
                 "Confidence": 0.00 if status == "Missing" else round(confidence, 4),
