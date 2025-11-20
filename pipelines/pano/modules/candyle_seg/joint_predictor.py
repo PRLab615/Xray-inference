@@ -185,19 +185,21 @@ class JointPredictor:
             # 2. 后处理 (得到纯净的几何数据 raw_features 和 analysis)
             raw_results = self.pre_post.postprocess(outputs[0])
 
-            # 3. 【集成测试关键点】调用 Utils 进行格式化
-            logger.info(">>> [3/3] Formatting Report...")
+            return  raw_results
 
-            standard_joint_data = pano_report_utils.format_joint_report(
-                raw_features=raw_results.get('raw_features', {}),
-                analysis=raw_results.get('analysis', {})
-            )
-
-            # 4. 返回结果
-            return {
-                "standard_data": standard_joint_data,
-                "debug_raw": raw_results  # 保留原始数据用于 Debug
-            }
+            # # 3. 【集成测试关键点】调用 Utils 进行格式化
+            # logger.info(">>> [3/3] Formatting Report...")
+            #
+            # standard_joint_data = pano_report_utils.format_joint_report(
+            #     raw_features=raw_results.get('raw_features', {}),
+            #     analysis=raw_results.get('analysis', {})
+            # )
+            #
+            # # 4. 返回结果
+            # return {
+            #     "standard_data": standard_joint_data,
+            #     "debug_raw": raw_results  # 保留原始数据用于 Debug
+            # }
 
         except Exception as e:
             logger.error(f"ONNX Prediction error: {e}")
@@ -206,40 +208,40 @@ class JointPredictor:
             return {}
 
 
-# --- 自动化验证脚本 (无需真实图片) ---
-if __name__ == "__main__":
-    print("\n" + "=" * 50)
-    print("   开始 JointPredictor (ONNX Segmentation) 全流程验证")
-    print("=" * 50 + "\n")
-
-    # 1. 生成虚拟图片
-    print("📸 生成虚拟测试图片 (Random Noise)...")
-    dummy_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-
-    # 2. 初始化预测器
-    predictor = JointPredictor()
-
-    # 3. 执行预测
-    if predictor.session:
-        result = predictor.predict(dummy_image)
-
-        print("\n" + "-" * 20 + " 验证结果 " + "-" * 20)
-        if result:
-            # 打印部分结果验证格式
-            print("✅ 推理成功！")
-            print("JSON 输出预览 (Standard Data):")
-            print(json.dumps(result.get('standard_data'), indent=2, ensure_ascii=False))
-
-            print("\n💡 关键字段解释：")
-            print(
-                f"   - 左髁突形态 (Morphology): {result['standard_data']['CondyleAssessment']['condyle_Left']['Morphology']} (1=吸收)")
-            print(
-                f"   - 右髁突形态 (Morphology): {result['standard_data']['CondyleAssessment']['condyle_Right']['Morphology']} (0=正常)")
-            print(
-                f"   - 总体对称性 (OverallSymmetry): {result['standard_data']['CondyleAssessment']['OverallSymmetry']} (非0代表不对称)")
-        else:
-            print("❌ 推理返回为空，请检查日志错误。")
-    else:
-        print("❌ 模型初始化失败，无法进行推理。")
-
-    print("\n" + "=" * 50)
+# # --- 自动化验证脚本 (无需真实图片) ---
+# if __name__ == "__main__":
+#     print("\n" + "=" * 50)
+#     print("   开始 JointPredictor (ONNX Segmentation) 全流程验证")
+#     print("=" * 50 + "\n")
+#
+#     # 1. 生成虚拟图片
+#     print("📸 生成虚拟测试图片 (Random Noise)...")
+#     dummy_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
+#
+#     # 2. 初始化预测器
+#     predictor = JointPredictor()
+#
+#     # 3. 执行预测
+#     if predictor.session:
+#         result = predictor.predict(dummy_image)
+#
+#         print("\n" + "-" * 20 + " 验证结果 " + "-" * 20)
+#         if result:
+#             # 打印部分结果验证格式
+#             print("✅ 推理成功！")
+#             print("JSON 输出预览 (Standard Data):")
+#             print(json.dumps(result.get('standard_data'), indent=2, ensure_ascii=False))
+#
+#             print("\n💡 关键字段解释：")
+#             print(
+#                 f"   - 左髁突形态 (Morphology): {result['standard_data']['CondyleAssessment']['condyle_Left']['Morphology']} (1=吸收)")
+#             print(
+#                 f"   - 右髁突形态 (Morphology): {result['standard_data']['CondyleAssessment']['condyle_Right']['Morphology']} (0=正常)")
+#             print(
+#                 f"   - 总体对称性 (OverallSymmetry): {result['standard_data']['CondyleAssessment']['OverallSymmetry']} (非0代表不对称)")
+#         else:
+#             print("❌ 推理返回为空，请检查日志错误。")
+#     else:
+#         print("❌ 模型初始化失败，无法进行推理。")
+#
+#     print("\n" + "=" * 50)

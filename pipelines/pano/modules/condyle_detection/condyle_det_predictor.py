@@ -193,16 +193,19 @@ class JointPredictor:
                 "left": best_left_feature,
                 "right": best_right_feature
             }
+            return grouped_features
 
-            standard_data = pano_report_utils.format_joint_report(
-                raw_features=grouped_features,
-                analysis=analysis
-            )
+            # standard_data = pano_report_utils.format_joint_report(
+            #     raw_features=grouped_features,
+            #     analysis=analysis
+            # )
 
-            return {
-                "standard_data": standard_data,
-                "debug_raw": all_raw_features
-            }
+
+            # return {
+            #     "standard_data": standard_data,
+            #     "debug_raw": all_raw_features
+            # }
+
 
         except Exception as e:
             logger.error(f"❌ Prediction error: {e}")
@@ -211,39 +214,39 @@ class JointPredictor:
             return {}
 
 
-# --- 自动化验证脚本 (无需真实图片) ---
-if __name__ == "__main__":
-    print("\n" + "=" * 50)
-    print("   开始 JointPredictor 全流程验证")
-    print("=" * 50 + "\n")
-
-    # 1. 生成虚拟图片 (模拟一张 640x640 的 3通道彩色图)
-    print("📸 生成虚拟测试图片 (Random Noise)...")
-    dummy_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-
-    # 2. 初始化预测器
-    predictor = JointPredictor()
-
-    # 3. 执行预测
-    if predictor.model:
-        result = predictor.predict(dummy_image)
-
-        print("\n" + "-" * 20 + " 验证结果 " + "-" * 20)
-        if result:
-            # 打印部分结果验证格式
-            print("✅ 推理成功！")
-            print("JSON 输出预览 (Standard Data):")
-            print(json.dumps(result.get('standard_data'), indent=2, ensure_ascii=False))
-
-            detected_num = len(result.get('debug_raw', []))
-            if detected_num == 0:
-                print("\n⚠️  注: 这是一个随机噪声虚拟图，未检测到目标是正常的 (Detected 0)。")
-                print("    这证明了: 下载->加载->推理->输出 流程是通畅的。")
-            else:
-                print(f"\n⚠️  哇！在噪声图中检测到了 {detected_num} 个幻觉目标 (False Positives)，流程通畅。")
-        else:
-            print("❌ 推理返回为空，请检查日志错误。")
-    else:
-        print("❌ 模型初始化失败，无法进行推理。")
-
-    print("\n" + "=" * 50)
+# # --- 自动化验证脚本 (无需真实图片) ---
+# if __name__ == "__main__":
+#     print("\n" + "=" * 50)
+#     print("   开始 JointPredictor 全流程验证")
+#     print("=" * 50 + "\n")
+#
+#     # 1. 生成虚拟图片 (模拟一张 640x640 的 3通道彩色图)
+#     print("📸 生成虚拟测试图片 (Random Noise)...")
+#     dummy_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
+#
+#     # 2. 初始化预测器
+#     predictor = JointPredictor()
+#
+#     # 3. 执行预测
+#     if predictor.model:
+#         result = predictor.predict(dummy_image)
+#
+#         print("\n" + "-" * 20 + " 验证结果 " + "-" * 20)
+#         if result:
+#             # 打印部分结果验证格式
+#             print("✅ 推理成功！")
+#             print("JSON 输出预览 (Standard Data):")
+#             print(json.dumps(result.get('standard_data'), indent=2, ensure_ascii=False))
+#
+#             detected_num = len(result.get('debug_raw', []))
+#             if detected_num == 0:
+#                 print("\n⚠️  注: 这是一个随机噪声虚拟图，未检测到目标是正常的 (Detected 0)。")
+#                 print("    这证明了: 下载->加载->推理->输出 流程是通畅的。")
+#             else:
+#                 print(f"\n⚠️  哇！在噪声图中检测到了 {detected_num} 个幻觉目标 (False Positives)，流程通畅。")
+#         else:
+#             print("❌ 推理返回为空，请检查日志错误。")
+#     else:
+#         print("❌ 模型初始化失败，无法进行推理。")
+#
+#     print("\n" + "=" * 50)

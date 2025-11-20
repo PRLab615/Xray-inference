@@ -108,17 +108,15 @@ class MandiblePredictor:
             # pre_post 返回: { "analysis": {...}, "mask_shape": ..., "raw_features": ... }
             raw_results = self.pre_post.postprocess(raw_logits)
 
-            # 4. 【关键步骤】调用 Utils 进行标准化格式化
-            # 将 raw_results['analysis'] 转换为符合接口定义的 JSON 片段
-            standard_data = pano_report_utils.format_mandible_report(
-                analysis_result=raw_results.get("analysis", {})
-            )
+            return raw_results
 
-            return {
-                "mandible_standard_data": standard_data,
-                "mask_shape": raw_results.get("mask_shape"),
-                "debug_metrics": raw_results.get("analysis", {}).get("Metrics")
-            }
+            # # 4. 【关键步骤】调用 Utils 进行标准化格式化
+            # # 将 raw_results['analysis'] 转换为符合接口定义的 JSON 片段
+            # standard_data = pano_report_utils.format_mandible_report(
+            #     analysis_result=raw_results.get("analysis", {})
+            # )
+            #
+
 
         except Exception as e:
             logger.error(f"Mandible Prediction error: {e}")
