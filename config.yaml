@@ -42,3 +42,31 @@ image_download:
     - .png
     - .dcm
 
+# Pipeline/模型配置（v3.1）
+pipelines:
+  panoramic:
+    preload: true                # Worker 启动时即初始化全景片 Pipeline
+    modules: {}                  # 全景片模块配置（暂无子模块）
+  
+  cephalometric:
+    preload: true                # Worker 启动时即初始化侧位片 Pipeline
+    modules:
+      point:
+        description: "标志点检测模型"
+        weights_key: "weights/cephalometric/point_best_19.pt"
+        weights_force_download: false
+        device: "0"
+        image_size: 1024
+        conf: 0.25
+        iou: 0.6
+        max_det: 1
+      # seg:  # 未实现的模块直接注释掉，而不是用 enabled: false
+      #   description: "轮廓/结构分割模型（预留）"
+      #   weights_key: "weights/cephalometric/seg/best.pt"
+      #   weights_force_download: false
+      #   device: "0"
+      #   input_size: 1024
+      #   conf: 0.35
+      #   iou: 0.5
+      #   classes: []
+
