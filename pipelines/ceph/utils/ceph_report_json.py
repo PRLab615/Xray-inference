@@ -42,7 +42,7 @@ def generate_standard_output(
             "MissingLandmarks": landmark_section["MissingLabels"],
         },
         "MissingPointHandling": {
-            "Method": "SkipMeasurement",
+            "Method": "插值估算",
             "ConfidenceThreshold": 0.15,
             "InterpolationAllowed": False,
         },
@@ -102,10 +102,9 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
         entries.append(
             {
                 "Label": label,
-                "Key": key,
                 "X": x_value,
                 "Y": y_value,
-                "Confidence": round(confidence, 4),
+                "Confidence": 0.00 if status == "Missing" else round(confidence, 4),
                 "Status": status,
             }
         )
@@ -126,22 +125,29 @@ def _build_measurement_section(measurements: Dict[str, Dict[str, Any]]) -> List[
     section: List[Dict[str, Any]] = []
 
     for name, payload in measurements.items():
+        value = payload.get("value")
+        unit = payload.get("unit", "")
+
+        conclusion = payload.get("conclusion")
+        confidence = payload.get("confidence", 0.0)
+
+
+        if unit == "°":
+            value_field = {"Angle": value}
+        elif unit == "%":
+            value_field = {"Ratio": value}
+        else:
+            value_field = {"Angle": value}
+
+
+        level = 0 if conclusion is None or "正常" in str(conclusion) else 1
+
         entry = {
-            "Name": name,
-            "Value": payload.get("value"),
-            "Unit": payload.get("unit"),
-            "Conclusion": payload.get("conclusion"),
-            "Status": payload.get("status", "ok"),
+            "Label": name,
+            **value_field,
+            "Level": level,
+            "Confidence": round(confidence, 4),
         }
-
-        extra_fields = {
-            key: value
-            for key, value in payload.items()
-            if key not in {"value", "unit", "conclusion", "status"}
-        }
-        if extra_fields:
-            entry["Metadata"] = extra_fields
-
         section.append(entry)
 
     return section
