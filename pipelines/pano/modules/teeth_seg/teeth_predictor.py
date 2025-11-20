@@ -16,13 +16,13 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 # 导入
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR, load_model_weights
+from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
 from pipelines.pano.modules.teeth_seg.pre_post import process_teeth_masks  # 后处理
 
 logger = logging.getLogger(__name__)
 
 # YOLO 模型 S3 路径 (YOLOv11 实例分割模型)
-YOLO_S3_PATH = "weights/panoramic/1116_teeth_seg.pt"  # 假设模型路径
+YOLO_S3_PATH = "weights/panoramic/1116_teeth_seg.pt"
 
 
 class TeethSegmentationModule:
@@ -44,16 +44,20 @@ class TeethSegmentationModule:
     def _load_model(self) -> YOLO:
         """
         加载 YOLOv11 实例分割模型。
+        
+        核心逻辑:
+        1. 检查本地是否存在权重文件
+        2. 如果不存在，从 MinIO 下载
+        3. 使用 YOLO(path) 加载模型
         """
-        # 触发 MinIO 下载
-        weights_state_dict = load_model_weights(YOLO_S3_PATH, device='cpu', force_download=False)
+        # 1. 构造本地文件路径
         local_weight_path = os.path.join(LOCAL_WEIGHTS_DIR, YOLO_S3_PATH)
 
-        if weights_state_dict is None or not os.path.exists(local_weight_path):
-            logger.error(f"Teeth segmentation weights not found: {local_weight_path}")
-            raise FileNotFoundError(f"Teeth model file not found after download.")
+        # 2. 确保权重文件存在（下载或使用缓存）
+        self._ensure_weight_exists(local_weight_path)
 
         try:
+            # 3. 使用 Ultralytics YOLO 框架加载模型
             logger.info(f"Initializing Teeth YOLO model from: {local_weight_path} on {self.device}")
             model = YOLO(local_weight_path)
             model.to(self.device)
@@ -63,6 +67,27 @@ class TeethSegmentationModule:
         except Exception as e:
             logger.error(f"Failed to load Teeth model: {e}")
             raise
+
+    def _ensure_weight_exists(self, local_weight_path: str):
+        """
+        检查本地缓存，不存在则从 MinIO 下载
+        """
+        local_folder = os.path.dirname(local_weight_path)
+        if not os.path.exists(local_folder):
+            os.makedirs(local_folder)
+
+        if not os.path.exists(local_weight_path):
+            logger.info(f"Cache miss. Downloading from S3: {YOLO_S3_PATH} ...")
+            try:
+                s3 = get_s3_client()
+                # 直接下载文件到本地路径
+                s3.download_file(S3_BUCKET_NAME, YOLO_S3_PATH, local_weight_path)
+                logger.info("Download completed.")
+            except Exception as e:
+                logger.error(f"Download failed. Please check S3 config. Error: {e}")
+                raise
+        else:
+            logger.info(f"Cache hit. Found local weights at: {local_weight_path}")
 
     def predict(self, image: Image.Image) -> Dict[str, Any]:
         """
@@ -115,9 +140,19 @@ class TeethSegmentationModule:
 
 def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
     """
-    调用后处理，生成缺牙/智齿/乳牙报告。
+    调用后处理，生成缺牙/智齿/乳牙报告，并保留原始掩码数据。
     """
-    return process_teeth_masks(raw_results["masks"], raw_results["class_names"], raw_results["original_shape"])
+    processed_results = process_teeth_masks(
+        raw_results["masks"], 
+        raw_results["class_names"], 
+        raw_results["original_shape"]
+    )
+    
+    # 保留原始掩码数据，以便后续生成 ToothAnalysis
+    processed_results["raw_masks"] = raw_results["masks"]
+    processed_results["original_shape"] = raw_results["original_shape"]
+    
+    return processed_results
 
 
 if __name__ == "__main__":

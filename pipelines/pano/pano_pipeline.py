@@ -8,10 +8,12 @@ from pipelines.base_pipeline import BasePipeline
 from pipelines.pano.utils import pano_report_utils
 import logging
 
-# 导入三个模块的预测器
-from pipelines.pano.modules.candyle_seg import JointPredictor as CondyleSegPredictor
+# 导入五个模块的预测器
+from pipelines.pano.modules.condyle_seg import JointPredictor as CondyleSegPredictor
 from pipelines.pano.modules.condyle_detection import JointPredictor as CondyleDetPredictor
 from pipelines.pano.modules.mandible_seg import MandiblePredictor
+from pipelines.pano.modules.implant_detect import ImplantDetectionModule
+from pipelines.pano.modules.teeth_seg import TeethSegmentationModule, process_teeth_results
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +47,10 @@ class PanoPipeline(BasePipeline):
         self.pipeline_type = "panoramic"
         self.modules = {}  # 存储所有已初始化的模块实例
         
-        # 初始化三个核心模块
+        # 初始化五个核心模块
         logger.info("Initializing Pano Pipeline modules...")
         try:
-            # 1. 髁突分割模块 (candyle_seg)
+            # 1. 髁突分割模块 (condyle_seg)
             self.modules['condyle_seg'] = CondyleSegPredictor()
             logger.info("  ✓ Condyle Segmentation module loaded")
             
@@ -59,6 +61,14 @@ class PanoPipeline(BasePipeline):
             # 3. 下颌骨分割模块 (mandible_seg)
             self.modules['mandible'] = MandiblePredictor()
             logger.info("  ✓ Mandible Segmentation module loaded")
+            
+            # 4. 种植体检测模块 (implant_detect)
+            self.modules['implant_detect'] = ImplantDetectionModule()
+            logger.info("  ✓ Implant Detection module loaded")
+            
+            # 5. 牙齿分割模块 (teeth_seg)
+            self.modules['teeth_seg'] = TeethSegmentationModule()
+            logger.info("  ✓ Teeth Segmentation module loaded")
             
         except Exception as e:
             logger.error(f"Failed to initialize some modules: {e}")
@@ -107,6 +117,12 @@ class PanoPipeline(BasePipeline):
             # 2.3 下颌骨分割
             mandible_results = self._run_mandible_seg(image_path)
             
+            # 2.4 种植体检测
+            implant_results = self._run_implant_detect(image_path)
+            
+            # 2.5 牙齿分割
+            teeth_results = self._run_teeth_seg(image_path)
+            
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
@@ -118,6 +134,8 @@ class PanoPipeline(BasePipeline):
         logger.debug(f"[Pipeline] condyle_seg_results keys: {list(condyle_seg_results.keys()) if condyle_seg_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] condyle_det_results keys: {list(condyle_det_results.keys()) if condyle_det_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] mandible_results keys: {list(mandible_results.keys()) if mandible_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] implant_results keys: {list(implant_results.keys()) if implant_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] teeth_results keys: {list(teeth_results.keys()) if teeth_results else 'EMPTY'}")
         
         # 如果检测模块有结果，打印详细信息
         if condyle_det_results:
@@ -127,9 +145,11 @@ class PanoPipeline(BasePipeline):
         inference_results = self._collect_results(
             condyle_seg=condyle_seg_results,
             condyle_det=condyle_det_results,
-            mandible=mandible_results
+            mandible=mandible_results,
+            implant=implant_results,
+            teeth=teeth_results
         )
-        logger.info(f"Results collected: condyle_seg={bool(condyle_seg_results)}, condyle_det={bool(condyle_det_results)}, mandible={bool(mandible_results)}")
+        logger.info(f"Results collected: condyle_seg={bool(condyle_seg_results)}, condyle_det={bool(condyle_det_results)}, mandible={bool(mandible_results)}, implant={bool(implant_results)}, teeth={bool(teeth_results)}")
         
         # 4. 生成符合规范的 JSON
         logger.info("Generating standard output...")
@@ -247,6 +267,80 @@ class PanoPipeline(BasePipeline):
             logger.error(traceback.format_exc())
             return {}
     
+    def _run_implant_detect(self, image_path: str) -> dict:
+        """
+        执行种植体检测
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 种植体检测结果
+                包含 implant_boxes 和 quadrant_counts
+        """
+        self._log_step("种植体检测", "使用 YOLOv11 进行种植体检测")
+        
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting implant detection for: {image_path}")
+            
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            results = self.modules['implant_detect'].predict(image)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Implant detection completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Implant detection failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _run_teeth_seg(self, image_path: str) -> dict:
+        """
+        执行牙齿分割
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 牙齿分割结果（经过后处理）
+                包含缺牙、智齿、乳牙等分析结果
+        """
+        self._log_step("牙齿分割", "使用 YOLOv11 进行牙齿实例分割")
+        
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting teeth segmentation for: {image_path}")
+            
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            # 执行推理
+            raw_results = self.modules['teeth_seg'].predict(image)
+            
+            # 后处理：生成缺牙、智齿、乳牙等报告
+            processed_results = process_teeth_results(raw_results)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Teeth segmentation completed in {elapsed:.2f}s")
+            return processed_results
+        except Exception as e:
+            logger.error(f"Teeth segmentation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
     def _collect_results(self, **module_results) -> dict:
         """
         收集所有子模块的推理结果
@@ -256,6 +350,8 @@ class PanoPipeline(BasePipeline):
                 - condyle_seg: 髁突分割结果
                 - condyle_det: 髁突检测结果
                 - mandible: 下颌骨分割结果
+                - implant: 种植体检测结果
+                - teeth: 牙齿分割结果
             
         Returns:
             dict: 汇总的推理结果
@@ -264,7 +360,9 @@ class PanoPipeline(BasePipeline):
             inference_results = {
                 "condyle_seg": {...},
                 "condyle_det": {...},
-                "mandible": {...}
+                "mandible": {...},
+                "implant": {...},
+                "teeth": {...}
             }
             
         Note:
@@ -277,6 +375,8 @@ class PanoPipeline(BasePipeline):
             "condyle_seg": module_results.get("condyle_seg", {}),
             "condyle_det": module_results.get("condyle_det", {}),
             "mandible": module_results.get("mandible", {}),
+            "implant": module_results.get("implant", {}),
+            "teeth": module_results.get("teeth", {}),
         }
         
         return inference_results

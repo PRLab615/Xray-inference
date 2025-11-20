@@ -43,7 +43,7 @@ def process_teeth_masks(masks: np.ndarray, class_names: List[str], original_shap
         original_shape: (H, W)
 
     Returns:
-        Dict: 报告，包括每个象限牙位状态、缺牙列表、智齿列表、乳牙列表
+        Dict: 报告，包括每个象限牙位状态、缺牙列表、智齿列表、乳牙列表、检测到的牙齿列表
     """
     if len(class_names) == 0:
         return {
@@ -51,12 +51,23 @@ def process_teeth_masks(masks: np.ndarray, class_names: List[str], original_shap
             "missing_teeth": ["所有牙位缺牙"],
             "wisdom_teeth": [],
             "deciduous_teeth": [],
-            "quadrant_summary": {q: 0 for q in QUADRANT_TEETH}
+            "detected_teeth": []
         }
 
-    # 1. 解析检测类 ID
+    # 1. 解析检测类 ID 并构建检测到的牙齿列表
     detected_ids = set(parse_tooth_id(name) for name in class_names if parse_tooth_id(name) > 0)
     detected_classes = list(detected_ids)
+    
+    # 构建检测到的牙齿详细信息（包含 FDI 和对应的索引）
+    detected_teeth = []
+    for idx, name in enumerate(class_names):
+        fdi = parse_tooth_id(name)
+        if fdi > 0:
+            detected_teeth.append({
+                "fdi": str(fdi),
+                "class_name": name,
+                "mask_index": idx  # 对应 masks 数组的索引
+            })
 
     # 2. 象限缺牙判断 (仅尾号1-7)
     missing_teeth = []
@@ -92,8 +103,6 @@ def process_teeth_masks(masks: np.ndarray, class_names: List[str], original_shap
         "report": report,
         "missing_teeth": missing_teeth,
         "wisdom_teeth": wisdom_teeth,
-        "deciduous_teeth": deciduous_teeth
-        #"detected_classes": [f"tooth-{id}" for id in detected_classes]
-        # "quadrant_summary": quadrant_summary,  # 每个象限检测牙数
-        # 返回名称
+        "deciduous_teeth": deciduous_teeth,
+        "detected_teeth": detected_teeth  # 新增：返回所有检测到的牙齿
     }

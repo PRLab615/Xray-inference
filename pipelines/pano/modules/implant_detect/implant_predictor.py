@@ -25,7 +25,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 # --- 现在可以放心导入了 ---
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR, load_model_weights
+from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
 from pipelines.pano.modules.implant_detect.pre_post import process_detections
 
 logger = logging.getLogger(__name__)
@@ -55,26 +55,18 @@ class ImplantDetectionModule:
         加载 YOLOv11 模型。
 
         核心逻辑:
-        1. 调用 load_model_weights 触发 MinIO 下载。
-        2. 忽略其返回值 (state_dict)，因为 YOLO 需要文件路径。
-        3. 构造本地路径，用 YOLO(path) 加载模型。
+        1. 检查本地是否存在权重文件
+        2. 如果不存在，从 MinIO 下载
+        3. 使用 YOLO(path) 加载模型
         """
-
-        # 1. 触发 MinIO 下载 (利用其副作用: 文件将被下载到 local_weight_path)
-        # 这里的返回值是 state_dict，我们不需要它，但它的执行保证了文件存在。
-        weights_state_dict = load_model_weights(YOLO_S3_PATH, device='cpu', force_download=False)
-
-        # 2. 构造本地文件路径 (load_model_weights 的副作用)
+        # 1. 构造本地文件路径
         local_weight_path = os.path.join(LOCAL_WEIGHTS_DIR, YOLO_S3_PATH)
 
-        # 检查文件是否存在，如果下载失败 (weights_state_dict is None)，则抛出错误
-        if weights_state_dict is None or not os.path.exists(local_weight_path):
-            logger.error(f"YOLOv11 implant weights not found or download failed: {local_weight_path}")
-            # 这里的异常是必要的，因为没有模型无法继续
-            raise FileNotFoundError(f"YOLOv11 implant weights file not found after download attempt.")
+        # 2. 确保权重文件存在（下载或使用缓存）
+        self._ensure_weight_exists(local_weight_path)
 
         try:
-            # 3. 使用 Ultralytics YOLO 框架加载模型 (需要本地文件路径)
+            # 3. 使用 Ultralytics YOLO 框架加载模型
             logger.info(f"Initializing Implant YOLO model from path: {local_weight_path} on {self.device}")
             model = YOLO(local_weight_path)
             model.to(self.device)
@@ -83,9 +75,29 @@ class ImplantDetectionModule:
             return model
 
         except Exception as e:
-            logger.error(
-                f"Failed to load or initialize YOLOv11 Implant model from path: {local_weight_path}. Error: {e}")
+            logger.error(f"Failed to load or initialize YOLOv11 Implant model from path: {local_weight_path}. Error: {e}")
             raise
+
+    def _ensure_weight_exists(self, local_weight_path: str):
+        """
+        检查本地缓存，不存在则从 MinIO 下载
+        """
+        local_folder = os.path.dirname(local_weight_path)
+        if not os.path.exists(local_folder):
+            os.makedirs(local_folder)
+
+        if not os.path.exists(local_weight_path):
+            logger.info(f"Cache miss. Downloading from S3: {YOLO_S3_PATH} ...")
+            try:
+                s3 = get_s3_client()
+                # 直接下载文件到本地路径
+                s3.download_file(S3_BUCKET_NAME, YOLO_S3_PATH, local_weight_path)
+                logger.info("Download completed.")
+            except Exception as e:
+                logger.error(f"Download failed. Please check S3 config. Error: {e}")
+                raise
+        else:
+            logger.info(f"Cache hit. Found local weights at: {local_weight_path}")
 
     @torch.no_grad()
     def predict(self, image: Image.Image) -> Dict[str, Any]:

@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-全景片报告生成工具 (Assembler) - 接口严格对齐版
+全景片报告生成工具 (Assembler) - v2.0
+严格对齐 example_pano_result.json 规范
 """
 
 import logging
 import datetime
-from typing import Dict, Any
+import numpy as np
+from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,25 @@ MORPHOLOGY_MAP = {
     1: {"detail": "髁突形态吸收", "label": "吸收"},
     2: {"detail": "髁突形态疑似异常", "label": "疑似"},
 }
+
+# 象限数字到中文映射
+QUADRANT_MAP = {
+    1: "第一象限",
+    2: "第二象限",
+    3: "第三象限",
+    4: "第四象限",
+}
+
+# 智齿 FDI 编号
+WISDOM_TEETH_FDI = ["18", "28", "38", "48"]
+
+# 乳牙 FDI 编号范围 (51-85)
+DECIDUOUS_TEETH_FDI = [
+    "51", "52", "53", "54", "55",  # 上颌右侧乳牙
+    "61", "62", "63", "64", "65",  # 上颌左侧乳牙
+    "71", "72", "73", "74", "75",  # 下颌左侧乳牙
+    "81", "82", "83", "84", "85"   # 下颌右侧乳牙
+]
 
 
 # =============================================================================
@@ -37,36 +58,52 @@ def generate_standard_output(
             - condyle_seg: 髁突分割结果
             - condyle_det: 髁突检测结果
             - mandible: 下颌骨分割结果
+            - implant: 种植体检测结果
+            - teeth: 牙齿分割结果
+    
+    Returns:
+        dict: 完整的全景片分析报告
     """
-    # 1. 初始化基础骨架 (严格按照接口定义顺序)
-    report = {
-        "Metadata": _format_metadata(metadata),
-        "AnatomyResults": [],  # TODO: 等牙齿模块集成
-        "JointAndMandible": _get_joint_mandible_default(),
-        "MaxillarySinus": [],  # 格式确认但无模型，先空数组
-        "PeriodontalCondition": _get_periodontal_default(),  # TODO: 等牙齿模块集成
-        "MissingTeeth": [],  # TODO: 等牙齿模块集成
-        "ThirdMolarSummary": {},  # TODO: 等牙齿模块集成
-        "ImplantAnalysis": _get_implant_default(),  # TODO: 等种植体模块集成
-        "ToothAnalysis": []  # TODO: 等牙齿模块集成
-    }
-
-    # 2. 组装髁突部分 (CondyleAssessment)
-    # 合并 condyle_seg 和 condyle_det 的结果
+    # 提取各模块数据
     condyle_seg = inference_results.get("condyle_seg", {})
     condyle_det = inference_results.get("condyle_det", {})
+    mandible_res = inference_results.get("mandible", {})
+    implant_res = inference_results.get("implant", {})
+    teeth_res = inference_results.get("teeth", {})
+
+    # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
+    report = {
+        "Metadata": _format_metadata(metadata),
+        "AnatomyResults": [],  # 将从 condyle_seg 填充
+        "JointAndMandible": _get_joint_mandible_default(),
+        "MaxillarySinus": _get_maxillary_sinus_mock(),  # Mock: 无模型
+        "PeriodontalCondition": _get_periodontal_mock(),  # Mock: 无模型
+        "MissingTeeth": [],  # 真实数据：从 teeth 模块填充
+        "ThirdMolarSummary": {},  # 真实数据：从 teeth 模块填充
+        "ImplantAnalysis": _get_implant_default(),  # 真实数据：从 implant 模块填充
+        "RootTipDensityAnalysis": _get_root_tip_density_mock(),  # Mock: 无模型
+        "ToothAnalysis": []  # 部分真实：从 teeth 模块填充（但 Properties 为 mock）
+    }
+
+    # 2. 组装 AnatomyResults (髁突分割掩码) - 真实数据
+    logger.info(f"[generate_standard_output] condyle_seg exists: {bool(condyle_seg)}")
+    if condyle_seg:
+        logger.info(f"[generate_standard_output] Calling format_anatomy_results...")
+        anatomy_data = format_anatomy_results(condyle_seg)
+        logger.info(f"[generate_standard_output] AnatomyResults count: {len(anatomy_data)}")
+        report["AnatomyResults"] = anatomy_data
+
+    # 3. 组装髁突部分 (CondyleAssessment) - 真实数据
     
     if condyle_seg or condyle_det:
         condyle_data = format_joint_report(condyle_seg, condyle_det)
-        # 只更新 CondyleAssessment 部分，不覆盖下颌骨字段
         report["JointAndMandible"]["CondyleAssessment"] = condyle_data["CondyleAssessment"]
 
-    # 3. 组装下颌骨部分 (Mandible - 升支/下颌角部分)
-    mandible_res = inference_results.get("mandible", {})
+    # 4. 组装下颌骨部分 (Mandible) - 真实数据
     if mandible_res and "analysis" in mandible_res:
         mandible_data = format_mandible_report(mandible_res["analysis"])
         
-        # 合并下颌骨数据，注意 Detail 的拼接
+        # 合并下颌骨数据
         existing_detail = report["JointAndMandible"].get("Detail", "")
         new_detail = mandible_data.get("Detail", "")
         
@@ -80,16 +117,89 @@ def generate_standard_output(
         elif new_detail:
             report["JointAndMandible"]["Detail"] = new_detail
 
+    # 5. 组装种植体分析 (ImplantAnalysis) - 真实数据
+    if implant_res:
+        implant_data = format_implant_report(implant_res)
+        report["ImplantAnalysis"] = implant_data
+
+    # 6. 组装牙齿分割结果 (MissingTeeth, ThirdMolarSummary, ToothAnalysis) - 真实数据
+    if teeth_res:
+        teeth_data = format_teeth_report(teeth_res)
+        report["MissingTeeth"] = teeth_data["MissingTeeth"]
+        report["ThirdMolarSummary"] = teeth_data["ThirdMolarSummary"]
+        report["ToothAnalysis"] = teeth_data["ToothAnalysis"]
+
     return report
 
 
 # =============================================================================
-# 2. 格式化函数 (Predictor 调用)
+# 2. 格式化函数 (真实数据处理)
 # =============================================================================
+
+def format_anatomy_results(condyle_seg: dict) -> List[dict]:
+    """
+    格式化 AnatomyResults（解剖结构分割掩码）- 髁突部分
+    
+    Args:
+        condyle_seg: 髁突分割结果 {raw_features: {left: {...}, right: {...}}, ...}
+    
+    Returns:
+        list: AnatomyResults 列表
+    """
+    anatomy_results = []
+    
+    # 调试日志
+    logger.info(f"[format_anatomy_results] condyle_seg keys: {list(condyle_seg.keys()) if condyle_seg else 'EMPTY'}")
+    
+    seg_features = condyle_seg.get("raw_features", {})
+    logger.info(f"[format_anatomy_results] seg_features keys: {list(seg_features.keys()) if seg_features else 'EMPTY'}")
+    
+    seg_left = seg_features.get("left", {})
+    seg_right = seg_features.get("right", {})
+    
+    logger.info(f"[format_anatomy_results] seg_left exists: {seg_left.get('exists', False)}, keys: {list(seg_left.keys())}")
+    logger.info(f"[format_anatomy_results] seg_right exists: {seg_right.get('exists', False)}, keys: {list(seg_right.keys())}")
+    
+    # 左侧髁突
+    if seg_left.get("exists", False):
+        left_mask = seg_left.get("mask", None)
+        left_contour = seg_left.get("contour", [])
+        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
+        
+        anatomy_results.append({
+            "Label": "condyle_left",
+            "Confidence": round(seg_left.get("confidence", 0.0), 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Label": "condyle_left",
+                "Coordinates": left_contour if left_contour else [],
+                "SerializedMask": left_rle
+            }
+        })
+    
+    # 右侧髁突
+    if seg_right.get("exists", False):
+        right_mask = seg_right.get("mask", None)
+        right_contour = seg_right.get("contour", [])
+        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
+        
+        anatomy_results.append({
+            "Label": "condyle_right",
+            "Confidence": round(seg_right.get("confidence", 0.0), 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Label": "condyle_right",
+                "Coordinates": right_contour if right_contour else [],
+                "SerializedMask": right_rle
+            }
+        })
+    
+    return anatomy_results
+
 
 def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
     """
-    格式化髁突(Condyle)部分
+    格式化髁突(Condyle)部分 - 真实数据
     
     Args:
         condyle_seg: 髁突分割结果 {raw_features: {left: {...}, right: {...}}, analysis: {...}}
@@ -107,9 +217,6 @@ def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
     left_conf_det = det_left.get("confidence", 0.0)
     right_conf_det = det_right.get("confidence", 0.0)
     
-    # 调试日志：检查检测模块的置信度
-    logger.debug(f"[format_joint_report] Detection confidence - Left: {left_conf_det}, Right: {right_conf_det}")
-    
     # 获取分割结果中的置信度和存在性
     seg_features = condyle_seg.get("raw_features", {})
     seg_left = seg_features.get("left", {})
@@ -120,11 +227,7 @@ def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
     left_conf_seg = seg_left.get("confidence", 0.0)
     right_conf_seg = seg_right.get("confidence", 0.0)
     
-    # 调试日志：检查分割模块的置信度
-    logger.debug(f"[format_joint_report] Segmentation confidence - Left: {left_conf_seg} (exists: {left_exists}), Right: {right_conf_seg} (exists: {right_exists})")
-    
-    # 综合置信度 (取检测和分割的平均值)
-    # 注意：如果分割模块检测到了，则取两个模块的平均值；否则只用检测模块的置信度
+    # 综合置信度
     if left_exists and left_conf_seg > 0:
         left_confidence = (left_conf_det + left_conf_seg) / 2
     else:
@@ -134,9 +237,6 @@ def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
         right_confidence = (right_conf_det + right_conf_seg) / 2
     else:
         right_confidence = right_conf_det
-    
-    # 调试日志：检查综合置信度
-    logger.debug(f"[format_joint_report] Final confidence - Left: {left_confidence}, Right: {right_confidence}")
     
     # 生成详细描述
     left_detail = MORPHOLOGY_MAP.get(left_morphology, MORPHOLOGY_MAP[0])["detail"]
@@ -158,17 +258,14 @@ def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
             overall_symmetry = 2  # 右侧大
     
     # 构建 CondyleAssessment
-    # 确保置信度始终为浮点数格式（保留2位小数）
     condyle_assessment = {
         "condyle_Left": {
             "Morphology": left_morphology,
-            "IsSymmetrical": is_symmetric,
             "Detail": left_detail,
             "Confidence": float(round(left_confidence, 2))
         },
         "condyle_Right": {
             "Morphology": right_morphology,
-            "IsSymmetrical": is_symmetric,
             "Detail": right_detail,
             "Confidence": float(round(right_confidence, 2))
         },
@@ -181,8 +278,7 @@ def format_joint_report(condyle_seg: dict, condyle_det: dict) -> dict:
 
 def format_mandible_report(analysis_result: dict) -> dict:
     """
-    【严格对齐检查】格式化下颌骨(Mandible)部分
-    对应接口中的 JointAndMandible 下半部分
+    格式化下颌骨(Mandible)部分 - 真实数据
     """
     confidence = float(analysis_result.get("Confidence", 0.0))
     
@@ -196,44 +292,309 @@ def format_mandible_report(analysis_result: dict) -> dict:
 
 def format_implant_report(implant_results: dict) -> dict:
     """
-    【严格对齐检查】格式化种植体(Implant)部分
-    对应接口中的 ImplantAnalysis
+    格式化种植体(Implant)部分 - 真实数据
+    
+    Args:
+        implant_results: {
+            'implant_boxes': [{'box': [...], 'confidence': 0.95, 'quadrant': 1}, ...],
+            'quadrant_counts': {1: 2, 2: 0, 3: 1, 4: 0}
+        }
+    
+    Returns:
+        dict: 符合 ImplantAnalysis 格式的字典
     """
-    analysis = implant_results.get("analysis", {})
-    detections = implant_results.get("raw_detections", [])  # 注意这里取 raw_detections
-    summary = implant_results.get("summary", {})
-
-    # 映射象限
-    quad_map_key = {"第一象限": "Q1", "第二象限": "Q2", "第三象限": "Q3", "第四象限": "Q4"}
-    raw_counts = summary.get("quadrant_counts", {})
-
-    formatted_counts = {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
-    for k, v in raw_counts.items():
-        if k in quad_map_key:
-            formatted_counts[quad_map_key[k]] = v
-
-    # 映射 Items
+    implant_boxes = implant_results.get("implant_boxes", [])
+    quadrant_counts = implant_results.get("quadrant_counts", {1: 0, 2: 0, 3: 0, 4: 0})
+    
+    # 计算总数
+    total_count = len(implant_boxes)
+    
+    # 格式化 Items
     items = []
-    for det in detections:
-        # det 结构来自 ImplantDetector: {id, bbox, confidence, quadrant}
+    for idx, det in enumerate(implant_boxes):
+        quadrant_id = det.get("quadrant", 0)
+        quadrant_name = QUADRANT_MAP.get(quadrant_id, "未知象限")
+        
         items.append({
-            "ID": det.get("id"),
-            "Quadrant": det.get("quadrant", "未知"),
-            "Confidence": det.get("confidence", 0.0),
-            "BBox": det.get("bbox", []),
-            "Detail": f"{det.get('quadrant')}检测到种植体"
+            "ID": "implant",
+            "Quadrant": quadrant_name,
+            "Confidence": round(det.get("confidence", 0.0), 2),
+            "BBox": det.get("box", []),
+            "Detail": f"{quadrant_name}检测到种植体"
         })
-
+    
+    # 生成 Detail 文本
+    detail_parts = []
+    for quad_id in [1, 2, 3, 4]:
+        count = quadrant_counts.get(quad_id, 0)
+        if count > 0:
+            quad_name = QUADRANT_MAP[quad_id]
+            detail_parts.append(f"{quad_name}存在种植体，个数为{count}")
+    
+    detail = "；".join(detail_parts) if detail_parts else "未检测到种植体"
+    
+    # 格式化 QuadrantCounts
+    quadrant_counts_formatted = {
+        "Q1": quadrant_counts.get(1, 0),
+        "Q2": quadrant_counts.get(2, 0),
+        "Q3": quadrant_counts.get(3, 0),
+        "Q4": quadrant_counts.get(4, 0),
+    }
+    
     return {
-        "TotalCount": summary.get("total_count", 0),
-        "Detail": summary.get("text", "未检测到种植体"),
-        "QuadrantCounts": formatted_counts,
-        "Items": items
+        "TotalCount": total_count,
+        "Items": items,
+        "Detail": detail,
+        "QuadrantCounts": quadrant_counts_formatted
     }
 
 
+def format_teeth_report(teeth_results: dict) -> dict:
+    """
+    格式化牙齿(Teeth)部分 - 真实数据
+    
+    Args:
+        teeth_results: {
+            'report': str,
+            'missing_teeth': [...],
+            'wisdom_teeth': [...],
+            'deciduous_teeth': [...],
+            'detected_teeth': [{'fdi': str, 'class_name': str, 'mask_index': int}, ...],
+            'raw_masks': np.ndarray,  # [N, H, W]
+            'original_shape': tuple  # (H, W)
+        }
+    
+    Returns:
+        dict: 包含 MissingTeeth, ThirdMolarSummary, ToothAnalysis
+    """
+    missing_teeth_raw = teeth_results.get("missing_teeth", [])
+    wisdom_teeth_raw = teeth_results.get("wisdom_teeth", [])
+    deciduous_teeth_raw = teeth_results.get("deciduous_teeth", [])
+    detected_teeth_list = teeth_results.get("detected_teeth", [])
+    raw_masks = teeth_results.get("raw_masks", None)
+    original_shape = teeth_results.get("original_shape", None)
+    
+    # 1. 格式化 MissingTeeth
+    missing_teeth = []
+    for item in missing_teeth_raw:
+        fdi = _extract_fdi_from_text(item)
+        if fdi:
+            missing_teeth.append({
+                "FDI": fdi,
+                "Reason": "missing",
+                "Detail": item
+            })
+    
+    # 2. 格式化 ThirdMolarSummary (根据真实检测结果填充)
+    third_molar_summary = {}
+    
+    # 从 detected_teeth_list 中提取智齿FDI
+    detected_wisdom_fdi = set()
+    for tooth_info in detected_teeth_list:
+        fdi = tooth_info.get("fdi", "")
+        if fdi in WISDOM_TEETH_FDI:
+            detected_wisdom_fdi.add(fdi)
+    
+    # 填充所有智齿位置
+    for fdi in WISDOM_TEETH_FDI:
+        if fdi in detected_wisdom_fdi:
+            # 检测到智齿：Level=1 (阻生), Impactions="Impacted"
+            third_molar_summary[fdi] = {
+                "Level": 1,
+                "Impactions": "Impacted",
+                "Detail": "阻生",
+                "Confidence": 0.85
+            }
+        else:
+            # 未检测到智齿：Level=4 (未见智齿), Impactions=None
+            third_molar_summary[fdi] = {
+                "Level": 4,
+                "Impactions": None,
+                "Detail": "未见智齿",
+                "Confidence": 0.0
+            }
+    
+    # 3. 格式化 ToothAnalysis（所有检测到的牙齿）
+    tooth_analysis = []
+    
+    # 遍历所有检测到的牙齿
+    for tooth_info in detected_teeth_list:
+        fdi = tooth_info.get("fdi", "")
+        mask_index = tooth_info.get("mask_index", -1)
+        
+        if not fdi:
+            continue
+        
+        # 构建属性列表
+        properties = []
+        
+        # 判断是否是智齿
+        if fdi in WISDOM_TEETH_FDI:
+            properties.append({
+                "Value": "Impacted",
+                "Description": "阻生",
+                "Confidence": 0.85
+            })
+        
+        # 判断是否是乳牙滞留
+        if fdi in DECIDUOUS_TEETH_FDI:
+            properties.append({
+                "Value": "retained_primary_tooth",
+                "Description": "滞留乳牙",
+                "Confidence": 0.85
+            })
+        
+        # 提取 mask 的轮廓坐标
+        coordinates = []
+        serialized_mask = ""
+        
+        if raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
+            coordinates, serialized_mask = _extract_mask_contour(
+                raw_masks[mask_index],
+                original_shape
+            )
+        
+        # 构建 ToothAnalysis 项
+        tooth_analysis.append({
+            "FDI": fdi,
+            "Confidence": 0.85,  # Mock: 需要从模型输出获取实际置信度
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Label": f"tooth-{fdi}",
+                "Coordinates": coordinates,
+                "SerializedMask": serialized_mask
+            },
+            "Properties": properties  # 空列表表示正常牙齿，有内容表示有特殊属性
+        })
+    
+    return {
+        "MissingTeeth": missing_teeth,
+        "ThirdMolarSummary": third_molar_summary,
+        "ToothAnalysis": tooth_analysis
+    }
+
+
+def _extract_fdi_from_text(text: str) -> str:
+    """从文本中提取 FDI 编号，如 "tooth-37 牙位缺牙" -> "37" """
+    import re
+    match = re.search(r'tooth-(\d+)', text)
+    return match.group(1) if match else ""
+
+
+def _mask_to_rle(mask):
+    """
+    将二值 mask 转换为 RLE (Run Length Encoding) 格式
+    
+    Args:
+        mask: [H, W] numpy array (binary mask, 0 或 1)
+    
+    Returns:
+        str: RLE 编码字符串，格式如 "rle:0,100,1,50,0,200,..."
+    """
+    try:
+        if mask is None:
+            return ""
+        
+        # 确保是二值mask
+        if mask.dtype != np.uint8:
+            mask = (mask > 0.5).astype(np.uint8)
+        
+        # 展平为一维数组
+        flat_mask = mask.flatten()
+        
+        if len(flat_mask) == 0:
+            return ""
+        
+        # RLE编码：记录连续相同值的长度
+        rle_data = []
+        current_value = flat_mask[0]
+        count = 1
+        
+        for i in range(1, len(flat_mask)):
+            if flat_mask[i] == current_value:
+                count += 1
+            else:
+                rle_data.append(f"{current_value},{count}")
+                current_value = flat_mask[i]
+                count = 1
+        
+        # 添加最后一段
+        rle_data.append(f"{current_value},{count}")
+        
+        # 格式化为字符串
+        rle_string = f"rle:{','.join(rle_data)}"
+        
+        return rle_string
+    
+    except Exception as e:
+        logger.warning(f"Failed to encode RLE: {e}")
+        return ""
+
+
+def _extract_mask_contour(mask, original_shape):
+    """
+    从 YOLO 输出的 mask 中提取轮廓坐标
+    
+    Args:
+        mask: [H, W] numpy array (binary mask, 0-1 normalized)
+        original_shape: (H, W) 原始图像尺寸
+    
+    Returns:
+        tuple: (coordinates, serialized_mask)
+            - coordinates: [[x, y], ...] 轮廓坐标列表
+            - serialized_mask: RLE 编码字符串（暂时为空）
+    """
+    import cv2
+    import numpy as np
+    
+    try:
+        # 1. 确保 mask 是二值化的 uint8 格式
+        if mask.dtype != np.uint8:
+            # YOLO 输出的 mask 可能是 float [0, 1]
+            binary_mask = (mask > 0.5).astype(np.uint8)
+        else:
+            binary_mask = mask
+        
+        # 2. 如果 mask 尺寸与原始图像不同，需要 resize（YOLO可能输出不同尺寸）
+        if binary_mask.shape != original_shape:
+            binary_mask = cv2.resize(
+                binary_mask, 
+                (original_shape[1], original_shape[0]),  # (W, H)
+                interpolation=cv2.INTER_NEAREST
+            )
+        
+        # 3. 提取轮廓
+        contours, _ = cv2.findContours(
+            binary_mask, 
+            cv2.RETR_EXTERNAL, 
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+        
+        # 4. 取最大轮廓并转换为坐标列表
+        coordinates = []
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)
+            # 转换为 [[x, y], [x, y], ...] 格式
+            coords = largest_contour.squeeze()
+            
+            # 处理只有一个点的情况
+            if coords.ndim == 1:
+                coordinates = [coords.tolist()]
+            else:
+                coordinates = coords.tolist()
+        
+        # 5. RLE 编码
+        serialized_mask = _mask_to_rle(binary_mask)
+        
+        return coordinates, serialized_mask
+    
+    except Exception as e:
+        logger.warning(f"Failed to extract contour: {e}")
+        return [], ""
+
+
 # =============================================================================
-# 3. 默认值模板 (Skeleton)
+# 3. Mock 数据模板
 # =============================================================================
 
 def _format_metadata(meta: dict) -> dict:
@@ -244,23 +605,23 @@ def _format_metadata(meta: dict) -> dict:
     }
 
 
+def _get_anatomy_results_mock() -> List[dict]:
+    """Mock: AnatomyResults - 无模型支持"""
+    return []
+
+
 def _get_joint_mandible_default() -> dict:
-    """
-    对应接口中的 JointAndMandible
-    包含 CondyleAssessment (髁突) 和 Ramus/Gonial (下颌骨)
-    """
+    """JointAndMandible 默认值（部分真实，部分默认）"""
     return {
         "CondyleAssessment": {
             "condyle_Left": {
-                "Morphology": 0, 
-                "IsSymmetrical": False, 
-                "Detail": "髁突形态正常", 
+                "Morphology": 0,
+                "Detail": "髁突形态正常",
                 "Confidence": 0.0
             },
             "condyle_Right": {
-                "Morphology": 0, 
-                "IsSymmetrical": False, 
-                "Detail": "髁突形态正常", 
+                "Morphology": 0,
+                "Detail": "髁突形态正常",
                 "Confidence": 0.0
             },
             "OverallSymmetry": 0,
@@ -273,23 +634,70 @@ def _get_joint_mandible_default() -> dict:
     }
 
 
-def _get_implant_default() -> dict:
-    """
-    【新增】对应接口中的 ImplantAnalysis
-    """
+def _get_maxillary_sinus_mock() -> List[dict]:
+    """Mock: MaxillarySinus - 无模型支持"""
+    return [
+        {
+            "Side": "left",
+            "Pneumatization": 0,  # 0=正常, 1=轻度气化, 2=过度气化
+            "TypeClassification": "I",
+            "Inflammation": False,
+            "RootEntryToothFDI": [],
+            "Detail": "左上颌窦气化正常（待检测）",
+            "Confidence_Pneumatization": 0.0,
+            "Confidence_Inflammation": 0.0,
+            "_mock": True
+        },
+        {
+            "Side": "right",
+            "Pneumatization": 0,
+            "TypeClassification": "I",
+            "Inflammation": False,
+            "RootEntryToothFDI": [],
+            "Detail": "右上颌窦气化正常（待检测）",
+            "Confidence_Pneumatization": 0.0,
+            "Confidence_Inflammation": 0.0,
+            "_mock": True
+        }
+    ]
+
+
+def _get_periodontal_mock() -> dict:
+    """Mock: PeriodontalCondition - 无模型支持"""
     return {
-        "TotalCount": 0,
-        "Detail": "未检测到种植体",
-        "QuadrantCounts": {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0},
-        "Items": []
+        "_mock": True,  # Mock标记
+        "Up_CEJ_to_ABC_Distance_mm": 0.0,
+        "BoneAbsorptionLevel": 0,
+        "Detail": "未检测（需专门牙周模型）",
+        "AbsorptionRatio": 0.0,
+        "Confidence": 0.0,
+        "Lower_CEJ_to_ABC_Distance_mm": 0.0,
+        "SpecificAbsorption": [
+            {
+                "FDI": "16",
+                "AbsorptionLevel": 0,
+                "Detail": "待检测"
+            }
+        ]
     }
 
 
-def _get_periodontal_default() -> dict:
+def _get_implant_default() -> dict:
+    """ImplantAnalysis 默认值（真实数据会覆盖）"""
     return {
-        "CEJ_to_ABC_Distance_mm": 0.0,
-        "BoneAbsorptionLevel": 0,
-        "Detail": "未检测",
-        "AbsorptionRatio": 0.0,
-        "Confidence": 0.0
+        "TotalCount": 0,
+        "Items": [],
+        "Detail": "未检测到种植体",
+        "QuadrantCounts": {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
+    }
+
+
+def _get_root_tip_density_mock() -> dict:
+    """Mock: RootTipDensityAnalysis - 无模型支持"""
+    return {
+        "_mock": True,  # Mock标记
+        "TotalCount": 0,
+        "Items": [],
+        "Detail": "未检测（需根尖密度影检测模型）",
+        "QuadrantCounts": {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
     }
