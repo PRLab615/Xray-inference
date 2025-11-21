@@ -8,6 +8,13 @@ from pipelines.base_pipeline import BasePipeline
 from pipelines.pano.utils import pano_report_utils
 import logging
 
+# 导入五个模块的预测器
+from pipelines.pano.modules.condyle_seg import JointPredictor as CondyleSegPredictor
+from pipelines.pano.modules.condyle_detection import JointPredictor as CondyleDetPredictor
+from pipelines.pano.modules.mandible_seg import MandiblePredictor
+from pipelines.pano.modules.implant_detect import ImplantDetectionModule
+from pipelines.pano.modules.teeth_seg import TeethSegmentationModule, process_teeth_results
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,18 +47,34 @@ class PanoPipeline(BasePipeline):
         self.pipeline_type = "panoramic"
         self.modules = {}  # 存储所有已初始化的模块实例
         
-        # v3: 全景片子模块暂未实现，保留架构接口
-        if modules:
-            logger.info(f"Received modules config: {list(modules.keys())}, but not implemented yet")
+        # 初始化五个核心模块
+        logger.info("Initializing Pano Pipeline modules...")
+        try:
+            # 1. 髁突分割模块 (condyle_seg)
+            self.modules['condyle_seg'] = CondyleSegPredictor()
+            logger.info("  ✓ Condyle Segmentation module loaded")
+            
+            # 2. 髁突检测模块 (condyle_detection)
+            self.modules['condyle_det'] = CondyleDetPredictor()
+            logger.info("  ✓ Condyle Detection module loaded")
+            
+            # 3. 下颌骨分割模块 (mandible_seg)
+            self.modules['mandible'] = MandiblePredictor()
+            logger.info("  ✓ Mandible Segmentation module loaded")
+            
+            # 4. 种植体检测模块 (implant_detect)
+            self.modules['implant_detect'] = ImplantDetectionModule()
+            logger.info("  ✓ Implant Detection module loaded")
+            
+            # 5. 牙齿分割模块 (teeth_seg)
+            self.modules['teeth_seg'] = TeethSegmentationModule()
+            logger.info("  ✓ Teeth Segmentation module loaded")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize some modules: {e}")
+            raise
         
-        # TODO: v4 初始化子模块
-        # if modules:
-        #     self._initialize_modules(modules)
-        # 示例：
-        # if 'teeth_seg' in modules and modules['teeth_seg'].get('enabled'):
-        #     self.modules['teeth_seg'] = self._init_teeth_seg_module(modules['teeth_seg'])
-        
-        logger.info("PanoPipeline initialized (子模块待实现)")
+        logger.info("PanoPipeline initialized successfully")
     
     def run(self, image_path: str) -> dict:
         """
@@ -68,140 +91,278 @@ class PanoPipeline(BasePipeline):
             ValueError: 图像验证失败
             
         工作流程:
-            1. 加载并验证图像
-            2. 依次调用各个子模块（v3: TODO 占位）
+            1. 验证图像文件存在
+            2. 依次调用各个子模块
             3. 收集所有推理结果
             4. 调用 report_utils 生成规范 JSON
             5. 返回完整的 data 字段
             
         Note:
-            - v3: 子模块调用返回空字典（TODO 占位）
-            - v4: 实现真实的子模块调用
+            - 各子模块内部负责图像加载
+            - 与 CephPipeline 保持一致的设计模式
         """
         self._log_step("开始全景片推理", f"image_path={image_path}")
         
-        # 1. 加载图像
-        try:
-            image = self._load_image(image_path)
-        except Exception as e:
-            logger.error(f"Failed to load image: {e}")
-            raise
+        # 1. 验证图像文件存在
+        self._load_image(image_path)
         
-        # 2. 验证图像
-        if not self._validate_image(image):
-            raise ValueError(f"Invalid image: {image_path}")
-        
-        # 3. 依次调用各个子模块（v3: TODO 占位）
+        # 2. 依次调用各个子模块（直接传递 image_path）
         try:
-            teeth_results = self._run_teeth_seg(image)
-            bone_results = self._run_bone_density(image)
-            joint_results = self._run_joint_detection(image)
-            # TODO: v4 添加其他子模块
+            # 2.1 髁突分割
+            condyle_seg_results = self._run_condyle_seg(image_path)
+            
+            # 2.2 髁突检测
+            condyle_det_results = self._run_condyle_detection(image_path)
+            
+            # 2.3 下颌骨分割
+            mandible_results = self._run_mandible_seg(image_path)
+            
+            # 2.4 种植体检测
+            implant_results = self._run_implant_detect(image_path)
+            
+            # 2.5 牙齿分割
+            teeth_results = self._run_teeth_seg(image_path)
             
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
         
-        # 4. 收集所有结果
-        inference_results = self._collect_results(
-            teeth=teeth_results,
-            bone=bone_results,
-            joint=joint_results
-        )
+        # 3. 收集所有结果
+        logger.info("Collecting results from all modules...")
         
-        # 5. 生成符合规范的 JSON
-        data_dict = pano_report_utils.generate_standard_output(inference_results)
+        # 调试日志：详细检查各模块的结果
+        logger.debug(f"[Pipeline] condyle_seg_results keys: {list(condyle_seg_results.keys()) if condyle_seg_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] condyle_det_results keys: {list(condyle_det_results.keys()) if condyle_det_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] mandible_results keys: {list(mandible_results.keys()) if mandible_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] implant_results keys: {list(implant_results.keys()) if implant_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] teeth_results keys: {list(teeth_results.keys()) if teeth_results else 'EMPTY'}")
+        
+        # 如果检测模块有结果，打印详细信息
+        if condyle_det_results:
+            logger.debug(f"[Pipeline] condyle_det left confidence: {condyle_det_results.get('left', {}).get('confidence', 'N/A')}")
+            logger.debug(f"[Pipeline] condyle_det right confidence: {condyle_det_results.get('right', {}).get('confidence', 'N/A')}")
+        
+        inference_results = self._collect_results(
+            condyle_seg=condyle_seg_results,
+            condyle_det=condyle_det_results,
+            mandible=mandible_results,
+            implant=implant_results,
+            teeth=teeth_results
+        )
+        logger.info(f"Results collected: condyle_seg={bool(condyle_seg_results)}, condyle_det={bool(condyle_det_results)}, mandible={bool(mandible_results)}, implant={bool(implant_results)}, teeth={bool(teeth_results)}")
+        
+        # 4. 生成符合规范的 JSON
+        logger.info("Generating standard output...")
+        # 准备 metadata
+        metadata = {
+            "ImageName": image_path.split("/")[-1] if "/" in image_path else image_path.split("\\")[-1],
+            "DiagnosisID": "",  # TODO: 从外部传入
+            "AnalysisTime": ""  # 由 pano_report_utils 自动生成
+        }
+        
+        data_dict = pano_report_utils.generate_standard_output(metadata, inference_results)
         
         self._log_step("全景片推理完成", f"data keys: {list(data_dict.keys())}")
+        logger.info("Pano pipeline run completed successfully")
         
         return data_dict
     
-    def _run_teeth_seg(self, image) -> dict:
+    def _run_condyle_seg(self, image_path: str) -> dict:
+        """
+        执行髁突分割
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 髁突分割结果
+                包含 raw_features 和 analysis
+        """
+        self._log_step("髁突分割", "使用 ONNX 模型进行分割")
+        
+        try:
+            import time
+            import cv2
+            start_time = time.time()
+            logger.info(f"Starting condyle segmentation for: {image_path}")
+            
+            # 加载图像
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            results = self.modules['condyle_seg'].predict(image)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Condyle segmentation completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Condyle segmentation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _run_condyle_detection(self, image_path: str) -> dict:
+        """
+        执行髁突检测
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 髁突检测结果
+                包含 left 和 right 的检测框和分类
+        """
+        self._log_step("髁突检测", "使用 YOLOv11 进行检测")
+        
+        try:
+            import time
+            start_time = time.time()
+            logger.info(f"Starting condyle detection for: {image_path}")
+            
+            # 传递图像路径给 YOLO predictor
+            results = self.modules['condyle_det'].predict(image_path)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Condyle detection completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Condyle detection failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _run_mandible_seg(self, image_path: str) -> dict:
+        """
+        执行下颌骨分割
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 下颌骨分割结果
+                包含 analysis 和几何测量数据
+        """
+        self._log_step("下颌骨分割", "使用 TransUNet 进行分割")
+        
+        try:
+            import time
+            import cv2
+            start_time = time.time()
+            logger.info(f"Starting mandible segmentation for: {image_path}")
+            
+            # 加载图像
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            results = self.modules['mandible'].predict(image)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Mandible segmentation completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Mandible segmentation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _run_implant_detect(self, image_path: str) -> dict:
+        """
+        执行种植体检测
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 种植体检测结果
+                包含 implant_boxes 和 quadrant_counts
+        """
+        self._log_step("种植体检测", "使用 YOLOv11 进行种植体检测")
+        
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting implant detection for: {image_path}")
+            
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            results = self.modules['implant_detect'].predict(image)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Implant detection completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Implant detection failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _run_teeth_seg(self, image_path: str) -> dict:
         """
         执行牙齿分割
         
         Args:
-            image: 图像对象
+            image_path: 图像文件路径
             
         Returns:
-            dict: 牙齿分割结果
-            
-        Note:
-            - v3: 返回空字典（TODO 占位）
-            - v4: 实现真实的牙齿分割逻辑
-                - 加载模型权重
-                - 预处理图像
-                - 推理
-                - 后处理结果
+            dict: 牙齿分割结果（经过后处理）
+                包含缺牙、智齿、乳牙等分析结果
         """
-        self._log_step("牙齿分割", "TODO")
+        self._log_step("牙齿分割", "使用 YOLOv11 进行牙齿实例分割")
         
-        # TODO: v4 实现牙齿分割逻辑
-        # results = self.teeth_seg_module.predict(image)
-        # processed_results = self._postprocess_teeth_seg(results)
-        # return processed_results
-        
-        return {}
-    
-    def _run_bone_density(self, image) -> dict:
-        """
-        执行骨密度分析
-        
-        Args:
-            image: 图像对象
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting teeth segmentation for: {image_path}")
             
-        Returns:
-            dict: 骨密度分析结果
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
             
-        Note:
-            - v3: 返回空字典（TODO 占位）
-            - v4: 实现真实的骨密度分析逻辑
-        """
-        self._log_step("骨密度分析", "TODO")
-        
-        # TODO: v4 实现骨密度分析逻辑
-        # results = self.bone_density_module.predict(image)
-        # return results
-        
-        return {}
-    
-    def _run_joint_detection(self, image) -> dict:
-        """
-        执行关节检测
-        
-        Args:
-            image: 图像对象
+            # 执行推理
+            raw_results = self.modules['teeth_seg'].predict(image)
             
-        Returns:
-            dict: 关节检测结果
+            # 后处理：生成缺牙、智齿、乳牙等报告
+            processed_results = process_teeth_results(raw_results)
             
-        Note:
-            - v3: 返回空字典（TODO 占位）
-            - v4: 实现真实的关节检测逻辑
-        """
-        self._log_step("关节检测", "TODO")
-        
-        # TODO: v4 实现关节检测逻辑
-        # results = self.joint_detection_module.predict(image)
-        # return results
-        
-        return {}
+            elapsed = time.time() - start_time
+            logger.info(f"Teeth segmentation completed in {elapsed:.2f}s")
+            return processed_results
+        except Exception as e:
+            logger.error(f"Teeth segmentation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
     
     def _collect_results(self, **module_results) -> dict:
         """
         收集所有子模块的推理结果
         
         Args:
-            **module_results: 各子模块结果（teeth, bone, joint 等）
+            **module_results: 各子模块结果
+                - condyle_seg: 髁突分割结果
+                - condyle_det: 髁突检测结果
+                - mandible: 下颌骨分割结果
+                - implant: 种植体检测结果
+                - teeth: 牙齿分割结果
             
         Returns:
             dict: 汇总的推理结果
             
         Example:
             inference_results = {
-                "teeth": {...},
-                "bone": {...},
-                "joint": {...}
+                "condyle_seg": {...},
+                "condyle_det": {...},
+                "mandible": {...},
+                "implant": {...},
+                "teeth": {...}
             }
             
         Note:
@@ -211,10 +372,11 @@ class PanoPipeline(BasePipeline):
         self._log_step("收集结果", f"{len(module_results)} modules")
         
         inference_results = {
+            "condyle_seg": module_results.get("condyle_seg", {}),
+            "condyle_det": module_results.get("condyle_det", {}),
+            "mandible": module_results.get("mandible", {}),
+            "implant": module_results.get("implant", {}),
             "teeth": module_results.get("teeth", {}),
-            "bone": module_results.get("bone", {}),
-            "joint": module_results.get("joint", {}),
-            # TODO: v4 添加其他模块结果
         }
         
         return inference_results

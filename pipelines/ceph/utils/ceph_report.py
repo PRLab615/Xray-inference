@@ -52,7 +52,7 @@ def calculate_measurements(landmarks: Dict[str, np.ndarray]) -> Dict[str, Dict[s
 
     measurements["ANB_Angle"] = _compute_anb(landmarks)
     measurements["FH_MP_Angle"] = _compute_fh_mp(landmarks)
-    measurements["SGo_NMe_Ratio"] = _compute_sgo_nme(landmarks)
+    measurements["SGo_NMe_Ratio-1"] = _compute_sgo_nme(landmarks)
 
     return measurements
 

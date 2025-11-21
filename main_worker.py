@@ -52,13 +52,15 @@ def main():
         f'--concurrency={worker_config["concurrency"]}',
     ]
     
-    # Windows 兼容性：使用 solo pool
+    # Worker pool 配置
+    # 注意：使用 threads 而非 prefork，因为 PyTorch/YOLO 不支持 fork()
+    # 详见：docs/YOLO_FORK_ISSUE.md
     if os.name == 'nt':
         worker_args.append('--pool=solo')
         logger.info("Platform: Windows (using solo pool)")
     else:
-        worker_args.append('--pool=prefork')
-        logger.info("Platform: Unix/Linux (using prefork pool)")
+        worker_args.append('--pool=threads')
+        logger.info("Platform: Unix/Linux (using threads pool)")
     
     # 启动 Worker
     celery_app.worker_main(worker_args)
