@@ -17,12 +17,12 @@ from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
 
 
-# DEFAULT_PATIENT_INFO = {
-#     "gender": "Female",
-#     "DentalAgeStage": "Permanent",
-# }
-# DEFAULT_IMAGE_PATH = r"D:\git-615\Teeth\Cepath\150_fig\152.jpg"
-# DEFAULT_OUTPUT_NAME = "ceph_output.json"
+DEFAULT_PATIENT_INFO = {
+    "gender": "Female",
+    "DentalAgeStage": "Permanent",
+}
+DEFAULT_IMAGE_PATH = r"D:\git-615\Teeth\Cepath\150_fig\151.jpg"
+DEFAULT_OUTPUT_NAME = "ceph_output.json"
 
 
 class CephPipeline(BasePipeline):
@@ -157,20 +157,20 @@ class CephPipeline(BasePipeline):
         return result
 
 
-# if __name__ == "__main__":
-#     pipeline = CephPipeline()
-#     patient = DEFAULT_PATIENT_INFO
+if __name__ == "__main__":
+    pipeline = CephPipeline()
+    patient = DEFAULT_PATIENT_INFO
 
-#     if not os.path.exists(DEFAULT_IMAGE_PATH):
-#         raise FileNotFoundError(
-#             f"请修改 DEFAULT_IMAGE_PATH 为实际存在的图片路径，当前值: {DEFAULT_IMAGE_PATH}"
-#         )
+    if not os.path.exists(DEFAULT_IMAGE_PATH):
+        raise FileNotFoundError(
+            f"请修改 DEFAULT_IMAGE_PATH 为实际存在的图片路径，当前值: {DEFAULT_IMAGE_PATH}"
+        )
 
-#     data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
+    data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
 
-#     output_path = Path(__file__).with_name(DEFAULT_OUTPUT_NAME)
-#     with output_path.open("w", encoding="utf-8") as fp:
-#         json.dump(data, fp, ensure_ascii=False, indent=2)
+    output_path = Path(__file__).with_name(DEFAULT_OUTPUT_NAME)
+    with output_path.open("w", encoding="utf-8") as fp:
+        json.dump(data, fp, ensure_ascii=False, indent=2)
 
-#     print(f"Ceph inference finished. JSON saved to: {output_path}")
+    print(f"Ceph inference finished. JSON saved to: {output_path}")
 

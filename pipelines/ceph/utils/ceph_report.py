@@ -38,11 +38,11 @@ KEYPOINT_MAP = {
 }
 
 ANB_SKELETAL_II_THRESHOLD = 6.0
-ANB_SKELETAL_III_THRESHOLD = 1.0
-FH_MP_HIGH_ANGLE_THRESHOLD = 34.0
-FH_MP_LOW_ANGLE_THRESHOLD = 24.0
+ANB_SKELETAL_III_THRESHOLD = 2.0
+FH_MP_HIGH_ANGLE_THRESHOLD = 33.0
+FH_MP_LOW_ANGLE_THRESHOLD = 25.0
 SGO_NME_HORIZONTAL_THRESHOLD = 71.0
-SGO_NME_VERTICAL_THRESHOLD = 62.0
+SGO_NME_VERTICAL_THRESHOLD = 63.0
 
 def calculate_measurements(landmarks: Dict[str, np.ndarray]) -> Dict[str, Dict[str, Any]]:
     """
@@ -144,23 +144,32 @@ def _calculate_angle(v1: np.ndarray, v2: np.ndarray) -> float:
         angle += 360
     return angle
 
-def _get_skeletal_class(anb: float) -> str:
-    if anb > ANB_SKELETAL_II_THRESHOLD:
-        return "骨性II类"
-    if anb < ANB_SKELETAL_III_THRESHOLD:
-        return "骨性III类"
-    return "骨性I类"
+def _get_skeletal_class(anb: float) -> int:
+    """返回骨性分类 Level (确保返回 Python 原生 int 类型)"""
+    # 确保 anb 是 Python float 类型
+    anb_float = float(anb)
+    if anb_float > ANB_SKELETAL_II_THRESHOLD:
+        return int(1)  # 骨性II类
+    if anb_float < ANB_SKELETAL_III_THRESHOLD:
+        return int(2)  # 骨性III类
+    return int(0)  # 骨性I类
 
-def _get_growth_type(fh_mp: float) -> str:
-    if fh_mp > FH_MP_HIGH_ANGLE_THRESHOLD:
-        return "高角"
-    if fh_mp < FH_MP_LOW_ANGLE_THRESHOLD:
-        return "低角"
-    return "均角"
+def _get_growth_type(fh_mp: float) -> int:
+    """返回生长型 Level (确保返回 Python 原生 int 类型)"""
+    # 确保 fh_mp 是 Python float 类型
+    fh_mp_float = float(fh_mp)
+    if fh_mp_float > FH_MP_HIGH_ANGLE_THRESHOLD:
+        return int(1)  # 高角
+    if fh_mp_float < FH_MP_LOW_ANGLE_THRESHOLD:
+        return int(2)  # 低角
+    return int(0)  # 均角
 
-def _get_growth_pattern(sgo_nme: float) -> str:
-    if sgo_nme > SGO_NME_HORIZONTAL_THRESHOLD:
-        return "水平生长型"
-    if sgo_nme < SGO_NME_VERTICAL_THRESHOLD:
-        return "垂直生长型"
-    return "平均生长型"
+def _get_growth_pattern(sgo_nme: float) -> int:
+    """返回生长模式 Level (确保返回 Python 原生 int 类型)"""
+    # 确保 sgo_nme 是 Python float 类型
+    sgo_nme_float = float(sgo_nme)
+    if sgo_nme_float > SGO_NME_HORIZONTAL_THRESHOLD:
+        return int(1)  # 水平生长型
+    if sgo_nme_float < SGO_NME_VERTICAL_THRESHOLD:
+        return int(2)  # 垂直生长型
+    return int(0)  # 平均生长型

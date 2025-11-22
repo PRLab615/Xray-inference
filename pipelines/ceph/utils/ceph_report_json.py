@@ -9,7 +9,15 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from .ceph_report import KEYPOINT_MAP
+from .ceph_report import (
+    KEYPOINT_MAP,
+    ANB_SKELETAL_II_THRESHOLD,
+    ANB_SKELETAL_III_THRESHOLD,
+    FH_MP_HIGH_ANGLE_THRESHOLD,
+    FH_MP_LOW_ANGLE_THRESHOLD,
+    SGO_NME_HORIZONTAL_THRESHOLD,
+    SGO_NME_VERTICAL_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +139,6 @@ def _build_measurement_section(measurements: Dict[str, Dict[str, Any]]) -> List[
         conclusion = payload.get("conclusion")
         confidence = payload.get("confidence", 0.0)
 
-
         if unit == "°":
             value_field = {"Angle": value}
         elif unit == "%":
@@ -139,18 +146,99 @@ def _build_measurement_section(measurements: Dict[str, Dict[str, Any]]) -> List[
         else:
             value_field = {"Angle": value}
 
-
-        level = 0 if conclusion is None or "正常" in str(conclusion) else 1
-
+        # 调试：打印 conclusion 的值和类型
+        logger.debug(
+            "测量项 %s: conclusion=%s (type=%s), value=%s",
+            name, conclusion, type(conclusion).__name__ if conclusion is not None else "None", value
+        )
+        
+        level = _get_measurement_level(name, conclusion, value)
+        
+        # 确保 level 是 Python 原生 int 类型（防止 numpy 类型）
+        if hasattr(level, 'item'):  # numpy 标量类型
+            level = int(level.item())
+        else:
+            level = int(level)
+        
+        # 调试：打印最终 level
+        logger.debug("测量项 %s: 最终 Level=%d (type=%s)", name, level, type(level).__name__)
+        
         entry = {
             "Label": name,
             **value_field,
-            "Level": level,
+            "Level": level,  # 确保是 Python 原生 int
             "Confidence": round(confidence, 4),
         }
         section.append(entry)
 
     return section
+
+def _get_measurement_level(name: str, conclusion: Any, value: Any) -> int:
+    """
+    根据测量项结论确定Level值。
+    
+    conclusion 现在已经是 level (int) 了，直接返回。
+    如果 conclusion 无效，则根据 value 和 name 重新计算。
+    
+    Level编码规则：
+    - 0: 正常/骨性I类/均角/平均生长型
+    - 1: 异常偏高/骨性II类/高角/水平生长型
+    - 2: 异常偏低/骨性III类/低角/垂直生长型
+    """
+    # 首先尝试使用 conclusion
+    if conclusion is not None:
+        # 如果是布尔值，直接忽略（布尔值不应该作为 level）
+        if isinstance(conclusion, bool):
+            logger.warning(f"测量项 {name}: conclusion 是布尔值 {conclusion}，将忽略并使用 value 重新计算")
+        else:
+            try:
+                # 处理 numpy 类型：先转换为 Python 原生类型
+                if hasattr(conclusion, 'item'):  # numpy 标量类型有 item() 方法
+                    conclusion = conclusion.item()
+                level = int(conclusion)
+                # 确保 level 在有效范围内，并返回 Python 原生 int
+                if level in (0, 1, 2):
+                    return int(level)  # 确保返回 Python 原生 int
+                else:
+                    logger.warning(f"测量项 {name}: conclusion={level} 不在有效范围 (0-2)，将使用 value 重新计算")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"测量项 {name}: 无法将 conclusion={conclusion} (type={type(conclusion).__name__}) 转换为 int: {e}，将使用 value 重新计算")
+    
+    # 如果 conclusion 无效，根据 value 和 name 重新计算
+    if value is None:
+        return 0
+    
+    try:
+        num_value = float(value)
+        
+        # ANB角：骨性I类=0, 骨性II类=1, 骨性III类=2
+        if name == "ANB_Angle":
+            if num_value > ANB_SKELETAL_II_THRESHOLD:
+                return int(1)  # 骨性II类，确保返回 Python 原生 int
+            if num_value < ANB_SKELETAL_III_THRESHOLD:
+                return int(2)  # 骨性III类
+            return int(0)  # 骨性I类
+        
+        # 下颌平面角(FH_MP_Angle)：均角=0, 高角=1, 低角=2
+        if name == "FH_MP_Angle":
+            if num_value > FH_MP_HIGH_ANGLE_THRESHOLD:
+                return int(1)  # 高角
+            if num_value < FH_MP_LOW_ANGLE_THRESHOLD:
+                return int(2)  # 低角
+            return int(0)  # 均角
+        
+        # 面部高度比例(SGo_NMe_Ratio)：平均生长型=0, 水平生长型=1, 垂直生长型=2
+        if name.startswith("SGo_NMe_Ratio"):
+            if num_value > SGO_NME_HORIZONTAL_THRESHOLD:
+                return int(1)  # 水平生长型
+            if num_value < SGO_NME_VERTICAL_THRESHOLD:
+                return int(2)  # 垂直生长型
+            return int(0)  # 平均生长型
+    except (ValueError, TypeError):
+        pass
+    
+    # 默认返回 0（确保返回 Python 原生 int）
+    return int(0)
 
 def _visibility_grade(detected: int, total: int) -> str:
     if total == 0:
