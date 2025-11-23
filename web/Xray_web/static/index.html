@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 异步分析测试平台</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>AI 异步分析测试平台</h1>
+        <p class="subtitle">用于验证 AI 异步分析接口的完整流程</p>
+        
+        <!-- 任务类型选择 -->
+        <div class="form-group">
+            <label for="taskType">任务类型：</label>
+            <select id="taskType">
+                <option value="panoramic">全景片 (Panoramic)</option>
+                <option value="cephalometric">侧位片 (Cephalometric)</option>
+            </select>
+        </div>
+        
+        <!-- 文件选择 -->
+        <div class="form-group">
+            <label for="imageFile">选择文件：</label>
+            <input type="file" id="imageFile" accept=".jpg,.jpeg,.png,.dcm">
+            <p class="hint">支持格式：.jpg, .png, .dcm</p>
+        </div>
+        
+        <!-- 患者信息表单（动态显示） -->
+        <div id="patientInfoSection" class="form-group patient-info hidden">
+            <label>患者信息（侧位片图片必填）：</label>
+            <div class="patient-fields">
+                <div class="field-item">
+                    <label for="gender">性别：</label>
+                    <select id="gender">
+                        <option value="">请选择性别</option>
+                        <option value="Male">男性 (Male)</option>
+                        <option value="Female">女性 (Female)</option>
+                    </select>
+                </div>
+                <div class="field-item">
+                    <label for="dentalStage">牙期：</label>
+                    <select id="dentalStage">
+                        <option value="">请选择牙期</option>
+                        <option value="Permanent">恒牙期 (Permanent)</option>
+                        <option value="Mixed">混合牙期 (Mixed)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 提交按钮 -->
+        <div class="form-group">
+            <button id="submitBtn" class="btn-primary">提交分析任务</button>
+        </div>
+        
+        <!-- 加载图标 -->
+        <div id="loadingIndicator" class="loading-container hidden">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">正在处理中，请稍候...</p>
+        </div>
+        
+        <!-- 结果展示 -->
+        <div id="resultContainer" class="result-container hidden">
+            <div class="result-header">
+                <h2>分析结果</h2>
+                <div class="view-toggle">
+                    <button id="viewToggleBtn" class="btn-toggle" title="切换视图模式">
+                        <span id="viewToggleText">切换为简洁视图</span>
+                    </button>
+                </div>
+            </div>
+            <pre id="resultJson" class="result-json"></pre>
+            <button id="copyBtn" class="btn-secondary">复制完整结果</button>
+        </div>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
