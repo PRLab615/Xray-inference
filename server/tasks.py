@@ -198,6 +198,37 @@ def analyze_task(self, task_id: str):
             "error": None
         }
         
+        # 调试：打印 CephalometricMeasurements 的 Level 值
+        if task_type == 'cephalometric' and 'CephalometricMeasurements' in data_dict:
+            measurements = data_dict['CephalometricMeasurements'].get('AllMeasurements', [])
+            logger.info(f"[调试] Pipeline 返回的 Level 值 (taskId={task_id}):")
+            for m in measurements:
+                label = m.get('Label', 'N/A')
+                level = m.get('Level', 'N/A')
+                level_type = type(level).__name__
+                if 'Angle' in m:
+                    value = m.get('Angle')
+                    logger.info(f"  {label}: Level={level} (type={level_type}), Angle={value}")
+                elif 'Ratio' in m:
+                    value = m.get('Ratio')
+                    logger.info(f"  {label}: Level={level} (type={level_type}), Ratio={value}")
+            
+            # 检查 JSON 序列化后的数据
+            import json
+            try:
+                serialized = json.dumps(data_dict['CephalometricMeasurements'], ensure_ascii=False)
+                logger.info(f"[调试] JSON 序列化测试: 成功，长度={len(serialized)}")
+                # 反序列化检查
+                deserialized = json.loads(serialized)
+                logger.info(f"[调试] JSON 反序列化后的 Level 值:")
+                for m in deserialized.get('AllMeasurements', []):
+                    label = m.get('Label', 'N/A')
+                    level = m.get('Level', 'N/A')
+                    level_type = type(level).__name__
+                    logger.info(f"  {label}: Level={level} (type={level_type})")
+            except Exception as e:
+                logger.error(f"[调试] JSON 序列化测试失败: {e}")
+        
         # 5. 发送回调 v3
         success = callback_mgr.send_callback(callback_url, payload_v3)
         
