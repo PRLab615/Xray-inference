@@ -53,7 +53,7 @@ pipelines:
     modules:
       point:
         description: "标志点检测模型"
-        weights_key: "weights/cephalometric/point_best_19.pt"
+        weights_key: "weights/cephalometric/15_best.pt"
         weights_force_download: false
         device: "0"
         image_size: 1024

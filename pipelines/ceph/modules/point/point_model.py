@@ -21,7 +21,7 @@ from tools.weight_fetcher import ensure_weight_file, WeightFetchError
 logger = logging.getLogger(__name__)
 DEFAULT_WEIGHTS_PATH = os.getenv(
     "CEPH_MODEL_WEIGHTS",
-    str(Path(__file__).resolve().parents[2] / "point_best_19.pt"),
+    str(Path(__file__).resolve().parents[2] / "15_best.pt"),
 )
 
 @dataclass
