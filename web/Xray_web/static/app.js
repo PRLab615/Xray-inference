@@ -1742,6 +1742,7 @@ function drawRegionalFindings(data, stage, scale) {
     let implantCount = 0;
     let densityCount = 0;
     let condyleCount = 0;
+    let mandibleCount = 0;
     
     // 绘制种植体
     if (data.ImplantAnalysis && data.ImplantAnalysis.Items && Array.isArray(data.ImplantAnalysis.Items)) {
@@ -1919,8 +1920,104 @@ function drawRegionalFindings(data, stage, scale) {
         }
     }
     
+    // 绘制下颌分支区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        // 获取下颌骨对称性信息
+        let mandibleSymmetryInfo = null;
+        if (data.JointAndMandible) {
+            mandibleSymmetryInfo = {
+                RamusSymmetry: data.JointAndMandible.RamusSymmetry,
+                GonialAngleSymmetry: data.JointAndMandible.GonialAngleSymmetry,
+                Detail: data.JointAndMandible.Detail,
+                Confidence: data.JointAndMandible.Confidence
+            };
+        }
+        
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理下颌分支
+            if (!rawLabel.includes('mandible')) return;
+            
+            // 判定左右
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            
+            if (!side) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 选择配色（使用蓝色系来区分下颌分支）
+            let strokeColor = 'cyan';
+            let fillColor = 'rgba(0,255,255,0.25)';  // 增加透明度，确保鼠标事件能触发
+            
+            // 根据对称性信息调整颜色（如果不对称，使用橙色）
+            if (mandibleSymmetryInfo) {
+                if (mandibleSymmetryInfo.RamusSymmetry === false || mandibleSymmetryInfo.GonialAngleSymmetry === false) {
+                    strokeColor = 'orange';
+                    fillColor = 'rgba(255,165,0,0.25)';  // 增加透明度
+                }
+            }
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // 平滑并绘制
+                    let pts = smoothPolyline(pArr, 3);
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: 2.5,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        tension: 0.15,
+                        fill: fillColor,
+                        shadowColor: strokeColor,
+                        shadowBlur: 6,
+                        shadowOpacity: 0.6,
+                        listening: true,  // 确保事件监听启用
+                        perfectDrawEnabled: false  // 优化性能
+                    });
+                    poly.findingType = 'mandible';
+                    poly.findingData = mandibleSymmetryInfo;
+                    poly.mandibleSide = side;
+                    
+                    // 绑定鼠标事件
+                    poly.on('mouseenter', function(e) {
+                        console.log('Mandible mouseenter triggered', side, mandibleSymmetryInfo);
+                        showMandibleTooltip(this, mandibleSymmetryInfo, side, e);
+                    });
+                    poly.on('mouseleave', function() {
+                        console.log('Mandible mouseleave triggered');
+                        hideTooltip();
+                    });
+                    
+                    // 添加鼠标样式
+                    poly.on('mouseenter', function() {
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    findingLayer.add(poly);
+                    mandibleCount++;
+                });
+            }
+        });
+        
+        if (mandibleCount > 0) {
+            console.log('下颌分支区域绘制完成，已绘制:', mandibleCount, '个');
+        }
+    }
+    
     // 只有当图层中有内容时才添加到 Stage
-    if (implantCount > 0 || densityCount > 0 || condyleCount > 0) {
+    if (implantCount > 0 || densityCount > 0 || condyleCount > 0 || mandibleCount > 0) {
         stage.add(findingLayer);
         appState.konvaLayers.regionalFindings = findingLayer;
     }
@@ -1974,6 +2071,102 @@ function createCondyleRect(maskData, scale, side, condyleInfo) {
     rect.condyleSide = side;
     
     return rect;
+}
+
+/**
+ * 显示下颌分支 Tooltip
+ * @param {Konva.Node} node - Konva 节点（Line）
+ * @param {Object|null} mandibleInfo - 下颌骨对称性信息
+ * @param {string} side - 侧别 ('left' 或 'right')
+ * @param {Object} event - Konva 事件对象
+ */
+function showMandibleTooltip(node, mandibleInfo, side, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容（反转左右显示）
+    const sideName = side === 'left' ? '右' : '左';
+    let content = `<strong>${sideName}侧下颌分支</strong><br>`;
+    
+    if (mandibleInfo) {
+        // 升支对称性
+        if (mandibleInfo.RamusSymmetry !== undefined) {
+            const ramusText = mandibleInfo.RamusSymmetry ? '对称' : '不对称';
+            content += `升支对称性: ${ramusText}<br>`;
+        }
+        
+        // 下颌角对称性
+        if (mandibleInfo.GonialAngleSymmetry !== undefined) {
+            const gonialText = mandibleInfo.GonialAngleSymmetry ? '对称' : '不对称';
+            content += `下颌角对称性: ${gonialText}<br>`;
+        }
+        
+        // 详细描述
+        if (mandibleInfo.Detail) {
+            content += `${mandibleInfo.Detail}<br>`;
+        }
+        
+        // 置信度
+        if (mandibleInfo.Confidence !== undefined) {
+            content += `置信度: ${(mandibleInfo.Confidence * 100).toFixed(1)}%`;
+        }
+    } else {
+        content += '诊断信息未找到';
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置（多边形的中心点）
+    const points = node.points();
+    let sumX = 0, sumY = 0, pointCount = 0;
+    for (let i = 0; i < points.length; i += 2) {
+        sumX += points[i];
+        sumY += points[i + 1];
+        pointCount++;
+    }
+    const centerX = sumX / pointCount;
+    const centerY = sumY / pointCount;
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + centerX + 15;
+    const tooltipY = stageBox.top + centerY - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
 }
 
 /**
