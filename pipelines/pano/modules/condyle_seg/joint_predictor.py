@@ -2,6 +2,8 @@
 """
 髁突(关节)分割推理器 - ONNX版
 直接输出符合《全景片 JSON 规范》的 Standard Data
+
+权重路径通过 config.yaml 统一配置，不再使用硬编码路径。
 """
 import os
 import sys
@@ -11,42 +13,30 @@ import onnxruntime as ort
 import torch
 import json
 import time
+from typing import Optional, List
 
 # 初始化 logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# 1. 引用根目录
-sys.path.append(os.getcwd())
+# --- 稳健路径设置 ---
+current_file_path = os.path.abspath(__file__)
+current_dir = os.path.dirname(current_file_path)
+project_root = os.path.abspath(os.path.join(current_dir, "../../../../"))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+# 导入统一的权重获取工具
+from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+
+# 引用前处理 (负责算数)
 try:
-    from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
-except ImportError:
-    # MOCK 依赖，确保文件在无 MinIO 环境下可测试
-    class MockS3Client:
-        def download_file(self, bucket, path, local_path):
-            # 模拟下载，创建一个空文件
-            time.sleep(0.1)
-            with open(local_path, 'w') as f:
-                f.write("mock onnx model")
-
-
-    def get_s3_client():
-        return MockS3Client()
-
-
-    S3_BUCKET_NAME = "mock-bucket"
-    LOCAL_WEIGHTS_DIR = "/tmp/weights"
-
-# 2. 引用前处理 (负责算数)
-try:
-    # 导入真实的前后处理类
     from pipelines.pano.modules.condyle_seg.pre_post import JointPrePostProcessor
-    logger.info("✅ Successfully imported REAL JointPrePostProcessor from condyle_seg.pre_post")
+    logger.info("Successfully imported JointPrePostProcessor from condyle_seg.pre_post")
 except ImportError as e:
-    logger.error(f"❌ Failed to import JointPrePostProcessor: {e}")
+    logger.error(f"Failed to import JointPrePostProcessor: {e}")
     raise ImportError("JointPrePostProcessor is required but could not be imported!") from e
 
-# 3. 引用格式化工具
+# 引用格式化工具
 try:
     from pipelines.pano.utils import pano_report_utils
 except ImportError:
@@ -58,17 +48,14 @@ except ImportError:
 
         @staticmethod
         def format_joint_report(raw_features, analysis):
-            # 使用 MockReportUtils 中定义的逻辑
             left_feature = raw_features.get("left", {})
             right_feature = raw_features.get("right", {})
             left_morphology = left_feature.get("class_id", 0)
             right_morphology = right_feature.get("class_id", 0)
             left_conf = left_feature.get("confidence", 0.0)
             right_conf = right_feature.get("confidence", 0.0)
-            left_detail = MockReportUtils.MORPHOLOGY_MAP.get(left_morphology, MockReportUtils.MORPHOLOGY_MAP[0])[
-                "detail"]
-            right_detail = MockReportUtils.MORPHOLOGY_MAP.get(right_morphology, MockReportUtils.MORPHOLOGY_MAP[0])[
-                "detail"]
+            left_detail = MockReportUtils.MORPHOLOGY_MAP.get(left_morphology, MockReportUtils.MORPHOLOGY_MAP[0])["detail"]
+            right_detail = MockReportUtils.MORPHOLOGY_MAP.get(right_morphology, MockReportUtils.MORPHOLOGY_MAP[0])["detail"]
 
             return {
                 "CondyleAssessment": {
@@ -84,41 +71,100 @@ except ImportError:
 
 
     pano_report_utils = MockReportUtils()
-    print("⚠️ WARNING: Could not import real pano_report_utils. Using MockReportUtils for robustness.")
+    logger.warning("Could not import real pano_report_utils. Using MockReportUtils.")
 
 
 class JointPredictor:
     """
     髁突(关节)分割推理器 - ONNX版
     直接输出符合《全景片 JSON 规范》的 Standard Data
+    
+    权重路径通过 config.yaml 统一配置。
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        weights_key: Optional[str] = None,
+        weights_force_download: bool = False,
+        input_size: Optional[List[int]] = None,
+    ):
+        """
+        初始化髁突分割模块
+        
+        Args:
+            weights_key: S3 权重路径（从 config.yaml 传入）
+            weights_force_download: 是否强制重新下载权重
+            input_size: 输入尺寸 [H, W]，默认 [224, 224]
+        """
+        self.weights_key = weights_key
+        self.weights_force_download = weights_force_download
+        
         # 兼容 ONNX Runtime 的执行器
         self.providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        # 权重路径，使用您提供的路径
-        self.s3_weight_path = "weights/panoramic/candlye_seg.onnx"
-        self.input_size = (224, 224)
+        
+        # 输入尺寸
+        if input_size:
+            self.input_size = tuple(input_size)
+        else:
+            self.input_size = (224, 224)
 
         # JointPrePostProcessor 负责图像预处理和模型输出的后处理
         self.pre_post = JointPrePostProcessor(input_size=self.input_size)
         self.session = None
+        self.weights_path = None
         self._init_session()
 
+    def _resolve_weights_path(self) -> str:
+        """
+        解析权重文件路径
+        
+        优先级：
+            1. 配置的 weights_key（从 config.yaml 传入，可通过 S3 下载）
+            2. 环境变量 PANO_CONDYLE_SEG_WEIGHTS（可选覆盖）
+        """
+        env_weights = os.getenv("PANO_CONDYLE_SEG_WEIGHTS")
+        
+        candidates = [
+            ("weights_key", self.weights_key),
+            ("env", env_weights),
+        ]
+        
+        for origin, candidate in candidates:
+            if not candidate:
+                continue
+            
+            # 如果是本地存在的文件，直接返回
+            if os.path.exists(candidate):
+                logger.info(f"Using local weights file: {candidate} (from {origin})")
+                return candidate
+            
+            # 尝试从 S3 下载
+            if origin == "weights_key":
+                try:
+                    downloaded = ensure_weight_file(candidate, force_download=self.weights_force_download)
+                    logger.info(f"Downloaded Condyle Seg weights from S3 key '{candidate}' to {downloaded}")
+                    return downloaded
+                except WeightFetchError as e:
+                    logger.warning(f"Failed to download from {origin}: {e}")
+                    continue
+        
+        # 所有候选路径都失败
+        error_msg = (
+            f"Condyle segmentation model weights not found. "
+            f"Please configure weights_key in config.yaml under pipelines.panoramic.modules.condyle_seg"
+        )
+        raise FileNotFoundError(error_msg)
+
     def _init_session(self):
-        logger.info("Initializing ONNX Runtime Session...")
+        """解析权重路径并初始化 ONNX Session"""
+        logger.info("Initializing Condyle Seg ONNX Runtime Session...")
         try:
-            local_file_path = os.path.join(LOCAL_WEIGHTS_DIR, self.s3_weight_path)
-            local_folder = os.path.dirname(local_file_path)
-            if not os.path.exists(local_folder): os.makedirs(local_folder)
+            # 解析权重路径
+            self.weights_path = self._resolve_weights_path()
 
-            if not os.path.exists(local_file_path):
-                logger.info(f"Downloading ONNX model: {self.s3_weight_path} ...")
-                s3 = get_s3_client()
-                s3.download_file(S3_BUCKET_NAME, self.s3_weight_path, local_file_path)
-
-            # 初始化真实的 ONNX Session
-            self.session = ort.InferenceSession(local_file_path, providers=self.providers)
+            # 初始化 ONNX Session
+            self.session = ort.InferenceSession(self.weights_path, providers=self.providers)
             self.input_name = self.session.get_inputs()[0].name
             
             # 获取实际使用的 provider
@@ -129,6 +175,7 @@ class JointPredictor:
         except Exception as e:
             logger.critical(f"Failed to initialize ONNX session: {e}")
             self.session = None
+            raise
 
     def predict(self, image) -> dict:
         """

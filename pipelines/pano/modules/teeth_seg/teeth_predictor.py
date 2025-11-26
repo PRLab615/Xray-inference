@@ -1,4 +1,6 @@
 # 文件名: teeth_predictor.py
+"""牙齿分割模块 - YOLOv11 实例分割实现"""
+
 import sys
 import logging
 import os
@@ -6,7 +8,7 @@ import torch
 from ultralytics import YOLO
 from PIL import Image
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # --- 稳健路径设置 ---
 current_file_path = os.path.abspath(__file__)
@@ -15,79 +17,110 @@ project_root = os.path.abspath(os.path.join(current_dir, "../../../../"))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# 导入
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
+# 导入统一的权重获取工具
+from tools.weight_fetcher import ensure_weight_file, WeightFetchError
 from pipelines.pano.modules.teeth_seg.pre_post import process_teeth_masks  # 后处理
 
 logger = logging.getLogger(__name__)
-
-# YOLO 模型 S3 路径 (YOLOv11 实例分割模型)
-YOLO_S3_PATH = "weights/panoramic/1116_teeth_seg.pt"
 
 
 class TeethSegmentationModule:
     """
     全景片牙齿分割模块（YOLOv11 实例分割实现），检测牙齿序号掩码并后处理缺牙/智齿/乳牙。
+    
+    权重路径通过 config.yaml 统一配置，不再使用硬编码路径。
     """
 
-    def __init__(self, device: str = None):
+    def __init__(
+        self,
+        *,
+        weights_key: Optional[str] = None,
+        weights_force_download: bool = False,
+        device: Optional[str] = None,
+        conf: float = 0.25,
+        iou: float = 0.45,
+    ):
         """
-        初始化牙齿分割模块，加载权重。
+        初始化牙齿分割模块
+        
+        Args:
+            weights_key: S3 权重路径（从 config.yaml 传入）
+            weights_force_download: 是否强制重新下载权重
+            device: 推理设备（"0", "cpu" 等）
+            conf: 置信度阈值
+            iou: NMS IoU 阈值
         """
+        self.weights_key = weights_key
+        self.weights_force_download = weights_force_download
+        self.conf = conf
+        self.iou = iou
+        
+        # 处理 device 参数
+        # config.yaml 中 device: "0" 表示 GPU 0，"cpu" 表示 CPU
         if device is None:
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        elif device == "cpu":
+            self.device = 'cpu'
         else:
-            self.device = device
+            # "0", "1" 等数字字符串表示 GPU 索引
+            self.device = f'cuda:{device}' if torch.cuda.is_available() else 'cpu'
 
+        self.weights_path = self._resolve_weights_path()
         self.model = self._load_model()
 
-    def _load_model(self) -> YOLO:
+    def _resolve_weights_path(self) -> str:
         """
-        加载 YOLOv11 实例分割模型。
+        解析权重文件路径
         
-        核心逻辑:
-        1. 检查本地是否存在权重文件
-        2. 如果不存在，从 MinIO 下载
-        3. 使用 YOLO(path) 加载模型
+        优先级：
+            1. 配置的 weights_key（从 config.yaml 传入，可通过 S3 下载）
+            2. 环境变量 PANO_TEETH_SEG_WEIGHTS（可选覆盖）
         """
-        # 1. 构造本地文件路径
-        local_weight_path = os.path.join(LOCAL_WEIGHTS_DIR, YOLO_S3_PATH)
+        env_weights = os.getenv("PANO_TEETH_SEG_WEIGHTS")
+        
+        candidates = [
+            ("weights_key", self.weights_key),
+            ("env", env_weights),
+        ]
+        
+        for origin, candidate in candidates:
+            if not candidate:
+                continue
+            
+            # 如果是本地存在的文件，直接返回
+            if os.path.exists(candidate):
+                logger.info(f"Using local weights file: {candidate} (from {origin})")
+                return candidate
+            
+            # 尝试从 S3 下载
+            if origin == "weights_key":
+                try:
+                    downloaded = ensure_weight_file(candidate, force_download=self.weights_force_download)
+                    logger.info(f"Downloaded Teeth weights from S3 key '{candidate}' to {downloaded}")
+                    return downloaded
+                except WeightFetchError as e:
+                    logger.warning(f"Failed to download from {origin}: {e}")
+                    continue
+        
+        # 所有候选路径都失败
+        error_msg = (
+            f"Teeth segmentation model weights not found. "
+            f"Please configure weights_key in config.yaml under pipelines.panoramic.modules.teeth_seg"
+        )
+        raise FileNotFoundError(error_msg)
 
-        # 2. 确保权重文件存在（下载或使用缓存）
-        self._ensure_weight_exists(local_weight_path)
-
+    def _load_model(self) -> YOLO:
+        """加载 YOLOv11 实例分割模型"""
         try:
-            # 3. 使用 Ultralytics YOLO 框架加载模型
-            logger.info(f"Initializing Teeth YOLO model from: {local_weight_path} on {self.device}")
-            model = YOLO(local_weight_path)
-            model.to(self.device)
-            model.eval()
+            logger.info(f"Initializing Teeth YOLO model from: {self.weights_path}")
+            logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
+            model = YOLO(self.weights_path)
+            # YOLO 模型不需要手动调用 .to()，在 predict 时指定 device 即可
             logger.info("YOLOv11 Teeth Segmentation Model initialized successfully.")
             return model
         except Exception as e:
             logger.error(f"Failed to load Teeth model: {e}")
             raise
-
-    def _ensure_weight_exists(self, local_weight_path: str):
-        """
-        检查本地缓存，不存在则从 MinIO 下载
-        """
-        local_folder = os.path.dirname(local_weight_path)
-        if not os.path.exists(local_folder):
-            os.makedirs(local_folder)
-
-        if not os.path.exists(local_weight_path):
-            logger.info(f"Cache miss. Downloading from S3: {YOLO_S3_PATH} ...")
-            try:
-                s3 = get_s3_client()
-                # 直接下载文件到本地路径
-                s3.download_file(S3_BUCKET_NAME, YOLO_S3_PATH, local_weight_path)
-                logger.info("Download completed.")
-            except Exception as e:
-                logger.error(f"Download failed. Please check S3 config. Error: {e}")
-                raise
-        else:
-            logger.info(f"Cache hit. Found local weights at: {local_weight_path}")
 
     def predict(self, image: Image.Image) -> Dict[str, Any]:
         """
@@ -103,13 +136,11 @@ class TeethSegmentationModule:
         try:
             results = self.model.predict(
                 source=image,
-                conf=0.25,  # 置信度阈值
-                iou=0.45,   # NMS IoU
+                conf=self.conf,
+                iou=self.iou,
                 device=self.device,
                 verbose=False,
-                save=False,  # 不保存图像
-                # 可选: 过滤特定类，如果模型有类 ID
-                # classes=range(1, 49)  # 假设 1-48 为恒牙，额外乳牙类
+                save=False,
             )
 
             if not results or len(results) == 0:

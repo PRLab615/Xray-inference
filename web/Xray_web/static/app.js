@@ -1968,8 +1968,8 @@ function createCondyleRect(maskData, scale, side, condyleInfo) {
         fill: 'transparent'
     });
     
-    // 存储发现数据
-    rect.findingData = condyleInfo || { Detail: `${side === 'left' ? '左' : '右'}侧髁突`, Confidence: 0.95 };
+    // 存储发现数据（反转左右显示）
+    rect.findingData = condyleInfo || { Detail: `${side === 'left' ? '右' : '左'}侧髁突`, Confidence: 0.95 };
     rect.findingType = 'condyle';
     rect.condyleSide = side;
     
@@ -1992,8 +1992,8 @@ function showCondyleTooltip(node, condyleInfo, side, event) {
     tooltip.id = 'findingTooltip';
     tooltip.className = 'tooltip';
     
-    // 构建 Tooltip 内容
-    const sideName = side === 'left' ? '左' : '右';
+    // 构建 Tooltip 内容（反转左右显示）
+    const sideName = side === 'left' ? '右' : '左';
     let content = `<strong>${sideName}侧髁突</strong><br>`;
     
     if (condyleInfo) {
@@ -2144,11 +2144,11 @@ function buildPanoReport(data) {
         if (joint.CondyleAssessment) {
             const condyle = joint.CondyleAssessment;
             
-            // 左侧髁突
+            // 左侧髁突（显示为右侧）
             if (condyle.condyle_Left) {
                 const leftCondyle = condyle.condyle_Left;
                 const morphologyText = leftCondyle.Morphology === 0 ? '正常' : '吸收';
-                jointSection.appendChild(createKeyValue('左侧髁突形态', morphologyText));
+                jointSection.appendChild(createKeyValue('右侧髁突形态', morphologyText));
                 if (leftCondyle.Detail) {
                     jointSection.appendChild(createKeyValue('', leftCondyle.Detail));
                 }
@@ -2158,11 +2158,11 @@ function buildPanoReport(data) {
                 hasJointContent = true;
             }
             
-            // 右侧髁突
+            // 右侧髁突（显示为左侧）
             if (condyle.condyle_Right) {
                 const rightCondyle = condyle.condyle_Right;
                 const morphologyText = rightCondyle.Morphology === 0 ? '正常' : '吸收';
-                jointSection.appendChild(createKeyValue('右侧髁突形态', morphologyText));
+                jointSection.appendChild(createKeyValue('左侧髁突形态', morphologyText));
                 if (rightCondyle.Detail) {
                     jointSection.appendChild(createKeyValue('', rightCondyle.Detail));
                 }
