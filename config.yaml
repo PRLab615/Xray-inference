@@ -42,3 +42,64 @@ image_download:
     - .png
     - .dcm
 
+# Pipeline/模型配置（v3.1）
+pipelines:
+  panoramic:
+    preload: true                # Worker 启动时即初始化全景片 Pipeline
+    modules:
+      teeth_seg:
+        description: "牙齿分割模块（YOLOv11实例分割）"
+        weights_key: "weights/panoramic/1116_teeth_seg.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+      
+      mandible_seg:
+        description: "下颌骨分割模块（TransUNet ONNX）"
+        weights_key: "weights/panoramic/transunet_mandible.onnx"
+        weights_force_download: false
+        input_size: [224, 224]
+      
+      implant_detect:
+        description: "种植体检测模块（YOLOv11）"
+        weights_key: "weights/panoramic/implant.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+      
+      condyle_seg:
+        description: "髁突分割模块（ONNX）"
+        weights_key: "weights/panoramic/candlye_seg.onnx"
+        weights_force_download: false
+        input_size: [224, 224]
+      
+      condyle_det:
+        description: "髁突检测模块（YOLOv11）"
+        weights_key: "weights/panoramic/candlye_detec_best.pt"
+        weights_force_download: false
+        device: "0"
+  
+  cephalometric:
+    preload: true                # Worker 启动时即初始化侧位片 Pipeline
+    modules:
+      point:
+        description: "标志点检测模型"
+        weights_key: "weights/cephalometric/15_best.pt"
+        weights_force_download: false
+        device: "0"
+        image_size: 1024
+        conf: 0.25
+        iou: 0.6
+        max_det: 1
+      # seg:  # 未实现的模块直接注释掉，而不是用 enabled: false
+      #   description: "轮廓/结构分割模型（预留）"
+      #   weights_key: "weights/cephalometric/seg/best.pt"
+      #   weights_force_download: false
+      #   device: "0"
+      #   input_size: 1024
+      #   conf: 0.35
+      #   iou: 0.5
+      #   classes: []
+

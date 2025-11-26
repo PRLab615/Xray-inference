@@ -1,0 +1,2977 @@
+/**
+ * AI 异步分析前端核心逻辑
+ * 实现任务提交、轮询、结果展示和状态管理
+ */
+
+// 兼容性工具函数：生成 UUID v4
+function generateUUID() {
+    // 优先使用原生 API（如果可用）
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    
+    // 降级方案：使用 Math.random() 生成 UUID v4
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+// 全局状态对象
+const appState = {
+    currentTaskId: null,       // 当前任务ID
+    currentTaskType: null,     // 当前任务类型 (panoramic/cephalometric)
+    pollingTimer: null,        // 轮询定时器
+    pollingStartTime: null,    // 轮询开始时间
+    cachedResult: null,        // 缓存的结果JSON
+    konvaStage: null,          // Konva Stage 实例
+    konvaLayers: {},           // 图层对象集合
+    originalImage: null,       // 原始图片对象
+    imageScale: 1.0            // 图片缩放比例
+};
+
+// 全局配置常量
+const CONFIG = {
+    AI_BACKEND_URL: 'http://192.168.1.17:18000/api/v1/analyze',
+    CALLBACK_URL: 'http://192.168.1.17:5000/callback',
+    POLL_INTERVAL: 3000,       // 3秒
+    POLL_TIMEOUT: 360000       // 6分钟
+};
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+    init();
+});
+
+/**
+ * 初始化函数：绑定所有事件监听器
+ */
+function init() {
+    // 绑定任务类型和文件选择的变化事件
+    document.getElementById('taskType').addEventListener('change', onTaskTypeOrFileChange);
+    document.getElementById('imageFile').addEventListener('change', onTaskTypeOrFileChange);
+    
+    // 绑定患者信息表单的变化事件
+    document.getElementById('gender').addEventListener('change', onPatientInfoChange);
+    document.getElementById('dentalStage').addEventListener('change', onPatientInfoChange);
+    
+    // 绑定提交按钮
+    document.getElementById('submitBtn').addEventListener('click', onSubmit);
+    
+    // 步骤14：设置窗口大小变化处理
+    setupWindowResizeHandler();
+    
+    // 步骤15：设置键盘快捷键和平滑滚动
+    setupKeyboardShortcuts();
+    enableSmoothScrolling();
+    
+    console.log('前端初始化完成');
+}
+
+/**
+ * 监听任务类型或文件变化，动态显示/隐藏 patientInfo 表单
+ * 核心逻辑：
+ * - 如果 taskType == 'cephalometric' 且文件为图片，显示患者信息表单
+ * - 其他情况隐藏患者信息表单
+ */
+function onTaskTypeOrFileChange() {
+    const taskType = document.getElementById('taskType').value;
+    const fileInput = document.getElementById('imageFile');
+    const file = fileInput.files[0];
+    const patientInfoSection = document.getElementById('patientInfoSection');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    // 检测是否是文件变化（重新选择文件）
+    // 如果用户在任何状态下重新选择文件，触发重置（步骤8实现）
+    // if (fileInput.files.length > 0) {
+    //     if (appState.currentTaskId || appState.pollingTimer) {
+    //         console.log('检测到文件变化，重置 UI');
+    //         resetUI();
+    //         return;
+    //     }
+    // }
+    
+    // 判断是否需要显示患者信息表单
+    let shouldShowPatientInfo = false;
+    
+    if (taskType === 'cephalometric' && file) {
+        const fileName = file.name.toLowerCase();
+        // 检查是否为图片文件（.jpg, .jpeg, .png）
+        const isImage = fileName.endsWith('.jpg') || 
+                       fileName.endsWith('.jpeg') || 
+                       fileName.endsWith('.png');
+        shouldShowPatientInfo = isImage;
+    }
+    
+    // 更新 UI：显示或隐藏患者信息表单
+    if (shouldShowPatientInfo) {
+        patientInfoSection.classList.remove('hidden');
+        // 患者信息表单显示时，需要检查是否填写完整
+        updateSubmitButtonState();
+    } else {
+        patientInfoSection.classList.add('hidden');
+        // 患者信息表单隐藏时，提交按钮可用（前提是已选择文件）
+        if (file) {
+            submitBtn.disabled = false;
+        } else {
+            submitBtn.disabled = false; // 即使未选择文件，也不禁用，由提交时检查
+        }
+    }
+    
+    console.log(`动态表单逻辑: taskType=${taskType}, 文件=${file ? file.name : '未选择'}, 显示患者信息=${shouldShowPatientInfo}`);
+}
+
+/**
+ * 监听患者信息表单的变化，更新提交按钮状态
+ */
+function onPatientInfoChange() {
+    updateSubmitButtonState();
+}
+
+/**
+ * 更新提交按钮的启用/禁用状态
+ * 规则：如果患者信息表单显示，必须填写完整才能启用提交按钮
+ */
+function updateSubmitButtonState() {
+    const patientInfoSection = document.getElementById('patientInfoSection');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    // 如果患者信息表单显示，检查是否填写完整
+    if (!patientInfoSection.classList.contains('hidden')) {
+        const gender = document.getElementById('gender').value;
+        const dentalStage = document.getElementById('dentalStage').value;
+        
+        // 只有性别和牙期都填写了才启用提交按钮
+        submitBtn.disabled = !(gender && dentalStage);
+        
+        console.log(`提交按钮状态: gender=${gender}, dentalStage=${dentalStage}, enabled=${!submitBtn.disabled}`);
+    }
+}
+
+/**
+ * 显示加载图标
+ */
+function showLoading() {
+    document.getElementById('loadingIndicator').classList.remove('hidden');
+}
+
+/**
+ * 隐藏加载图标
+ */
+function hideLoading() {
+    document.getElementById('loadingIndicator').classList.add('hidden');
+}
+
+// ============================================
+// 步骤5：Konva Stage 初始化和工具函数
+// ============================================
+
+/**
+ * 初始化 Konva Stage
+ * @param {string} containerId - 容器元素 ID
+ * @param {number} width - Stage 宽度
+ * @param {number} height - Stage 高度
+ * @returns {Konva.Stage} Stage 实例
+ */
+function initKonvaStage(containerId, width, height) {
+    const container = document.getElementById(containerId);
+    if (!container) {
+        console.error('容器元素不存在:', containerId);
+        return null;
+    }
+    
+    // 如果已存在 Stage，先销毁
+    if (appState.konvaStage) {
+        appState.konvaStage.destroy();
+        appState.konvaStage = null;
+    }
+    
+    // 确保尺寸有效
+    if (width <= 0 || height <= 0) {
+        console.error('无效的 Stage 尺寸:', width, 'x', height);
+        return null;
+    }
+    
+    // 创建新的 Stage
+    const stage = new Konva.Stage({
+        container: containerId,
+        width: width,
+        height: height
+    });
+    
+    appState.konvaStage = stage;
+    appState.konvaLayers = {};
+    
+    console.log('Konva Stage 初始化完成:', width, 'x', height);
+    return stage;
+}
+
+/**
+ * 坐标缩放转换
+ * @param {number} x - 原始 X 坐标
+ * @param {number} y - 原始 Y 坐标
+ * @param {number} scale - 缩放比例
+ * @returns {{x: number, y: number}} 转换后的坐标
+ */
+function scaleCoordinates(x, y, scale) {
+    return {
+        x: x * scale,
+        y: y * scale
+    };
+}
+
+// 平滑折线：Chaikin 算法（支持闭合多边形）
+// points: [x1, y1, x2, y2, ...]
+// iterations: 平滑迭代次数，建议 1-3
+function smoothPolyline(points, iterations = 1) {
+    if (!Array.isArray(points) || points.length < 6) return points;
+    // 转换为二维点数组
+    let pts = [];
+    for (let i = 0; i < points.length; i += 2) {
+        pts.push([points[i], points[i + 1]]);
+    }
+    const chaikin = (arr) => {
+        const res = [];
+        const n = arr.length;
+        for (let i = 0; i < n; i++) {
+            const p0 = arr[i];
+            const p1 = arr[(i + 1) % n];
+            const Q = [0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1]];
+            const R = [0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1]];
+            res.push(Q, R);
+        }
+        return res;
+    };
+    for (let k = 0; k < iterations; k++) {
+        pts = chaikin(pts);
+    }
+    // 展平
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+        out.push(pts[i][0], pts[i][1]);
+    }
+    return out;
+}
+
+// 归一化分割坐标为一个或多个多边形点列（已缩放）
+// 支持三种格式：
+// 1) [[x,y], [x,y], ...]
+// 2) 多个多边形： [ [[x,y],...], [[x,y],...] ]
+// 3) 矩形: [x1, y1, x2, y2]
+function normalizeMaskPolygons(coords, scale) {
+    if (!coords) return [];
+    const polys = [];
+    // 矩形
+    if (Array.isArray(coords) && coords.length === 4 && coords.every(v => typeof v === 'number')) {
+        const [x1, y1, x2, y2] = coords;
+        const p = [
+            x1 * scale, y1 * scale,
+            x2 * scale, y1 * scale,
+            x2 * scale, y2 * scale,
+            x1 * scale, y2 * scale
+        ];
+        polys.push(p);
+        return polys;
+    }
+    // 单多边形 [[x,y], ...]
+    if (Array.isArray(coords) && Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+        // 也可能是多多边形
+        if (Array.isArray(coords[0][0])) {
+            // 多个多边形
+            coords.forEach(poly => {
+                if (Array.isArray(poly)) {
+                    const p = [];
+                    poly.forEach(pt => { if (Array.isArray(pt) && pt.length >= 2) { p.push(pt[0] * scale, pt[1] * scale); }});
+                    if (p.length >= 6) polys.push(p);
+                }
+            });
+        } else {
+            // 单个多边形
+            const p = [];
+            coords.forEach(pt => { if (Array.isArray(pt) && pt.length >= 2) { p.push(pt[0] * scale, pt[1] * scale); }});
+            if (p.length >= 6) polys.push(p);
+        }
+        return polys;
+    }
+    return [];
+}
+
+// ============================================
+// 步骤5：任务提交逻辑（不含轮询）
+// ============================================
+
+/**
+ * 处理任务提交
+ * 功能：
+ * 1. 生成 UUID 作为 taskId
+ * 2. 构建 FormData，包含 taskId, taskType, callbackUrl, image
+ * 3. 如果需要患者信息，添加 patientInfo 字段（JSON 字符串）
+ * 4. 发送 POST 请求到 AI 后端
+ * 5. 处理响应：202 成功、4xx 错误、网络错误
+ */
+async function onSubmit() {
+    const fileInput = document.getElementById('imageFile');
+    const file = fileInput.files[0];
+    
+    // 校验：必须选择文件
+    if (!file) {
+        alert('请先选择文件');
+        return;
+    }
+    
+    // 生成 taskId (UUID v4) - 兼容不支持 crypto.randomUUID 的环境
+    const taskId = generateUUID();
+    console.log('生成任务ID:', taskId);
+    
+    // 构建 FormData
+    const formData = new FormData();
+    formData.append('taskId', taskId);
+    formData.append('taskType', document.getElementById('taskType').value);
+    formData.append('callbackUrl', CONFIG.CALLBACK_URL);
+    formData.append('image', file);
+    
+    // 如果患者信息表单显示，添加 patientInfo 字段
+    const patientInfoSection = document.getElementById('patientInfoSection');
+    if (!patientInfoSection.classList.contains('hidden')) {
+        const patientInfo = {
+            gender: document.getElementById('gender').value,
+            DentalAgeStage: document.getElementById('dentalStage').value
+        };
+        formData.append('patientInfo', JSON.stringify(patientInfo));
+        console.log('患者信息:', patientInfo);
+    }
+    
+    // 禁用提交按钮，防止重复提交
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    
+    try {
+        console.log('发送请求到:', CONFIG.AI_BACKEND_URL);
+        const response = await fetch(CONFIG.AI_BACKEND_URL, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.status === 202) {
+            // 提交成功 (202 Accepted)
+            appState.currentTaskId = taskId;
+            appState.currentTaskType = document.getElementById('taskType').value; // 保存任务类型
+            showLoading();
+            console.log('任务提交成功，taskId:', taskId, 'taskType:', appState.currentTaskType);
+            
+            // 启动轮询
+            startPolling(taskId);
+        } else {
+            // 同步验证失败（4xx 错误）
+            const errorData = await response.json();
+            const errorMsg = errorData.error?.displayMessage || '提交失败';
+            alert('错误：' + errorMsg);
+            console.error('提交失败:', errorData);
+            submitBtn.disabled = false;
+        }
+    } catch (error) {
+        // 网络错误
+        console.error('网络错误:', error);
+        alert('网络连接失败，请检查后重试');
+        submitBtn.disabled = false;
+    }
+}
+
+// ============================================
+// 步骤6：轮询逻辑和超时处理
+// ============================================
+
+/**
+ * 启动轮询机制
+ * 功能：
+ * 1. 记录轮询开始时间
+ * 2. 立即执行一次轮询
+ * 3. 设置定时器，每 3 秒轮询一次
+ */
+function startPolling(taskId) {
+    console.log('开始轮询，taskId:', taskId);
+    appState.pollingStartTime = Date.now();
+    
+    // 立即执行一次轮询
+    pollResult(taskId);
+    
+    // 设置定时器，每 3 秒轮询一次
+    appState.pollingTimer = setInterval(() => {
+        pollResult(taskId);
+    }, CONFIG.POLL_INTERVAL);
+}
+
+/**
+ * 单次轮询查询
+ * 功能：
+ * 1. 检查是否超时（6 分钟）
+ * 2. 向 Flask 服务器查询结果
+ * 3. 根据响应状态处理：200 成功、404 未到达、其他错误
+ */
+async function pollResult(taskId) {
+    // 检查是否超时
+    const elapsed = Date.now() - appState.pollingStartTime;
+    if (elapsed > CONFIG.POLL_TIMEOUT) {
+        stopPolling();
+        hideLoading();
+        alert('任务超时，请重试或联系管理员');
+        document.getElementById('submitBtn').disabled = false;
+        console.error('任务超时:', taskId);
+        return;
+    }
+    
+    console.log(`轮询中... (已等待 ${Math.floor(elapsed / 1000)} 秒)`);
+    
+    try {
+        const response = await fetch(`/get-result?taskId=${taskId}`);
+        
+        if (response.status === 200) {
+            // 结果已到达
+            const resultData = await response.json();
+            console.log('收到结果:', resultData);
+            
+            // 停止轮询
+            stopPolling();
+            
+            // 缓存结果
+            appState.cachedResult = resultData;
+            
+            // 显示结果（步骤7实现）
+            displayResult(resultData);
+        } else if (response.status === 404) {
+            // 结果未到达，继续轮询
+            console.log('结果未到达，继续等待...');
+        } else {
+            // 其他错误
+            stopPolling();
+            hideLoading();
+            alert('查询结果时出错');
+            document.getElementById('submitBtn').disabled = false;
+            console.error('查询错误，状态码:', response.status);
+        }
+    } catch (error) {
+        // 网络错误，不停止轮询（可能是暂时中断）
+        console.error('轮询请求失败:', error);
+    }
+}
+
+/**
+ * 停止轮询定时器
+ * 功能：清除定时器并将 pollingTimer 置为 null
+ */
+function stopPolling() {
+    if (appState.pollingTimer) {
+        clearInterval(appState.pollingTimer);
+        appState.pollingTimer = null;
+        console.log('停止轮询');
+    }
+}
+
+// ============================================
+// 步骤6：重构 displayResult() - 结果类型判断和错误处理
+// ============================================
+
+/**
+ * 在页面上展示分析结果或错误信息
+ * 功能：
+ * 1. 隐藏加载指示器
+ * 2. 重置 UI（清空之前的画布和报告）
+ * 3. 根据结果状态进行路由
+ * 4. 成功时根据任务类型调用对应的渲染函数
+ * 5. 失败时显示错误信息
+ */
+function displayResult(resultJson) {
+    console.log('displayResult 被调用，结果:', resultJson);
+    
+    // 隐藏加载指示器
+    hideLoading();
+    
+    // 重置 UI（清空之前的画布和报告）
+    clearCanvas();
+    clearReport();
+    
+    // 判断结果状态
+    if (resultJson.status === 'FAILURE') {
+        console.log('结果状态为 FAILURE');
+        displayError(resultJson.error);
+        return;
+    }
+    
+    // SUCCESS 状态：根据任务类型渲染
+    const taskType = appState.currentTaskType;
+    const data = resultJson.data;
+    
+    console.log('任务类型:', taskType, '数据:', data);
+    
+    if (!taskType) {
+        console.error('任务类型未设置');
+        displayError({ displayMessage: '任务类型未设置，无法显示结果' });
+        return;
+    }
+    
+    if (!data) {
+        console.error('数据为空');
+        displayError({ displayMessage: '分析结果数据为空' });
+        return;
+    }
+    
+    if (taskType === 'cephalometric') {
+        console.log('调用 renderCephalometric');
+        renderCephalometric(data);
+    } else if (taskType === 'panoramic') {
+        console.log('调用 renderPanoramic');
+        renderPanoramic(data);
+    } else {
+        console.error('未知的任务类型:', taskType);
+        displayError({ displayMessage: '未知的任务类型: ' + taskType });
+    }
+    
+    // 重新启用提交按钮（允许提交新任务）
+    document.getElementById('submitBtn').disabled = false;
+}
+
+/**
+ * 显示错误信息
+ * @param {Object} error - 错误对象
+ */
+function displayError(error) {
+    const errorMessage = document.getElementById('errorMessage');
+    const mainContainer = document.getElementById('mainContainer');
+    
+    // 隐藏主容器
+    if (mainContainer) {
+        mainContainer.classList.add('hidden');
+    }
+    
+    // 显示错误提示
+    const errorText = error?.displayMessage || '未知错误';
+    if (errorMessage) {
+        errorMessage.textContent = errorText;
+        errorMessage.classList.remove('hidden');
+    }
+    
+    console.log('错误展示:', errorText);
+    
+    // 重新启用提交按钮
+    document.getElementById('submitBtn').disabled = false;
+}
+
+/**
+ * 清空 Canvas 和 Konva 对象
+ */
+function clearCanvas() {
+    if (appState.konvaStage) {
+        // 销毁所有图层
+        appState.konvaStage.destroyChildren();
+        // 销毁 Stage
+        appState.konvaStage.destroy();
+        appState.konvaStage = null;
+    }
+    appState.konvaLayers = {};
+    appState.originalImage = null;
+    appState.imageScale = 1.0;
+}
+
+/**
+ * 清空报告容器
+ */
+function clearReport() {
+    const reportContainer = document.getElementById('reportContainer');
+    if (reportContainer) {
+        reportContainer.innerHTML = '';
+    }
+}
+
+// ============================================
+// 步骤7：侧位片渲染 - 背景图加载和关键点绘制
+// ============================================
+
+// 关键点全名映射表
+const LANDMARK_FULL_NAMES = {
+    'S': '蝶鞍点',
+    'N': '鼻根点',
+    'Ba': '颅底点',
+    'Po': '耳点',
+    'Or': '眶下点',
+    'Bo': '颅底角点',
+    'Co': '髁顶点',
+    'Ar': '关节点',
+    'Pcd': '下颌髁突后缘切点',
+    'Pt': '翼点',
+    'A': '上齿槽座点',
+    'PNS': '后鼻棘点',
+    'ANS': '前鼻棘点',
+    'UI': '上中切牙切点',
+    'PTM': '翼上颌裂',
+    'U1A': '上中切牙根尖点',
+    'U6': '上颌第一磨牙近中颊尖点',
+    'B': '下齿槽座点',
+    'Pog': '颏前点',
+    'Gn': '颏顶点',
+    'Me': '颏下点',
+    'Go': '下颌角点',
+    'L1': '下中切牙点',
+    'L1A': '下中切牙根尖点',
+    'L6': '下颌第一磨牙近中颊尖点'
+};
+
+/**
+ * 渲染侧位片结果
+ * @param {Object} data - 侧位片分析数据
+ */
+function renderCephalometric(data) {
+    console.log('开始渲染侧位片结果...', data);
+    
+    // 先显示主容器和报告区域（即使图片还没加载）
+    const mainContainer = document.getElementById('mainContainer');
+    if (mainContainer) {
+        mainContainer.classList.remove('hidden');
+    }
+    
+        // 生成结构化报告
+        buildCephReport(data);
+    
+    // 1. 获取用户上传的图片文件
+    const imageFile = document.getElementById('imageFile').files[0];
+    if (!imageFile) {
+        console.error('未找到图片文件');
+        displayError({ displayMessage: '未找到上传的图片文件' });
+        return;
+    }
+    
+    console.log('找到图片文件:', imageFile.name, '大小:', imageFile.size);
+    
+    // 2. 创建图片对象并加载
+    const img = new Image();
+    
+    img.onerror = function() {
+        console.error('图片加载失败');
+        displayError({ displayMessage: '图片加载失败，请检查文件格式' });
+    };
+    
+    img.onload = function() {
+        console.log('图片加载成功，尺寸:', img.width, 'x', img.height);
+        
+        // 获取容器尺寸，计算缩放比例以适应容器
+        const container = document.getElementById('imageContainer');
+        if (!container) {
+            console.error('图像容器不存在');
+            return;
+        }
+        
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        
+        console.log('容器尺寸:', containerWidth, 'x', containerHeight);
+        
+        if (containerWidth === 0 || containerHeight === 0) {
+            console.warn('容器尺寸为0，使用图片原始尺寸');
+            // 如果容器尺寸为0，使用图片原始尺寸
+            const stage = initKonvaStage('imageContainer', img.width, img.height);
+            if (!stage) {
+                console.error('Konva Stage 初始化失败');
+                return;
+            }
+            
+            const bgLayer = new Konva.Layer();
+            const bgImage = new Konva.Image({
+                x: 0,
+                y: 0,
+                image: img,
+                width: img.width,
+                height: img.height
+            });
+            bgLayer.add(bgImage);
+            stage.add(bgLayer);
+            appState.konvaLayers.background = bgLayer;
+            
+            // 绘制关键点（不缩放）
+            drawLandmarks(data, stage, 1.0);
+            
+            stage.draw();
+            return;
+        }
+        
+        // 计算缩放比例，保持宽高比
+        const scaleX = containerWidth / img.width;
+        const scaleY = containerHeight / img.height;
+        const scale = Math.min(scaleX, scaleY, 1.0); // 不放大，只缩小
+        
+        const displayWidth = img.width * scale;
+        const displayHeight = img.height * scale;
+        
+        console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
+        
+        // 保存缩放比例
+        appState.imageScale = scale;
+        appState.originalImage = img;
+        
+        // 3. 初始化 Konva Stage（使用显示尺寸）
+        const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
+        if (!stage) {
+            console.error('Konva Stage 初始化失败');
+            return;
+        }
+        
+        // 4. 创建背景图层并添加图片
+        const bgLayer = new Konva.Layer();
+        const bgImage = new Konva.Image({
+            x: 0,
+            y: 0,
+            image: img,
+            width: displayWidth,
+            height: displayHeight
+        });
+        bgLayer.add(bgImage);
+        stage.add(bgLayer);
+        appState.konvaLayers.background = bgLayer;
+        
+        // 5. 绘制关键点
+        drawLandmarks(data, stage, scale);
+        
+        // 绘制画布
+        stage.draw();
+        
+        console.log('侧位片渲染完成');
+    };
+    
+    // 开始加载图片
+    img.src = URL.createObjectURL(imageFile);
+}
+
+/**
+ * 绘制关键点
+ * @param {Object} data - 侧位片分析数据
+ * @param {Konva.Stage} stage - Konva Stage 实例
+ * @param {number} scale - 缩放比例
+ */
+function drawLandmarks(data, stage, scale) {
+    // 创建关键点图层
+    const landmarkLayer = new Konva.Layer();
+    
+    // 遍历 Landmarks 数组，绘制关键点
+    if (data.LandmarkPositions && data.LandmarkPositions.Landmarks) {
+        const landmarks = data.LandmarkPositions.Landmarks;
+        console.log('开始绘制关键点，总数:', landmarks.length);
+        
+        let drawnCount = 0;
+        landmarks.forEach(landmark => {
+            // 跳过缺失的点或坐标无效的点
+            if (landmark.Status === 'Missing' || landmark.X === undefined || landmark.Y === undefined || landmark.X === null || landmark.Y === null) {
+                return;
+            }
+            
+            // 应用缩放比例
+            const scaledX = landmark.X * scale;
+            const scaledY = landmark.Y * scale;
+            
+            // 绘制圆点
+            const circle = new Konva.Circle({
+                x: scaledX,
+                y: scaledY,
+                radius: 5,
+                fill: 'red',
+                stroke: 'red',
+                strokeWidth: 2
+            });
+            
+            // 绘制标签文本
+            const text = new Konva.Text({
+                x: scaledX + 8,
+                y: scaledY - 8,
+                text: landmark.Label,
+                fontSize: 12,
+                fill: 'white',
+                padding: 2,
+                backgroundColor: 'rgba(0,0,0,0.5)'
+            });
+            
+            // 存储关键点数据到图形对象，用于后续 Tooltip
+            circle.landmarkData = landmark;
+            text.landmarkData = landmark;
+            
+            // 绑定 Tooltip 事件
+            circle.on('mouseenter', function(e) {
+                showLandmarkTooltip(this, landmark, e);
+            });
+            
+            circle.on('mouseleave', function() {
+                hideTooltip();
+            });
+            
+            // 文本也绑定事件（可选，提供更大的悬停区域）
+            text.on('mouseenter', function(e) {
+                showLandmarkTooltip(this, landmark, e);
+            });
+            
+            text.on('mouseleave', function() {
+                hideTooltip();
+            });
+            
+            landmarkLayer.add(circle);
+            landmarkLayer.add(text);
+            drawnCount++;
+        });
+        
+        console.log('关键点绘制完成，已绘制:', drawnCount, '个');
+    } else {
+        console.warn('未找到关键点数据，data.LandmarkPositions:', data.LandmarkPositions);
+    }
+    
+    stage.add(landmarkLayer);
+    appState.konvaLayers.landmarks = landmarkLayer;
+}
+
+// ============================================
+// 步骤8：侧位片 Tooltip 交互
+// ============================================
+
+/**
+ * 显示关键点 Tooltip
+ * @param {Konva.Node} node - Konva 节点（Circle 或 Text）
+ * @param {Object} landmark - 关键点数据
+ * @param {Object} event - Konva 事件对象
+ */
+function showLandmarkTooltip(node, landmark, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 获取关键点全名
+    const fullName = LANDMARK_FULL_NAMES[landmark.Label] || landmark.Label;
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'landmarkTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容
+    let content = `<strong>${fullName}</strong><br>`;
+    content += `标签: ${landmark.Label}<br>`;
+    content += `坐标: (${landmark.X.toFixed(1)}, ${landmark.Y.toFixed(1)})<br>`;
+    if (landmark.Confidence !== undefined) {
+        content += `置信度: ${(landmark.Confidence * 100).toFixed(1)}%`;
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置
+    const nodePos = node.getAbsolutePosition();
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + nodePos.x + 15;
+    const tooltipY = stageBox.top + nodePos.y - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
+
+/**
+ * 隐藏 Tooltip
+ */
+function hideTooltip() {
+    const tooltip = document.getElementById('landmarkTooltip');
+    if (tooltip) {
+        tooltip.remove();
+    }
+    const toothTooltip = document.getElementById('toothTooltip');
+    if (toothTooltip) {
+        toothTooltip.remove();
+    }
+    const findingTooltip = document.getElementById('findingTooltip');
+    if (findingTooltip) {
+        findingTooltip.remove();
+    }
+}
+
+/**
+ * 显示牙齿 Tooltip
+ * @param {Konva.Node} node - Konva 节点（Line）
+ * @param {Object} toothData - 牙齿数据
+ * @param {Object} event - Konva 事件对象
+ */
+function showToothTooltip(node, toothData, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'toothTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容
+    let content = `<strong>牙位: ${toothData.FDI || 'N/A'}</strong><br>`;
+    
+    // 汇总该牙齿的所有属性类发现
+    if (toothData.Properties && Array.isArray(toothData.Properties) && toothData.Properties.length > 0) {
+        content += '<br>发现:<br>';
+        toothData.Properties.forEach(prop => {
+            const description = prop.Description || prop.Value || '未知';
+            const confidence = prop.Confidence !== undefined ? (prop.Confidence * 100).toFixed(1) : 'N/A';
+            content += `- ${description} (置信度: ${confidence}%)<br>`;
+        });
+    } else {
+        content += '<br>未发现异常';
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置（使用多边形的中心点）
+    const points = node.points();
+    let sumX = 0, sumY = 0, pointCount = 0;
+    for (let i = 0; i < points.length; i += 2) {
+        sumX += points[i];
+        sumY += points[i + 1];
+        pointCount++;
+    }
+    const centerX = sumX / pointCount;
+    const centerY = sumY / pointCount;
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + centerX + 15;
+    const tooltipY = stageBox.top + centerY - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
+
+/**
+ * 显示区域性发现 Tooltip
+ * @param {Konva.Node} node - Konva 节点（Rect）
+ * @param {Object} findingData - 发现数据
+ * @param {Object} event - Konva 事件对象
+ */
+function showFindingTooltip(node, findingData, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容
+    let content = '';
+    
+    // 根据发现类型显示不同的标题
+    if (node.findingType === 'implant') {
+        content += '<strong>种植体</strong><br>';
+    } else if (node.findingType === 'density') {
+        content += '<strong>根尖密度影</strong><br>';
+    } else {
+        content += '<strong>区域性发现</strong><br>';
+    }
+    
+    // 显示详细信息
+    if (findingData.Detail) {
+        content += `${findingData.Detail}<br>`;
+    }
+    
+    // 显示置信度
+    if (findingData.Confidence !== undefined) {
+        content += `置信度: ${(findingData.Confidence * 100).toFixed(1)}%`;
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置（矩形的中心点）
+    const nodePos = node.getAbsolutePosition();
+    const centerX = nodePos.x + node.width() / 2;
+    const centerY = nodePos.y + node.height() / 2;
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + centerX + 15;
+    const tooltipY = stageBox.top + centerY - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
+
+// ============================================
+// 步骤9：侧位片结构化报告生成
+// ============================================
+
+/**
+ * 构建侧位片结构化报告
+ * @param {Object} data - 侧位片分析数据
+ */
+function buildCephReport(data) {
+    const container = document.getElementById('reportContainer');
+    if (!container) {
+        console.error('报告容器不存在');
+        return;
+    }
+    
+    container.innerHTML = ''; // 清空
+    
+    // 1. 分析摘要
+    const summarySection = createReportSection('分析摘要');
+    if (data.VisibilityMetrics) {
+        summarySection.appendChild(createKeyValue('可见性等级', data.VisibilityMetrics.Grade || 'N/A'));
+    }
+    if (data.StatisticalFields) {
+        // 质量评分：确保在0-100%范围内
+        const qualityScore = data.StatisticalFields.QualityScore;
+        const qualityPercent = qualityScore > 1 ? qualityScore : (qualityScore * 100);
+        summarySection.appendChild(createKeyValue('质量评分', qualityPercent.toFixed(1) + '%'));
+        summarySection.appendChild(createKeyValue('平均置信度', (data.StatisticalFields.AverageConfidence * 100).toFixed(1) + '%'));
+        
+        // 已检测关键点：显示具体点列表
+        const detectedCount = data.StatisticalFields.ProcessedLandmarks || 0;
+        const totalCount = data.LandmarkPositions?.TotalLandmarks || 0;
+        const detectedPointsDiv = document.createElement('div');
+        detectedPointsDiv.className = 'key-value-item';
+        detectedPointsDiv.innerHTML = `<span class="key">已检测关键点:</span> <span class="value">${detectedCount}/${totalCount}</span>`;
+        summarySection.appendChild(detectedPointsDiv);
+        
+        // 显示具体检测到的关键点列表
+        if (data.LandmarkPositions && data.LandmarkPositions.Landmarks) {
+            const detectedLabels = data.LandmarkPositions.Landmarks
+                .filter(l => l.Status === 'Detected' && l.X !== undefined && l.Y !== undefined)
+                .map(l => {
+                    const fullName = LANDMARK_FULL_NAMES[l.Label] || l.Label;
+                    return `${l.Label}(${fullName})`;
+                });
+            
+            if (detectedLabels.length > 0) {
+                const pointsListDiv = document.createElement('div');
+                pointsListDiv.className = 'detected-points-list';
+                pointsListDiv.innerHTML = `<div class="points-label">检测到的关键点:</div><div class="points-items">${detectedLabels.join(', ')}</div>`;
+                summarySection.appendChild(pointsListDiv);
+            }
+            
+            // 显示缺失的关键点
+            if (data.VisibilityMetrics && data.VisibilityMetrics.MissingLandmarks && data.VisibilityMetrics.MissingLandmarks.length > 0) {
+                const missingLabels = data.VisibilityMetrics.MissingLandmarks.map(label => {
+                    const fullName = LANDMARK_FULL_NAMES[label] || label;
+                    return `${label}(${fullName})`;
+                });
+                const missingPointsDiv = document.createElement('div');
+                missingPointsDiv.className = 'missing-points-list';
+                missingPointsDiv.innerHTML = `<div class="points-label">缺失的关键点:</div><div class="points-items">${missingLabels.join(', ')}</div>`;
+                summarySection.appendChild(missingPointsDiv);
+            }
+        }
+    }
+    container.appendChild(summarySection);
+    
+    // 2. 骨骼分析
+    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+        const boneSection = createReportSection('骨骼分析');
+        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        
+        measurements.forEach(m => {
+            if (isBoneMeasurement(m.Label)) {
+                const item = createMeasurementItem(m);
+                boneSection.appendChild(item);
+            }
+        });
+        
+        if (boneSection.querySelectorAll('.measurement-item').length > 0) {
+            container.appendChild(boneSection);
+        }
+    }
+    
+    // 3. 牙齿分析
+    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+        const toothSection = createReportSection('牙齿分析');
+        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        
+        measurements.forEach(m => {
+            if (isToothMeasurement(m.Label)) {
+                const item = createMeasurementItem(m);
+                toothSection.appendChild(item);
+            }
+        });
+        
+        if (toothSection.querySelectorAll('.measurement-item').length > 0) {
+            container.appendChild(toothSection);
+        }
+    }
+    
+    // 4. 生长发育评估（包含 CVSM 图片）
+    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+        const growthSection = createReportSection('生长发育评估');
+        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        const cvsm = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
+        
+        if (cvsm) {
+            if (cvsm.CVSM) {
+                const img = document.createElement('img');
+                img.src = cvsm.CVSM;
+                img.style.maxWidth = '100%';
+                img.style.marginTop = '10px';
+                img.style.borderRadius = '4px';
+                growthSection.appendChild(img);
+            }
+            
+            const cvsmItem = createMeasurementItem(cvsm);
+            growthSection.appendChild(cvsmItem);
+        }
+        
+        if (growthSection.querySelectorAll('.measurement-item, img').length > 0) {
+            container.appendChild(growthSection);
+        }
+    }
+    
+    // 5. 气道分析
+    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+        const airwaySection = createReportSection('气道分析');
+        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        
+        const airwayGap = measurements.find(m => m.Label === 'Airway_Gap');
+        const adenoidIndex = measurements.find(m => m.Label === 'Adenoid_Index');
+        
+        if (airwayGap) {
+            const item = createMeasurementItem(airwayGap);
+            airwaySection.appendChild(item);
+        }
+        
+        if (adenoidIndex) {
+            const item = createMeasurementItem(adenoidIndex);
+            airwaySection.appendChild(item);
+        }
+        
+        if (airwaySection.querySelectorAll('.measurement-item').length > 0) {
+            container.appendChild(airwaySection);
+        }
+    }
+    
+    // 6. JSON 数据输出（可展开/折叠）
+    const jsonSection = createReportSection('完整数据 (JSON)');
+    const jsonToggle = document.createElement('button');
+    jsonToggle.className = 'json-toggle-btn';
+    jsonToggle.textContent = '展开 JSON 数据';
+    jsonToggle.onclick = function() {
+        const jsonContent = jsonSection.querySelector('.json-content');
+        if (jsonContent) {
+            if (jsonContent.style.display === 'none') {
+                jsonContent.style.display = 'block';
+                jsonToggle.textContent = '折叠 JSON 数据';
+            } else {
+                jsonContent.style.display = 'none';
+                jsonToggle.textContent = '展开 JSON 数据';
+            }
+        }
+    };
+    jsonSection.appendChild(jsonToggle);
+    
+    const jsonContent = document.createElement('pre');
+    jsonContent.className = 'json-content';
+    jsonContent.style.display = 'none';
+    jsonContent.style.whiteSpace = 'pre-wrap';
+    jsonContent.style.wordWrap = 'break-word';
+    jsonContent.style.fontSize = '11px';
+    jsonContent.style.backgroundColor = '#f5f5f5';
+    jsonContent.style.padding = '10px';
+    jsonContent.style.borderRadius = '4px';
+    jsonContent.style.overflowX = 'auto';
+    jsonContent.textContent = JSON.stringify(data, null, 2);
+    jsonSection.appendChild(jsonContent);
+    
+    container.appendChild(jsonSection);
+}
+
+/**
+ * 创建报告区块
+ * @param {string} title - 区块标题
+ * @returns {HTMLElement} 报告区块元素
+ */
+function createReportSection(title) {
+    const section = document.createElement('div');
+    section.className = 'report-section';
+    
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    section.appendChild(h2);
+    
+    return section;
+}
+
+/**
+ * 创建键值对元素
+ * @param {string} key - 键名
+ * @param {string|number} value - 值
+ * @returns {HTMLElement} 键值对元素
+ */
+function createKeyValue(key, value) {
+    const div = document.createElement('div');
+    div.className = 'key-value-item';
+    div.innerHTML = `<span class="key">${key}:</span> <span class="value">${value}</span>`;
+    return div;
+}
+
+/**
+ * 创建测量项元素
+ * @param {Object} measurement - 测量项数据
+ * @returns {HTMLElement} 测量项元素
+ */
+function createMeasurementItem(measurement) {
+    const item = document.createElement('div');
+    item.className = 'measurement-item';
+    
+    // 判断是否为异常（Level !== 0 或 Level === false）
+    const isAbnormal = (measurement.Level !== undefined && measurement.Level !== 0 && measurement.Level !== true) || 
+                       (measurement.Level === false);
+    
+    if (isAbnormal) {
+        item.classList.add('abnormal');
+    }
+    
+    // 构建内容
+    let content = `<div class="measurement-label">${getMeasurementLabel(measurement.Label)}</div>`;
+    
+    // 显示测量值
+    let valueText = '';
+    if (measurement.Angle !== undefined) {
+        valueText = `${measurement.Angle.toFixed(1)}°`;
+    } else if (measurement.Length_mm !== undefined) {
+        valueText = `${measurement.Length_mm.toFixed(1)} mm`;
+    } else if (measurement.Length !== undefined) {
+        valueText = `${measurement.Length.toFixed(1)} mm`;
+    } else if (measurement.Ratio !== undefined) {
+        valueText = `${measurement.Ratio.toFixed(1)}%`;
+    } else if (measurement.Value !== undefined) {
+        valueText = measurement.Value.toFixed(2);
+    } else if (measurement['PNS-UPW'] !== undefined) {
+        // 气道间隙特殊处理
+        valueText = `PNS-UPW: ${measurement['PNS-UPW'].toFixed(1)} mm`;
+    }
+    
+    if (valueText) {
+        content += `<div class="measurement-value">${valueText}</div>`;
+    }
+    
+    // 显示诊断结论
+    if (measurement.Level !== undefined) {
+        const conclusion = getMeasurementConclusion(measurement.Label, measurement.Level);
+        if (conclusion) {
+            content += `<div class="measurement-conclusion">${conclusion}</div>`;
+        }
+    }
+    
+    // 显示Level和置信度
+    // if (measurement.Level !== undefined) {
+    //     const levelText = getLevelText(measurement.Label, measurement.Level);
+    //     if (levelText) {
+    //         content += `<div class="measurement-level">等级: ${levelText}</div>`;
+    //     }
+    // }
+    
+    if (measurement.Confidence !== undefined) {
+        content += `<div class="measurement-confidence">置信度: ${(measurement.Confidence * 100).toFixed(1)}%</div>`;
+    }
+    
+    item.innerHTML = content;
+    return item;
+}
+
+/**
+ * 获取Level的文本描述
+ * @param {string} label - 测量项标签
+ * @param {number|boolean|Array} level - 等级
+ * @returns {string} Level文本
+ */
+function getLevelText(label, level) {
+    if (Array.isArray(level)) {
+        return `[${level.join(', ')}]`;
+    }
+    
+    if (typeof level === 'boolean') {
+        return level ? '正常' : '异常';
+    }
+    
+    if (typeof level === 'number') {
+        if (label === 'ANB_Angle') {
+            return `Level ${level} (${level === 0 ? '骨性I类' : level === 1 ? '骨性II类' : '骨性III类'})`;
+        }
+        return `Level ${level}`;
+    }
+    
+    return '';
+}
+
+/**
+ * 获取测量项标签（中文名称）
+ * @param {string} label - 测量项标签
+ * @returns {string} 中文名称
+ */
+function getMeasurementLabel(label) {
+    const labelMap = {
+        'ANB_Angle': 'ANB角',
+        'PtmANS_Length': '上颌基骨长度',
+        'GoPo_Length': '下颌体长度',
+        'PoNB_Length': '颏部发育量',
+        'Jaw_Development_Coordination': '上下颌骨发育协调性',
+        'SGo_NMe_Ratio-1': '面部高度比例',
+        'FH_MP_Angle': '下颌平面角',
+        'UI_SN_Angle': '上切牙相对颅骨倾斜度',
+        'IMPA_Angle-1': '下切牙相对下颌平面倾斜度',
+        'Upper_Anterior_Alveolar_Height': '上前牙槽高度',
+        'Airway_Gap': '气道间隙',
+        'Adenoid_Index': '腺样体指数',
+        'Cervical_Vertebral_Maturity_Stage': '颈椎成熟度分期'
+    };
+    return labelMap[label] || label;
+}
+
+/**
+ * 获取测量项诊断结论
+ * @param {string} label - 测量项标签
+ * @param {number|boolean|Array} level - 等级
+ * @returns {string} 诊断结论
+ */
+function getMeasurementConclusion(label, level) {
+    if (Array.isArray(level)) {
+        return level.join(', ');
+    }
+    
+    if (typeof level === 'boolean') {
+        if (label === 'Airway_Gap') {
+            return level ? '正常' : '不足';
+        } else if (label === 'Adenoid_Index') {
+            return level ? '未见肿大' : '肿大';
+        }
+        return level ? '正常' : '异常';
+    }
+    
+    if (typeof level === 'number') {
+        if (label === 'Cervical_Vertebral_Maturity_Stage') {
+            const stages = ['', 'CVMS I期', 'CVMS II期', 'CVMS III期', 'CVMS IV期', 'CVMS V期', 'CVMS VI期'];
+            return stages[level] || `CVMS ${level}期`;
+        }
+        
+        // 根据不同的测量项显示具体的Level含义
+        if (label === 'ANB_Angle') {
+            if (level === 0) return '骨性I类（正常）';
+            if (level === 1) return '骨性II类（ANB>6°）';
+            if (level === 2) return '骨性III类（ANB<2°）';
+        }
+        
+        if (label === 'SGo_NMe_Ratio-1' || label === 'SGo_NMe_Ratio-2' || label === 'SGo_NMe_Ratio-3') {
+            if (level === 0) return '平均生长型';
+            if (level === 1) return '水平生长型（>71%）';
+            if (level === 2) return '垂直生长型（<63%）';
+        }
+        
+        if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2') {
+            if (level === 0) return '均角';
+            if (level === 1) return '高角（>33°）';
+            if (level === 2) return '低角（<25°）';
+        }
+        
+        if (label === 'PtmANS_Length' || label === 'GoPo_Length' || label === 'Go_Me_Length') {
+            if (level === 0) return '正常';
+            if (level === 1) return '发育过度';
+            if (level === 2) return '发育不足';
+        }
+        
+        if (label === 'PoNB_Length') {
+            if (level === 0) return '正常';
+            if (level === 1) return '发育过度（>2.5mm）';
+            if (level === 2) return '后缩（<-0.5mm）';
+        }
+        
+        if (label === 'SNA_Angle' || label === 'SNB_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '前突';
+            if (level === 2) return '后缩';
+        }
+        
+        if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat' || label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾';
+            if (level === 2) return '舌倾';
+        }
+        
+        // 默认处理
+        if (level === 0) {
+            return '正常';
+        } else if (level === 1) {
+            return '异常（偏高/过度）';
+        } else if (level === 2) {
+            return '异常（偏低/不足）';
+        }
+    }
+    
+    return '';
+}
+
+/**
+ * 判断是否为骨骼测量项
+ * @param {string} label - 测量项标签
+ * @returns {boolean} 是否为骨骼测量项
+ */
+function isBoneMeasurement(label) {
+    const boneLabels = [
+        'ANB_Angle', 'PtmANS_Length', 'GoPo_Length', 'PoNB_Length',
+        'Jaw_Development_Coordination', 'SGo_NMe_Ratio-1', 'FH_MP_Angle',
+        'SNA_Angle', 'SNB_Angle', 'Upper_Jaw_Position', 'Pcd_Lower_Position',
+        'Distance_Witsmm', 'S_N_Anterior_Cranial_Base_Length', 'Go_Me_Length'
+    ];
+    return boneLabels.includes(label);
+}
+
+/**
+ * 判断是否为牙齿测量项
+ * @param {string} label - 测量项标签
+ * @returns {boolean} 是否为牙齿测量项
+ */
+function isToothMeasurement(label) {
+    const toothLabels = [
+        'UI_SN_Angle', 'IMPA_Angle-1', 'Upper_Anterior_Alveolar_Height',
+        'U1_SN_Angle_Repeat', 'U1_NA_Angle', 'U1_NA_Incisor_Length',
+        'IMPA_Angle-2', 'FMIA_Angle', 'L1_NB_Angle', 'L1_NB_Distance',
+        'U1_L1_Inter_Incisor_Angle', 'U1_PP_Upper_Anterior_Alveolar_Height',
+        'L1_MP_Lower_Anterior_Alveolar_Height', 'U6_PP_Upper_Posterior_Alveolar_Height',
+        'L6_MP_Lower_Posterior_Alveolar_Height'
+    ];
+    return toothLabels.includes(label);
+}
+
+/**
+ * 渲染全景片结果
+ * @param {Object} data - 全景片分析数据
+ */
+function renderPanoramic(data) {
+    console.log('开始渲染全景片结果...', data);
+    
+    // 先显示主容器和报告区域（即使图片还没加载）
+    const mainContainer = document.getElementById('mainContainer');
+    if (mainContainer) {
+        mainContainer.classList.remove('hidden');
+    }
+    
+    // 生成结构化报告
+    buildPanoReport(data);
+    
+    // 1. 获取用户上传的图片文件
+    const imageFile = document.getElementById('imageFile').files[0];
+    if (!imageFile) {
+        console.error('未找到图片文件');
+        displayError({ displayMessage: '未找到上传的图片文件' });
+        return;
+    }
+    
+    console.log('找到图片文件:', imageFile.name, '大小:', imageFile.size);
+    
+    // 2. 创建图片对象并加载
+    const img = new Image();
+    
+    img.onerror = function() {
+        console.error('图片加载失败');
+        displayError({ displayMessage: '图片加载失败，请检查文件格式' });
+    };
+    
+    img.onload = function() {
+        console.log('图片加载成功，尺寸:', img.width, 'x', img.height);
+        
+        // 获取容器尺寸，计算缩放比例以适应容器
+        const container = document.getElementById('imageContainer');
+        if (!container) {
+            console.error('图像容器不存在');
+            return;
+        }
+        
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        
+        console.log('容器尺寸:', containerWidth, 'x', containerHeight);
+        
+        if (containerWidth === 0 || containerHeight === 0) {
+            console.warn('容器尺寸为0，使用图片原始尺寸');
+            // 如果容器尺寸为0，使用图片原始尺寸
+            const stage = initKonvaStage('imageContainer', img.width, img.height);
+            if (!stage) {
+                console.error('Konva Stage 初始化失败');
+                return;
+            }
+            
+            const bgLayer = new Konva.Layer();
+            const bgImage = new Konva.Image({
+                x: 0,
+                y: 0,
+                image: img,
+                width: img.width,
+                height: img.height
+            });
+            bgLayer.add(bgImage);
+            stage.add(bgLayer);
+            appState.konvaLayers.background = bgLayer;
+            
+            // 绘制牙齿分割区域（不缩放）
+            drawToothSegments(data, stage, 1.0);
+            
+            stage.draw();
+            return;
+        }
+        
+        // 计算缩放比例，保持宽高比
+        const scaleX = containerWidth / img.width;
+        const scaleY = containerHeight / img.height;
+        const scale = Math.min(scaleX, scaleY, 1.0); // 不放大，只缩小
+        
+        const displayWidth = img.width * scale;
+        const displayHeight = img.height * scale;
+        
+        console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
+        
+        // 保存缩放比例
+        appState.imageScale = scale;
+        appState.originalImage = img;
+        
+        // 3. 初始化 Konva Stage（使用显示尺寸）
+        const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
+        if (!stage) {
+            console.error('Konva Stage 初始化失败');
+            return;
+        }
+        
+        // 4. 创建背景图层并添加图片
+        const bgLayer = new Konva.Layer();
+        const bgImage = new Konva.Image({
+            x: 0,
+            y: 0,
+            image: img,
+            width: displayWidth,
+            height: displayHeight
+        });
+        bgLayer.add(bgImage);
+        stage.add(bgLayer);
+        appState.konvaLayers.background = bgLayer;
+        
+        // 5. 绘制牙齿分割区域
+        drawToothSegments(data, stage, scale);
+        
+        // 6. 绘制区域性发现（种植体、密度影等）
+        drawRegionalFindings(data, stage, scale);
+        
+        // 绘制画布
+        stage.draw();
+        
+        console.log('全景片渲染完成');
+    };
+    
+    // 开始加载图片
+    img.src = URL.createObjectURL(imageFile);
+}
+
+/**
+ * 绘制牙齿分割区域
+ * @param {Object} data - 全景片分析数据
+ * @param {Konva.Stage} stage - Konva Stage 实例
+ * @param {number} scale - 缩放比例
+ */
+function drawToothSegments(data, stage, scale) {
+    // 创建牙齿分割图层
+    const toothLayer = new Konva.Layer();
+    
+    // 遍历 ToothAnalysis 数组，绘制分割区域
+    if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
+        console.log('开始绘制牙齿分割区域，总数:', data.ToothAnalysis.length);
+        
+        let drawnCount = 0;
+        data.ToothAnalysis.forEach(tooth => {
+            // 检查是否有分割掩码数据
+            if (!tooth.SegmentationMask || !tooth.SegmentationMask.Coordinates) {
+                return;
+            }
+            
+            const coords = tooth.SegmentationMask.Coordinates;
+            
+            // 检查坐标数据格式
+            if (!Array.isArray(coords) || coords.length === 0) {
+                return;
+            }
+            
+            // 将坐标数组转换为 Konva.Line 需要的格式
+            // 输入格式: [[x1, y1], [x2, y2], ...]
+            // 输出格式: [x1, y1, x2, y2, ...]
+            let points = [];
+            for (let i = 0; i < coords.length; i++) {
+                const point = coords[i];
+                if (Array.isArray(point) && point.length >= 2) {
+                    // 应用缩放比例
+                    points.push(point[0] * scale);
+                    points.push(point[1] * scale);
+                }
+            }
+            
+            // 如果点数不足（至少需要3个点才能形成多边形），跳过
+            if (points.length < 6) {
+                return;
+            }
+            
+            // 使用 Chaikin 算法平滑多边形
+            points = smoothPolyline(points, 3);
+            
+            // 创建多边形线条（使用圆润的线条样式）
+            const line = new Konva.Line({
+                points: points,
+                closed: true,
+                stroke: 'green',
+                strokeWidth: 2,
+                fill: 'transparent',
+                lineCap: 'round',      // 线条端点圆润
+                lineJoin: 'round',     // 线条连接点圆润
+                tension: 0             // 已通过平滑算法，不再使用张力
+            });
+            
+            // 存储牙齿信息到 line 对象，用于后续 Tooltip
+            line.toothData = tooth;
+            
+            // 绑定 Tooltip 事件
+            line.on('mouseenter', function(e) {
+                showToothTooltip(this, this.toothData, e);
+            });
+            
+            line.on('mouseleave', function() {
+                hideTooltip();
+            });
+            
+            toothLayer.add(line);
+            drawnCount++;
+        });
+        
+        console.log('牙齿分割区域绘制完成，已绘制:', drawnCount, '个');
+    } else {
+        console.warn('未找到牙齿分析数据，data.ToothAnalysis:', data.ToothAnalysis);
+    }
+    
+    stage.add(toothLayer);
+    appState.konvaLayers.toothSegments = toothLayer;
+}
+
+/**
+ * 绘制区域性发现（种植体、根尖密度影、髁突等）
+ * @param {Object} data - 全景片分析数据
+ * @param {Konva.Stage} stage - Konva Stage 实例
+ * @param {number} scale - 缩放比例
+ */
+function drawRegionalFindings(data, stage, scale) {
+    // 创建区域性发现图层
+    const findingLayer = new Konva.Layer();
+    
+    let implantCount = 0;
+    let densityCount = 0;
+    let condyleCount = 0;
+    
+    // 绘制种植体
+    if (data.ImplantAnalysis && data.ImplantAnalysis.Items && Array.isArray(data.ImplantAnalysis.Items)) {
+        console.log('开始绘制种植体，总数:', data.ImplantAnalysis.Items.length);
+        
+        data.ImplantAnalysis.Items.forEach(implant => {
+            // 检查边界框数据
+            if (!implant.BBox || !Array.isArray(implant.BBox) || implant.BBox.length < 4) {
+                return;
+            }
+            
+            const bbox = implant.BBox; // [x1, y1, x2, y2]
+            
+            // 应用缩放比例
+            const x = bbox[0] * scale;
+            const y = bbox[1] * scale;
+            const width = (bbox[2] - bbox[0]) * scale;
+            const height = (bbox[3] - bbox[1]) * scale;
+            
+            // 创建矩形
+            const rect = new Konva.Rect({
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                stroke: 'blue',
+                strokeWidth: 2,
+                fill: 'transparent'
+            });
+            
+            // 存储发现数据到 rect 对象，用于后续 Tooltip
+            rect.findingData = implant;
+            rect.findingType = 'implant';
+            
+            // 绑定 Tooltip 事件
+            rect.on('mouseenter', function(e) {
+                showFindingTooltip(this, this.findingData, e);
+            });
+            
+            rect.on('mouseleave', function() {
+                hideTooltip();
+            });
+            
+            findingLayer.add(rect);
+            implantCount++;
+        });
+        
+        console.log('种植体绘制完成，已绘制:', implantCount, '个');
+    }
+    
+    // 绘制根尖密度影
+    if (data.RootTipDensityAnalysis && data.RootTipDensityAnalysis.Items && Array.isArray(data.RootTipDensityAnalysis.Items)) {
+        console.log('开始绘制根尖密度影，总数:', data.RootTipDensityAnalysis.Items.length);
+        
+        data.RootTipDensityAnalysis.Items.forEach(density => {
+            // 检查边界框数据
+            if (!density.BBox || !Array.isArray(density.BBox) || density.BBox.length < 4) {
+                return;
+            }
+            
+            const bbox = density.BBox; // [x1, y1, x2, y2]
+            
+            // 应用缩放比例
+            const x = bbox[0] * scale;
+            const y = bbox[1] * scale;
+            const width = (bbox[2] - bbox[0]) * scale;
+            const height = (bbox[3] - bbox[1]) * scale;
+            
+            // 创建矩形（虚线样式）
+            const rect = new Konva.Rect({
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                stroke: 'yellow',
+                strokeWidth: 2,
+                dash: [5, 5], // 虚线
+                fill: 'transparent'
+            });
+            
+            // 存储发现数据到 rect 对象，用于后续 Tooltip
+            rect.findingData = density;
+            rect.findingType = 'density';
+            
+            // 绑定 Tooltip 事件
+            rect.on('mouseenter', function(e) {
+                showFindingTooltip(this, this.findingData, e);
+            });
+            
+            rect.on('mouseleave', function() {
+                hideTooltip();
+            });
+            
+            findingLayer.add(rect);
+            densityCount++;
+        });
+        
+        console.log('根尖密度影绘制完成，已绘制:', densityCount, '个');
+    }
+    
+    // 绘制髁突区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        // 获取髁突诊断信息
+        let leftCondyleInfo = null;
+        let rightCondyleInfo = null;
+        if (data.JointAndMandible && data.JointAndMandible.CondyleAssessment) {
+            const assessment = data.JointAndMandible.CondyleAssessment;
+            leftCondyleInfo = assessment.condyle_Left || null;
+            rightCondyleInfo = assessment.condyle_Right || null;
+        }
+        
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理髁突
+            if (!rawLabel.includes('condyle')) return;
+            
+            // 判定左右
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            
+            if (!side) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 选择诊断信息和配色
+            const info = side === 'left' ? leftCondyleInfo : rightCondyleInfo;
+            let strokeColor = 'purple';
+            let fillColor = 'rgba(128,0,128,0.20)';
+            if (info) {
+                if (info.Morphology === 0) { // 正常
+                    strokeColor = 'green';
+                    fillColor = 'rgba(0,128,0,0.25)';
+                } else if (info.Morphology === 1) { // 吸收
+                    strokeColor = 'orange';
+                    fillColor = 'rgba(255,165,0,0.25)';
+                }
+            }
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // 平滑并绘制
+                    let pts = smoothPolyline(pArr, 3);
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: 2.5,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        tension: 0.15,
+                        fill: fillColor,
+                        shadowColor: strokeColor,
+                        shadowBlur: 6,
+                        shadowOpacity: 0.6
+                    });
+                    poly.findingType = 'condyle';
+                    poly.findingData = info;
+                    poly.condyleSide = side;
+                    poly.on('mouseenter', function(e) { showCondyleTooltip(this, info, side, e); });
+                    poly.on('mouseleave', function() { hideTooltip(); });
+                    findingLayer.add(poly);
+                    condyleCount++;
+                });
+            }
+        });
+        
+        if (condyleCount > 0) {
+            console.log('髁突区域绘制完成，已绘制:', condyleCount, '个');
+        }
+    }
+    
+    // 只有当图层中有内容时才添加到 Stage
+    if (implantCount > 0 || densityCount > 0 || condyleCount > 0) {
+        stage.add(findingLayer);
+        appState.konvaLayers.regionalFindings = findingLayer;
+    }
+}
+
+/**
+ * 创建髁突矩形
+ * @param {Object} maskData - 掩码数据
+ * @param {number} scale - 缩放比例
+ * @param {string} side - 侧别 ('left' 或 'right')
+ * @param {Object|null} condyleInfo - 髁突诊断信息
+ * @returns {Konva.Rect|null} 矩形对象或 null
+ */
+function createCondyleRect(maskData, scale, side, condyleInfo) {
+    if (!maskData.Coordinates || !Array.isArray(maskData.Coordinates) || maskData.Coordinates.length < 4) {
+        return null;
+    }
+    
+    const coords = maskData.Coordinates; // [x1, y1, x2, y2]
+    
+    // 应用缩放比例
+    const x = coords[0] * scale;
+    const y = coords[1] * scale;
+    const width = (coords[2] - coords[0]) * scale;
+    const height = (coords[3] - coords[1]) * scale;
+    
+    // 根据诊断结果选择颜色：正常=绿色，吸收=橙色
+    let strokeColor = 'purple';
+    if (condyleInfo) {
+        if (condyleInfo.Morphology === 0) {
+            strokeColor = 'green';  // 正常
+        } else if (condyleInfo.Morphology === 1) {
+            strokeColor = 'orange'; // 吸收
+        }
+    }
+    
+    // 创建矩形（紫色/绿色/橙色表示髁突）
+    const rect = new Konva.Rect({
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        stroke: strokeColor,
+        strokeWidth: 2,
+        fill: 'transparent'
+    });
+    
+    // 存储发现数据（反转左右显示）
+    rect.findingData = condyleInfo || { Detail: `${side === 'left' ? '右' : '左'}侧髁突`, Confidence: 0.95 };
+    rect.findingType = 'condyle';
+    rect.condyleSide = side;
+    
+    return rect;
+}
+
+/**
+ * 显示髁突 Tooltip
+ * @param {Konva.Node} node - Konva 节点（Rect）
+ * @param {Object|null} condyleInfo - 髁突诊断信息
+ * @param {string} side - 侧别 ('left' 或 'right')
+ * @param {Object} event - Konva 事件对象
+ */
+function showCondyleTooltip(node, condyleInfo, side, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容（反转左右显示）
+    const sideName = side === 'left' ? '右' : '左';
+    let content = `<strong>${sideName}侧髁突</strong><br>`;
+    
+    if (condyleInfo) {
+        // 形态
+        const morphologyText = condyleInfo.Morphology === 0 ? '正常' : '吸收';
+        content += `形态: ${morphologyText}<br>`;
+        
+        // 详细描述
+        if (condyleInfo.Detail) {
+            content += `${condyleInfo.Detail}<br>`;
+        }
+        
+        // 置信度
+        if (condyleInfo.Confidence !== undefined) {
+            content += `置信度: ${(condyleInfo.Confidence * 100).toFixed(1)}%`;
+        }
+    } else {
+        content += '诊断信息未找到';
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置（矩形的中心点）
+    const nodePos = node.getAbsolutePosition();
+    const centerX = nodePos.x + node.width() / 2;
+    const centerY = nodePos.y + node.height() / 2;
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + centerX + 15;
+    const tooltipY = stageBox.top + centerY - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
+
+// ============================================
+// 步骤13：全景片结构化报告生成
+// ============================================
+
+/**
+ * 构建全景片结构化报告
+ * @param {Object} data - 全景片分析数据
+ */
+function buildPanoReport(data) {
+    const container = document.getElementById('reportContainer');
+    if (!container) {
+        console.error('报告容器不存在');
+        return;
+    }
+    
+    container.innerHTML = ''; // 清空
+    
+    // 1. 整体诊断摘要
+    const summarySection = createReportSection('整体诊断摘要');
+    
+    // 汇总关键发现
+    let summaryItems = [];
+    
+    // 颌骨对称性
+    if (data.JointAndMandible && data.JointAndMandible.RamusSymmetry) {
+        const symmetry = data.JointAndMandible.RamusSymmetry;
+        if (symmetry.Status) {
+            summaryItems.push(`颌骨对称性: ${symmetry.Status}`);
+        }
+    }
+    
+    // 牙周状况
+    if (data.PeriodontalCondition) {
+        const condition = data.PeriodontalCondition;
+        if (condition.OverallStatus) {
+            summaryItems.push(`牙周状况: ${condition.OverallStatus}`);
+        }
+    }
+    
+    // 智齿问题
+    if (data.ThirdMolarSummary) {
+        const wisdom = data.ThirdMolarSummary;
+        if (wisdom.TotalCount !== undefined) {
+            summaryItems.push(`智齿数量: ${wisdom.TotalCount}颗`);
+        }
+        if (wisdom.ImpactedCount !== undefined && wisdom.ImpactedCount > 0) {
+            summaryItems.push(`阻生智齿: ${wisdom.ImpactedCount}颗`);
+        }
+    }
+    
+    // 缺牙情况
+    if (data.MissingTeeth && Array.isArray(data.MissingTeeth) && data.MissingTeeth.length > 0) {
+        summaryItems.push(`缺牙数量: ${data.MissingTeeth.length}颗`);
+    }
+    
+    // 种植体
+    if (data.ImplantAnalysis && data.ImplantAnalysis.Items && data.ImplantAnalysis.Items.length > 0) {
+        summaryItems.push(`检测到种植体: ${data.ImplantAnalysis.Items.length}个`);
+    }
+    
+    // 根尖密度影
+    if (data.RootTipDensityAnalysis && data.RootTipDensityAnalysis.Items && data.RootTipDensityAnalysis.Items.length > 0) {
+        summaryItems.push(`根尖密度影: ${data.RootTipDensityAnalysis.Items.length}处`);
+    }
+    
+    if (summaryItems.length > 0) {
+        summaryItems.forEach(item => {
+            summarySection.appendChild(createKeyValue('', item));
+        });
+    } else {
+        summarySection.appendChild(createKeyValue('', '暂无关键发现'));
+    }
+    
+    container.appendChild(summarySection);
+    
+    // 2. 颌骨与关节
+    const jointSection = createReportSection('颌骨与关节');
+    let hasJointContent = false;
+    
+    if (data.JointAndMandible) {
+        const joint = data.JointAndMandible;
+        
+        // 髁突评估
+        if (joint.CondyleAssessment) {
+            const condyle = joint.CondyleAssessment;
+            
+            // 左侧髁突（显示为右侧）
+            if (condyle.condyle_Left) {
+                const leftCondyle = condyle.condyle_Left;
+                const morphologyText = leftCondyle.Morphology === 0 ? '正常' : '吸收';
+                jointSection.appendChild(createKeyValue('右侧髁突形态', morphologyText));
+                if (leftCondyle.Detail) {
+                    jointSection.appendChild(createKeyValue('', leftCondyle.Detail));
+                }
+                if (leftCondyle.Confidence !== undefined) {
+                    jointSection.appendChild(createKeyValue('置信度', (leftCondyle.Confidence * 100).toFixed(1) + '%'));
+                }
+                hasJointContent = true;
+            }
+            
+            // 右侧髁突（显示为左侧）
+            if (condyle.condyle_Right) {
+                const rightCondyle = condyle.condyle_Right;
+                const morphologyText = rightCondyle.Morphology === 0 ? '正常' : '吸收';
+                jointSection.appendChild(createKeyValue('左侧髁突形态', morphologyText));
+                if (rightCondyle.Detail) {
+                    jointSection.appendChild(createKeyValue('', rightCondyle.Detail));
+                }
+                if (rightCondyle.Confidence !== undefined) {
+                    jointSection.appendChild(createKeyValue('置信度', (rightCondyle.Confidence * 100).toFixed(1) + '%'));
+                }
+                hasJointContent = true;
+            }
+            
+            // 髁突对称性
+            if (condyle.OverallSymmetry !== undefined) {
+                let symmetryText = '';
+                if (condyle.OverallSymmetry === 0) {
+                    symmetryText = '对称';
+                } else if (condyle.OverallSymmetry === 1) {
+                    symmetryText = '左侧大';
+                } else if (condyle.OverallSymmetry === 2) {
+                    symmetryText = '右侧大';
+                }
+                jointSection.appendChild(createKeyValue('髁突对称性', symmetryText));
+                if (condyle.Confidence_Overall !== undefined) {
+                    jointSection.appendChild(createKeyValue('置信度', (condyle.Confidence_Overall * 100).toFixed(1) + '%'));
+                }
+                hasJointContent = true;
+            }
+        }
+        
+        // 下颌支对称性
+        if (joint.RamusSymmetry !== undefined) {
+            const ramusText = joint.RamusSymmetry ? '对称' : '不对称';
+            jointSection.appendChild(createKeyValue('下颌升支对称性', ramusText));
+            hasJointContent = true;
+        }
+        
+        // 下颌角对称性
+        if (joint.GonialAngleSymmetry !== undefined) {
+            const gonialText = joint.GonialAngleSymmetry ? '对称' : '不对称';
+            jointSection.appendChild(createKeyValue('下颌角对称性', gonialText));
+            hasJointContent = true;
+        }
+        
+        // 总体描述
+        if (joint.Detail) {
+            jointSection.appendChild(createKeyValue('诊断描述', joint.Detail));
+            hasJointContent = true;
+        }
+        
+        // 总体置信度
+        if (joint.Confidence !== undefined) {
+            jointSection.appendChild(createKeyValue('置信度', (joint.Confidence * 100).toFixed(1) + '%'));
+            hasJointContent = true;
+        }
+    }
+    
+    // 上颌窦分析
+    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+        data.MaxillarySinus.forEach(sinus => {
+            const sideName = sinus.Side === 'left' ? '左' : '右';
+            
+            // 气化程度
+            let pneumatizationText = '';
+            if (sinus.Pneumatization === 0) {
+                pneumatizationText = '正常';
+            } else if (sinus.Pneumatization === 1) {
+                pneumatizationText = '轻度气化';
+            } else if (sinus.Pneumatization === 2) {
+                pneumatizationText = '过度气化';
+            }
+            
+            if (pneumatizationText) {
+                jointSection.appendChild(createKeyValue(`${sideName}上颌窦气化`, pneumatizationText));
+                hasJointContent = true;
+            }
+            
+            // 气化分类
+            if (sinus.TypeClassification) {
+                jointSection.appendChild(createKeyValue(`${sideName}上颌窦分类`, `Type ${sinus.TypeClassification}`));
+                hasJointContent = true;
+            }
+            
+            // 炎症
+            if (sinus.Inflammation !== undefined) {
+                const inflammationText = sinus.Inflammation ? '有炎症' : '无炎症';
+                jointSection.appendChild(createKeyValue(`${sideName}上颌窦炎症`, inflammationText));
+                hasJointContent = true;
+            }
+            
+            // 牙根进入上颌窦
+            if (sinus.RootEntryToothFDI && Array.isArray(sinus.RootEntryToothFDI) && sinus.RootEntryToothFDI.length > 0) {
+                jointSection.appendChild(createKeyValue(`${sideName}上颌窦牙根进入`, sinus.RootEntryToothFDI.join(', ')));
+                hasJointContent = true;
+            }
+            
+            // 详细描述
+            if (sinus.Detail) {
+                jointSection.appendChild(createKeyValue('', sinus.Detail));
+                hasJointContent = true;
+            }
+            
+            // 置信度
+            if (sinus.Confidence_Pneumatization !== undefined) {
+                jointSection.appendChild(createKeyValue(`${sideName}上颌窦气化置信度`, (sinus.Confidence_Pneumatization * 100).toFixed(1) + '%'));
+                hasJointContent = true;
+            }
+        });
+    }
+    
+    if (hasJointContent) {
+        container.appendChild(jointSection);
+    }
+    
+    // 3. 牙周与缺牙
+    const periodontalSection = createReportSection('牙周与缺牙');
+    let hasPeriodontalContent = false;
+    
+    // 牙周状况
+    if (data.PeriodontalCondition) {
+        const condition = data.PeriodontalCondition;
+        if (condition.OverallStatus) {
+            periodontalSection.appendChild(createKeyValue('整体牙周状况', condition.OverallStatus));
+            hasPeriodontalContent = true;
+        }
+        if (condition.AffectedTeeth && Array.isArray(condition.AffectedTeeth) && condition.AffectedTeeth.length > 0) {
+            periodontalSection.appendChild(createKeyValue('受影响牙齿', condition.AffectedTeeth.join(', ')));
+            hasPeriodontalContent = true;
+        }
+    }
+    
+    // 缺牙列表
+    if (data.MissingTeeth && Array.isArray(data.MissingTeeth) && data.MissingTeeth.length > 0) {
+        // 处理缺牙数据：可能是字符串数组或对象数组
+        const missingTeethList = data.MissingTeeth.map(tooth => {
+            if (typeof tooth === 'string') {
+                return tooth + '牙位缺失';
+            } else if (typeof tooth === 'object' && tooth.FDI) {
+                return tooth.FDI + '牙位缺失';
+            } else if (typeof tooth === 'object' && tooth.ToothNumber) {
+                return tooth.ToothNumber + '牙位缺失';
+            } else {
+                return '缺失牙位';
+            }
+        });
+        periodontalSection.appendChild(createKeyValue('缺牙列表', missingTeethList.join(', ')));
+        hasPeriodontalContent = true;
+    }
+    
+    if (hasPeriodontalContent) {
+        container.appendChild(periodontalSection);
+    }
+    
+    // 4. 智齿分析
+    if (data.ThirdMolarSummary) {
+        const wisdomSection = createReportSection('智齿分析');
+        const wisdom = data.ThirdMolarSummary;
+        
+        if (wisdom.TotalCount !== undefined) {
+            wisdomSection.appendChild(createKeyValue('智齿总数', wisdom.TotalCount + '颗'));
+        }
+        if (wisdom.ImpactedCount !== undefined) {
+            wisdomSection.appendChild(createKeyValue('阻生智齿', wisdom.ImpactedCount + '颗'));
+        }
+        if (wisdom.EruptedCount !== undefined) {
+            wisdomSection.appendChild(createKeyValue('已萌出', wisdom.EruptedCount + '颗'));
+        }
+        
+        // 显示具体智齿情况
+        if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
+            const wisdomTeeth = data.ToothAnalysis.filter(t => {
+                const fdi = t.FDI || '';
+                return fdi === '18' || fdi === '28' || fdi === '38' || fdi === '48';
+            });
+            
+            if (wisdomTeeth.length > 0) {
+                wisdomTeeth.forEach(tooth => {
+                    const toothCard = createToothCard(tooth);
+                    wisdomSection.appendChild(toothCard);
+                });
+            }
+        }
+        
+        if (wisdomSection.querySelectorAll('.key-value-item, .tooth-card').length > 0) {
+            container.appendChild(wisdomSection);
+        }
+    }
+    
+    // 5. 特殊发现
+    const specialSection = createReportSection('特殊发现');
+    let hasSpecialContent = false;
+    
+    // 种植体分析
+    if (data.ImplantAnalysis && data.ImplantAnalysis.Items && Array.isArray(data.ImplantAnalysis.Items) && data.ImplantAnalysis.Items.length > 0) {
+        const implantDiv = document.createElement('div');
+        implantDiv.className = 'finding-group';
+        implantDiv.innerHTML = '<h3>种植体</h3>';
+        
+        data.ImplantAnalysis.Items.forEach((implant, index) => {
+            const item = document.createElement('div');
+            item.className = 'finding-item';
+            let content = `种植体 ${index + 1}: `;
+            if (implant.Detail) {
+                content += implant.Detail;
+            }
+            if (implant.Confidence !== undefined) {
+                content += ` (置信度: ${(implant.Confidence * 100).toFixed(1)}%)`;
+            }
+            item.textContent = content;
+            implantDiv.appendChild(item);
+        });
+        
+        specialSection.appendChild(implantDiv);
+        hasSpecialContent = true;
+    }
+    
+    // 根尖密度影分析
+    if (data.RootTipDensityAnalysis && data.RootTipDensityAnalysis.Items && Array.isArray(data.RootTipDensityAnalysis.Items) && data.RootTipDensityAnalysis.Items.length > 0) {
+        const densityDiv = document.createElement('div');
+        densityDiv.className = 'finding-group';
+        densityDiv.innerHTML = '<h3>根尖密度影</h3>';
+        
+        data.RootTipDensityAnalysis.Items.forEach((density, index) => {
+            const item = document.createElement('div');
+            item.className = 'finding-item';
+            let content = `密度影 ${index + 1}: `;
+            if (density.Detail) {
+                content += density.Detail;
+            }
+            if (density.Confidence !== undefined) {
+                content += ` (置信度: ${(density.Confidence * 100).toFixed(1)}%)`;
+            }
+            item.textContent = content;
+            densityDiv.appendChild(item);
+        });
+        
+        specialSection.appendChild(densityDiv);
+        hasSpecialContent = true;
+    }
+    
+    if (hasSpecialContent) {
+        container.appendChild(specialSection);
+    }
+    
+    // 6. 单牙诊断详情
+    if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis) && data.ToothAnalysis.length > 0) {
+        const toothDetailSection = createReportSection('单牙诊断详情');
+        
+        // 过滤掉智齿（已在智齿分析中显示）
+        const nonWisdomTeeth = data.ToothAnalysis.filter(t => {
+            const fdi = t.FDI || '';
+            return fdi !== '18' && fdi !== '28' && fdi !== '38' && fdi !== '48';
+        });
+        
+        if (nonWisdomTeeth.length > 0) {
+            nonWisdomTeeth.forEach(tooth => {
+                const toothCard = createToothCard(tooth);
+                toothDetailSection.appendChild(toothCard);
+            });
+            container.appendChild(toothDetailSection);
+        }
+    }
+    
+    // 7. JSON 数据输出（可展开/折叠）
+    const jsonSection = createReportSection('完整数据 (JSON)');
+    const jsonToggle = document.createElement('button');
+    jsonToggle.className = 'json-toggle-btn';
+    jsonToggle.textContent = '展开 JSON 数据';
+    jsonToggle.onclick = function() {
+        const jsonContent = jsonSection.querySelector('.json-content');
+        if (jsonContent) {
+            if (jsonContent.style.display === 'none') {
+                jsonContent.style.display = 'block';
+                jsonToggle.textContent = '折叠 JSON 数据';
+            } else {
+                jsonContent.style.display = 'none';
+                jsonToggle.textContent = '展开 JSON 数据';
+            }
+        }
+    };
+    jsonSection.appendChild(jsonToggle);
+    
+    const jsonContent = document.createElement('pre');
+    jsonContent.className = 'json-content';
+    jsonContent.style.display = 'none';
+    jsonContent.style.whiteSpace = 'pre-wrap';
+    jsonContent.style.wordWrap = 'break-word';
+    jsonContent.style.fontSize = '11px';
+    jsonContent.style.backgroundColor = '#f5f5f5';
+    jsonContent.style.padding = '10px';
+    jsonContent.style.borderRadius = '4px';
+    jsonContent.style.overflowX = 'auto';
+    jsonContent.textContent = JSON.stringify(data, null, 2);
+    jsonSection.appendChild(jsonContent);
+    
+    container.appendChild(jsonSection);
+}
+
+/**
+ * 创建单牙诊断卡片
+ * @param {Object} tooth - 牙齿数据
+ * @returns {HTMLElement} 牙齿卡片元素
+ */
+function createToothCard(tooth) {
+    const card = document.createElement('div');
+    card.className = 'tooth-card';
+    
+    // 判断是否有异常发现
+    const hasAbnormal = tooth.Properties && Array.isArray(tooth.Properties) && 
+                       tooth.Properties.some(p => {
+                           // 根据属性类型判断是否为异常
+                           const value = p.Value || '';
+                           return value.includes('carious') || 
+                                  value.includes('absorption') || 
+                                  value.includes('fracture') ||
+                                  value.includes('resorption');
+                       });
+    
+    if (hasAbnormal) {
+        card.classList.add('abnormal');
+    }
+    
+    // 构建卡片内容
+    let content = `<div class="tooth-header">牙位: ${tooth.FDI || 'N/A'}</div>`;
+    
+    // 显示属性类发现
+    if (tooth.Properties && Array.isArray(tooth.Properties) && tooth.Properties.length > 0) {
+        content += '<div class="tooth-properties">';
+        tooth.Properties.forEach(prop => {
+            const description = prop.Description || prop.Value || '未知';
+            const confidence = prop.Confidence !== undefined ? (prop.Confidence * 100).toFixed(1) : 'N/A';
+            content += `<div class="tooth-property-item">${description} (${confidence}%)</div>`;
+        });
+        content += '</div>';
+    } else {
+        content += '<div class="tooth-properties">未发现异常</div>';
+    }
+    
+    // 显示牙周吸收等级
+    if (tooth.PeriodontalLevel !== undefined) {
+        const levelText = formatPeriodontalLevel(tooth.PeriodontalLevel);
+        content += `<div class="tooth-periodontal">牙周吸收等级: ${levelText}</div>`;
+    }
+    
+    // 显示智齿等级
+    if (tooth.WisdomLevel !== undefined) {
+        const levelText = formatWisdomLevel(tooth.WisdomLevel);
+        content += `<div class="tooth-wisdom">智齿等级: ${levelText}</div>`;
+    }
+    
+    card.innerHTML = content;
+    return card;
+}
+
+/**
+ * 格式化牙周吸收等级
+ * @param {number} level - 等级 (0/1/2/3)
+ * @returns {string} 等级文本
+ */
+function formatPeriodontalLevel(level) {
+    const levels = {
+        0: '正常',
+        1: '轻度吸收',
+        2: '中度吸收',
+        3: '重度吸收'
+    };
+    return levels[level] || `等级 ${level}`;
+}
+
+/**
+ * 格式化智齿等级
+ * @param {number} level - 等级 (1-4)
+ * @returns {string} 等级文本
+ */
+function formatWisdomLevel(level) {
+    const levels = {
+        1: '完全萌出',
+        2: '部分萌出',
+        3: '阻生',
+        4: '未萌出'
+    };
+    return levels[level] || `等级 ${level}`;
+}
+
+// ============================================
+// 步骤14：完善错误处理和边界情况
+// ============================================
+
+/**
+ * 完善的 resetUI 函数
+ * 功能：
+ * 1. 清空 Konva Stage 和所有图层
+ * 2. 销毁 Stage 实例
+ * 3. 清空报告容器
+ * 4. 隐藏所有结果区域
+ * 5. 清空错误提示
+ * 6. 重置全局状态
+ */
+function resetUI() {
+    console.log('重置 UI');
+    
+    // 1. 清空 Canvas 和 Konva 对象
+    clearCanvas();
+    
+    // 2. 清空报告容器
+    clearReport();
+    
+    // 3. 隐藏主容器
+    const mainContainer = document.getElementById('mainContainer');
+    if (mainContainer) {
+        mainContainer.classList.add('hidden');
+    }
+    
+    // 4. 隐藏错误提示
+    const errorMessage = document.getElementById('errorMessage');
+    if (errorMessage) {
+        errorMessage.classList.add('hidden');
+        errorMessage.textContent = '';
+    }
+    
+    // 5. 隐藏加载指示器
+    hideLoading();
+    
+    // 6. 重置全局状态
+    appState.currentTaskId = null;
+    appState.currentTaskType = null;
+    appState.cachedResult = null;
+    appState.imageScale = 1.0;
+    appState.originalImage = null;
+    
+    // 7. 重新启用提交按钮
+    const submitBtn = document.getElementById('submitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+    }
+    
+    console.log('UI 重置完成');
+}
+
+/**
+ * 处理图片加载失败的情况
+ * 在 renderCephalometric 和 renderPanoramic 中已经实现了 img.onerror 回调
+ * 这里提供一个通用的错误处理函数
+ */
+function handleImageLoadError(errorMsg) {
+    console.error('图片加载错误:', errorMsg);
+    displayError({ displayMessage: errorMsg || '图片加载失败，请检查文件格式' });
+}
+
+/**
+ * 安全地访问嵌套对象属性
+ * 使用可选链操作符的兼容性方案
+ * @param {Object} obj - 对象
+ * @param {string} path - 属性路径，如 'a.b.c'
+ * @param {*} defaultValue - 默认值
+ * @returns {*} 属性值或默认值
+ */
+function safeGet(obj, path, defaultValue = undefined) {
+    if (!obj || typeof path !== 'string') {
+        return defaultValue;
+    }
+    
+    const keys = path.split('.');
+    let current = obj;
+    
+    for (let key of keys) {
+        if (current === null || current === undefined) {
+            return defaultValue;
+        }
+        current = current[key];
+    }
+    
+    return current !== undefined ? current : defaultValue;
+}
+
+/**
+ * 验证坐标数据的有效性
+ * @param {number} x - X 坐标
+ * @param {number} y - Y 坐标
+ * @returns {boolean} 坐标是否有效
+ */
+function isValidCoordinate(x, y) {
+    return typeof x === 'number' && typeof y === 'number' && 
+           !isNaN(x) && !isNaN(y) && 
+           isFinite(x) && isFinite(y);
+}
+
+/**
+ * 验证数组坐标的有效性
+ * @param {Array} coords - 坐标数组
+ * @returns {boolean} 坐标数组是否有效
+ */
+function isValidCoordinateArray(coords) {
+    if (!Array.isArray(coords) || coords.length === 0) {
+        return false;
+    }
+    
+    // 检查是否为 [[x,y], [x,y], ...] 格式
+    if (Array.isArray(coords[0])) {
+        return coords.every(point => 
+            Array.isArray(point) && 
+            point.length >= 2 && 
+            isValidCoordinate(point[0], point[1])
+        );
+    }
+    
+    // 检查是否为 [x1, y1, x2, y2, ...] 格式
+    if (coords.length % 2 === 0) {
+        for (let i = 0; i < coords.length; i += 2) {
+            if (!isValidCoordinate(coords[i], coords[i + 1])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * 处理响应式缩放
+ * 当容器尺寸变化时，重新计算坐标
+ * @param {number} originalX - 原始 X 坐标
+ * @param {number} originalY - 原始 Y 坐标
+ * @param {number} oldScale - 旧缩放比例
+ * @param {number} newScale - 新缩放比例
+ * @returns {{x: number, y: number}} 重新计算后的坐标
+ */
+function recalculateCoordinatesOnResize(originalX, originalY, oldScale, newScale) {
+    // 先反缩放回原始坐标
+    const unscaledX = originalX / oldScale;
+    const unscaledY = originalY / oldScale;
+    
+    // 再应用新的缩放比例
+    return {
+        x: unscaledX * newScale,
+        y: unscaledY * newScale
+    };
+}
+
+/**
+ * 处理 JSON 数据结构不完整的情况
+ * 在访问嵌套属性前检查对象是否存在
+ * 示例：
+ *   const landmarks = data?.LandmarkPositions?.Landmarks || [];
+ *   const toothAnalysis = data?.ToothAnalysis || [];
+ */
+
+/**
+ * 增强的 displayResult 函数，包含更多错误检查
+ * 这是对现有 displayResult 的补充说明
+ * 实际的 displayResult 已在步骤6中实现，这里补充额外的错误处理
+ */
+function validateResultData(resultJson) {
+    // 检查结果对象是否存在
+    if (!resultJson || typeof resultJson !== 'object') {
+        return { valid: false, error: '结果数据格式无效' };
+    }
+    
+    // 检查状态字段
+    if (!resultJson.status) {
+        return { valid: false, error: '结果缺少 status 字段' };
+    }
+    
+    // 如果是成功状态，检查数据字段
+    if (resultJson.status === 'SUCCESS') {
+        if (!resultJson.data || typeof resultJson.data !== 'object') {
+            return { valid: false, error: '成功结果缺少有效的 data 字段' };
+        }
+    }
+    
+    // 如果是失败状态，检查错误字段
+    if (resultJson.status === 'FAILURE') {
+        if (!resultJson.error || typeof resultJson.error !== 'object') {
+            return { valid: false, error: '失败结果缺少有效的 error 字段' };
+        }
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * 处理窗口大小变化时的响应式表现
+ * 添加窗口 resize 事件监听
+ */
+function setupWindowResizeHandler() {
+    let resizeTimer = null;
+    
+    window.addEventListener('resize', function() {
+        // 防抖：避免频繁重新计算
+        if (resizeTimer) {
+            clearTimeout(resizeTimer);
+        }
+        
+        resizeTimer = setTimeout(function() {
+            // 如果当前有 Konva Stage，需要重新调整大小
+            if (appState.konvaStage && appState.originalImage) {
+                console.log('窗口大小变化，调整 Canvas 尺寸');
+                
+                const container = document.getElementById('imageContainer');
+                if (container) {
+                    const containerWidth = container.clientWidth;
+                    const containerHeight = container.clientHeight;
+                    
+                    if (containerWidth > 0 && containerHeight > 0) {
+                        // 计算新的缩放比例
+                        const img = appState.originalImage;
+                        const scaleX = containerWidth / img.width;
+                        const scaleY = containerHeight / img.height;
+                        const newScale = Math.min(scaleX, scaleY, 1.0);
+                        
+                        // 如果缩放比例变化，重新调整 Stage 大小
+                        if (Math.abs(newScale - appState.imageScale) > 0.01) {
+                            const displayWidth = img.width * newScale;
+                            const displayHeight = img.height * newScale;
+                            
+                            appState.konvaStage.width(displayWidth);
+                            appState.konvaStage.height(displayHeight);
+                            appState.imageScale = newScale;
+                            
+                            // 重新绘制
+                            appState.konvaStage.draw();
+                            
+                            console.log('Canvas 尺寸已调整:', displayWidth, 'x', displayHeight);
+                        }
+                    }
+                }
+            }
+        }, 300); // 300ms 防抖延迟
+    });
+}
+
+/**
+ * 初始化时调用 setupWindowResizeHandler
+ * 在 init() 函数中添加以下代码：
+ * setupWindowResizeHandler();
+ */
+
+// ============================================
+// 步骤15：优化样式和用户体验
+// ============================================
+
+/**
+ * 增强的 Tooltip 样式和交互
+ * 添加箭头指向和更好的视觉效果
+ */
+function createEnhancedTooltip(content, position = { x: 0, y: 0 }) {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'tooltip enhanced-tooltip';
+    tooltip.innerHTML = content;
+    
+    // 设置位置
+    tooltip.style.left = position.x + 'px';
+    tooltip.style.top = position.y + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const padding = 10;
+    
+    let adjustedX = position.x;
+    let adjustedY = position.y;
+    
+    if (tooltipRect.right > viewportWidth - padding) {
+        adjustedX = viewportWidth - tooltipRect.width - padding;
+    }
+    
+    if (tooltipRect.bottom > viewportHeight - padding) {
+        adjustedY = viewportHeight - tooltipRect.height - padding;
+    }
+    
+    if (tooltipRect.left < padding) {
+        adjustedX = padding;
+    }
+    
+    if (tooltipRect.top < padding) {
+        adjustedY = padding;
+    }
+    
+    tooltip.style.left = adjustedX + 'px';
+    tooltip.style.top = adjustedY + 'px';
+    
+    return tooltip;
+}
+
+/**
+ * 添加加载状态样式
+ * 在图像加载时显示占位符
+ */
+function showImageLoadingPlaceholder() {
+    const container = document.getElementById('imageContainer');
+    if (!container) return;
+    
+    // 清空容器
+    container.innerHTML = '';
+    
+    // 创建占位符
+    const placeholder = document.createElement('div');
+    placeholder.className = 'image-loading-placeholder';
+    placeholder.innerHTML = `
+        <div class="placeholder-spinner"></div>
+        <p class="placeholder-text">正在加载图像...</p>
+    `;
+    
+    container.appendChild(placeholder);
+}
+
+/**
+ * 移除加载状态占位符
+ */
+function removeImageLoadingPlaceholder() {
+    const placeholder = document.querySelector('.image-loading-placeholder');
+    if (placeholder) {
+        placeholder.remove();
+    }
+}
+
+/**
+ * 添加报告卡片的过渡动画
+ * 在 buildCephReport 和 buildPanoReport 中调用
+ */
+function addReportSectionAnimations() {
+    const sections = document.querySelectorAll('.report-section');
+    sections.forEach((section, index) => {
+        // 添加淡入动画
+        section.style.opacity = '0';
+        section.style.transform = 'translateY(10px)';
+        section.style.transition = `opacity 0.3s ease ${index * 50}ms, transform 0.3s ease ${index * 50}ms`;
+        
+        // 触发动画
+        setTimeout(() => {
+            section.style.opacity = '1';
+            section.style.transform = 'translateY(0)';
+        }, 10);
+    });
+}
+
+/**
+ * 优化报告区域的滚动体验
+ * 添加平滑滚动
+ */
+function enableSmoothScrolling() {
+    const reportContainer = document.getElementById('reportContainer');
+    if (reportContainer) {
+        reportContainer.style.scrollBehavior = 'smooth';
+    }
+}
+
+/**
+ * 添加键盘快捷键支持
+ * ESC 键：关闭 Tooltip
+ * R 键：重置 UI
+ */
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function(event) {
+        // ESC 键：隐藏 Tooltip
+        if (event.key === 'Escape') {
+            hideTooltip();
+        }
+        
+        // R 键（Ctrl+R 除外）：重置 UI
+        if (event.key === 'r' && !event.ctrlKey && !event.metaKey) {
+            // 可选：重置 UI
+            // resetUI();
+        }
+    });
+}
+
+/**
+ * 增强的错误提示样式
+ * 添加自动关闭功能
+ */
+function displayErrorWithAutoClose(error, autoCloseTime = 5000) {
+    displayError(error);
+    
+    // 自动关闭错误提示
+    if (autoCloseTime > 0) {
+        setTimeout(() => {
+            const errorMessage = document.getElementById('errorMessage');
+            if (errorMessage) {
+                errorMessage.classList.add('hidden');
+            }
+        }, autoCloseTime);
+    }
+}
+
+/**
+ * 添加报告卡片的悬停效果
+ */
+function addReportCardHoverEffects() {
+    const cards = document.querySelectorAll('.measurement-item, .tooth-card');
+    cards.forEach(card => {
+        card.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateX(4px)';
+            this.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateX(0)';
+            this.style.boxShadow = 'none';
+        });
+    });
+}
+
+/**
+ * 在 init() 函数中调用以下函数来启用步骤15的优化：
+ * setupWindowResizeHandler();
+ * setupKeyboardShortcuts();
+ * enableSmoothScrolling();
+ */
+

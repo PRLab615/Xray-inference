@@ -1,0 +1,631 @@
+/* 全局样式重置 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+}
+
+/* 主容器 */
+.container {
+    max-width: 1400px;
+    margin: 20px auto;
+    padding: 30px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-size: 28px;
+}
+
+.subtitle {
+    color: #7f8c8d;
+    margin-bottom: 30px;
+    font-size: 14px;
+}
+
+h2 {
+    color: #34495e;
+    margin-bottom: 15px;
+    font-size: 20px;
+}
+
+/* 表单容器（保留 MVP 的表单样式） */
+.form-container {
+    margin-bottom: 20px;
+}
+
+/* 表单组 */
+.form-group {
+    margin-bottom: 25px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 14px;
+}
+
+.form-group input[type="file"],
+.form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+}
+
+.form-group input[type="file"]:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.hint {
+    margin-top: 5px;
+    font-size: 12px;
+    color: #95a5a6;
+}
+
+/* 患者信息表单 */
+.patient-info {
+    background-color: #ecf0f1;
+    padding: 15px;
+    border-radius: 4px;
+    border-left: 4px solid #3498db;
+}
+
+.patient-fields {
+    display: flex;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.field-item {
+    flex: 1;
+}
+
+.field-item label {
+    font-size: 13px;
+    margin-bottom: 5px;
+}
+
+/* 按钮样式 */
+.btn-primary,
+.btn-secondary {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: #fff;
+    width: 100%;
+}
+
+.btn-primary:hover {
+    background-color: #2980b9;
+}
+
+.btn-primary:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background-color: #95a5a6;
+    color: #fff;
+    margin-top: 15px;
+}
+
+.btn-secondary:hover {
+    background-color: #7f8c8d;
+}
+
+/* 加载动画容器 */
+.loading-indicator {
+    text-align: center;
+    padding: 40px 0;
+}
+
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.loading-text {
+    margin-top: 15px;
+    color: #7f8c8d;
+    font-size: 14px;
+}
+
+/* 双栏布局容器 */
+.main-container {
+    display: flex;
+    width: 100%;
+    height: calc(100vh - 300px);
+    min-height: 600px;
+    margin-top: 20px;
+    gap: 0;
+}
+
+/* 左侧: 图像查看区 (70%) */
+.image-container {
+    flex: 0 0 70%;
+    border: 1px solid #ddd;
+    background: #f5f5f5;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 右侧: AI 分析报告区 (30%) */
+.report-container {
+    flex: 0 0 30%;
+    border: 1px solid #ddd;
+    border-left: none;
+    background: #fff;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* 报告区块样式 */
+.report-section {
+    margin-bottom: 25px;
+}
+
+.report-section h2 {
+    font-size: 16px;
+    margin-bottom: 12px;
+    color: #2c3e50;
+    font-weight: 600;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 6px;
+}
+
+/* 键值对样式 */
+.key-value-item {
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.key-value-item .key {
+    font-weight: 600;
+    color: #34495e;
+    margin-right: 8px;
+}
+
+.key-value-item .value {
+    color: #2c3e50;
+}
+
+/* 测量项样式 */
+.measurement-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-left: 3px solid #ddd;
+    background: #f8f9fa;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.measurement-item:hover {
+    background: #e9ecef;
+}
+
+.measurement-item.abnormal {
+    border-left-color: #f44336;
+    background: #ffebee;
+}
+
+.measurement-item.abnormal:hover {
+    background: #ffcdd2;
+}
+
+.measurement-label {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+
+.measurement-value {
+    font-size: 16px;
+    color: #34495e;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.measurement-conclusion {
+    font-size: 13px;
+    color: #7f8c8d;
+    margin-bottom: 4px;
+}
+
+.measurement-item.abnormal .measurement-conclusion {
+    color: #d32f2f;
+    font-weight: 500;
+}
+
+.measurement-level {
+    font-size: 12px;
+    color: #5c6bc0;
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+.measurement-item.abnormal .measurement-level {
+    color: #d32f2f;
+}
+
+.measurement-confidence {
+    font-size: 12px;
+    color: #95a5a6;
+    margin-top: 4px;
+}
+
+/* 已检测关键点列表样式 */
+.detected-points-list,
+.missing-points-list {
+    margin-top: 10px;
+    padding: 8px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.points-label {
+    font-weight: 600;
+    color: #34495e;
+    margin-bottom: 6px;
+}
+
+.points-items {
+    color: #2c3e50;
+    line-height: 1.8;
+}
+
+.missing-points-list {
+    background: #fff3cd;
+    border-left: 3px solid #ffc107;
+}
+
+/* JSON 展开/折叠按钮 */
+.json-toggle-btn {
+    background-color: #95a5a6;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-bottom: 10px;
+    transition: background-color 0.3s;
+}
+
+.json-toggle-btn:hover {
+    background-color: #7f8c8d;
+}
+
+/* 工具类 */
+.hidden {
+    display: none !important;
+}
+
+/* 错误提示样式 */
+.error-message {
+    background: #f44336;
+    color: white;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+/* Tooltip 样式 */
+.tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 1000;
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 200px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.tooltip strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: #fff;
+}
+
+/* ============================================
+   步骤15：优化样式和用户体验
+   ============================================ */
+
+/* 增强的 Tooltip 样式 */
+.tooltip.enhanced-tooltip {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: tooltipFadeIn 0.2s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* 图像加载占位符样式 */
+.image-loading-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(135deg, #f5f5f5 0%, #e9e9e9 100%);
+}
+
+.placeholder-spinner {
+    width: 60px;
+    height: 60px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+.placeholder-text {
+    color: #7f8c8d;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+/* 报告卡片的过渡动画 */
+.report-section {
+    animation: slideInUp 0.4s ease-out;
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 报告卡片的悬停效果 */
+.measurement-item,
+.tooth-card {
+    transition: all 0.2s ease;
+}
+
+.measurement-item:hover,
+.tooth-card:hover {
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 报告区域平滑滚动 */
+.report-container {
+    scroll-behavior: smooth;
+}
+
+/* 按钮的悬停和活跃状态优化 */
+.btn-primary {
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.4);
+    transform: translateY(-2px);
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+/* 错误提示的自动关闭动画 */
+.error-message {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 表单输入框的焦点效果优化 */
+.form-group input[type="file"],
+.form-group select {
+    transition: all 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.form-group input[type="file"]:focus,
+.form-group select:focus {
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1), 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 牙齿卡片样式优化 */
+.tooth-card {
+    padding: 12px;
+    margin-bottom: 10px;
+    border-left: 4px solid #3498db;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.tooth-card.abnormal {
+    border-left-color: #f44336;
+    background: #ffebee;
+}
+
+.tooth-header {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.tooth-properties {
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.tooth-property-item {
+    color: #34495e;
+    margin-bottom: 4px;
+    padding-left: 8px;
+    border-left: 2px solid #3498db;
+}
+
+.tooth-card.abnormal .tooth-property-item {
+    border-left-color: #f44336;
+}
+
+.tooth-periodontal,
+.tooth-wisdom {
+    font-size: 12px;
+    color: #7f8c8d;
+    margin-top: 6px;
+    font-weight: 500;
+}
+
+/* 发现组样式 */
+.finding-group {
+    margin-bottom: 15px;
+}
+
+.finding-group h3 {
+    font-size: 14px;
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-weight: 600;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 6px;
+}
+
+.finding-item {
+    padding: 8px;
+    margin-bottom: 6px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #34495e;
+    border-left: 3px solid #3498db;
+}
+
+/* JSON 按钮样式优化 */
+.json-toggle-btn {
+    transition: all 0.3s ease;
+}
+
+.json-toggle-btn:hover {
+    background-color: #7f8c8d;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .container {
+        margin: 20px;
+        padding: 20px;
+    }
+    
+    .patient-fields {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    h1 {
+        font-size: 24px;
+    }
+    
+    .main-container {
+        flex-direction: column;
+        height: auto;
+        min-height: auto;
+    }
+    
+    .image-container {
+        flex: 0 0 100%;
+        min-height: 400px;
+    }
+    
+    .report-container {
+        flex: 0 0 100%;
+        border-left: 1px solid #ddd;
+        border-top: 1px solid #ddd;
+    }
+    
+    /* 移动设备上优化 Tooltip 大小 */
+    .tooltip {
+        max-width: 150px;
+        font-size: 11px;
+    }
+    
+    /* 移动设备上优化按钮大小 */
+    .btn-primary {
+        padding: 14px 20px;
+        font-size: 16px;
+    }
+}

@@ -2,8 +2,9 @@
 牙齿分割模块
 """
 
-# TODO: 导出牙齿分割相关类
-pass
+from pipelines.pano.modules.teeth_seg.teeth_predictor import TeethSegmentationModule, process_teeth_results
+
+__all__ = ['TeethSegmentationModule', 'process_teeth_results']
 
 
 
