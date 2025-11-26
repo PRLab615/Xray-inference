@@ -3445,10 +3445,11 @@ function hideAllLayers() {
         const config = LAYER_CONFIG[layerKey];
         if (config.taskType === appState.currentTaskType) {
             appState.layerVisibility[layerKey] = false;
-            toggleLayerVisibility(layerKey, false);
         }
     });
     
+    // 统一更新图层可见性和 Checkbox 状态，并触发一次重绘
+    updateAllLayersVisibility();
     console.log('全部图层已隐藏');
 }
 
@@ -3460,10 +3461,11 @@ function showAllLayers() {
         const config = LAYER_CONFIG[layerKey];
         if (config.taskType === appState.currentTaskType) {
             appState.layerVisibility[layerKey] = true;
-            toggleLayerVisibility(layerKey, true);
         }
     });
     
+    // 统一更新图层可见性和 Checkbox 状态，并触发一次重绘
+    updateAllLayersVisibility();
     console.log('全部图层已显示');
 }
 
