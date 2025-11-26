@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from pipelines.base_pipeline import BasePipeline  # type: ignore
 from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type: ignore
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
+from tools.timer import timer
 
 
 DEFAULT_PATIENT_INFO = {
@@ -137,6 +138,9 @@ class CephPipeline(BasePipeline):
         Returns:
             dict: 符合规范的完整 data 字段
         """
+        # 重置计时器
+        timer.reset()
+        
         patient_info = patient_info or kwargs.get("patient_info")
         if not patient_info:
             raise ValueError("patient_info is required for CephPipeline.run")
@@ -150,9 +154,17 @@ class CephPipeline(BasePipeline):
             raise RuntimeError("Point module not initialized, cannot run inference")
         
         point_engine = self.modules['point']
+        # 内部已埋点 ceph_point.pre/inference/post/measurement
         inference_results = point_engine.run(image_path=image_path, patient_info=patient_info)
         
-        result = generate_standard_output(inference_results, patient_info)
+        # 报告生成埋点
+        with timer.record("report.generation"):
+            result = generate_standard_output(inference_results, patient_info)
+        
+        # 保存计时报告
+        timer.print_report()
+        timer.save_report()  # 使用配置中的路径
+        
         self._log_step("侧位片推理完成", f"keys={list(result.keys())}")
         return result
 

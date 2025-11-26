@@ -19,6 +19,7 @@ if project_root not in sys.path:
 
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 from pipelines.pano.modules.implant_detect.pre_post import process_detections
 
 logger = logging.getLogger(__name__)
@@ -133,30 +134,33 @@ class ImplantDetectionModule:
         logger.info("Starting YOLOv11 implant detection inference.")
 
         try:
-            # 1. 执行 YOLO 推理
-            results = self.model.predict(
-                imgsz=640,
-                source=image,
-                conf=self.conf,
-                iou=self.iou,
-                device=self.device,
-                verbose=False
-            )
+            # YOLO 推理
+            with timer.record("implant_detect.inference"):
+                results = self.model.predict(
+                    imgsz=640,
+                    source=image,
+                    conf=self.conf,
+                    iou=self.iou,
+                    device=self.device,
+                    verbose=False
+                )
 
-            if not results or len(results) == 0:
-                logger.warning("YOLO inference returned no results.")
-                return {"implant_boxes": [], "quadrant_counts": {1: 0, 2: 0, 3: 0, 4: 0}}
+                if not results or len(results) == 0:
+                    logger.warning("YOLO inference returned no results.")
+                    return {"implant_boxes": [], "quadrant_counts": {1: 0, 2: 0, 3: 0, 4: 0}}
 
-            yolo_predictions_tensor = results[0].boxes.data.cpu().numpy()
+                yolo_predictions_tensor = results[0].boxes.data.cpu().numpy()
 
         except Exception as e:
             logger.error(f"YOLOv11 implant detection inference failed: {e}")
             raise
 
-        final_results: Dict[str, Any] = process_detections(
-            predictions=yolo_predictions_tensor,
-            original_img_shape=original_shape,
-        )
+        # 后处理
+        with timer.record("implant_detect.post"):
+            final_results: Dict[str, Any] = process_detections(
+                predictions=yolo_predictions_tensor,
+                original_img_shape=original_shape,
+            )
 
         return final_results
 

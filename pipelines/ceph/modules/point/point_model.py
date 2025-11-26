@@ -16,6 +16,7 @@ from pipelines.ceph.modules.point.pre_post import (
     postprocess_results,
 )
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 
 
 logger = logging.getLogger(__name__)
@@ -143,24 +144,29 @@ class CephModel:
         Returns:
             LandmarkResult: 关键点检测结果
         """
-        # 前处理：验证图像路径
-        processed_path = preprocess_image(image_path, self.logger)
+        # 1. 前处理：验证图像路径
+        with timer.record("ceph_point.pre"):
+            processed_path = preprocess_image(image_path, self.logger)
         
-        # 加载模型并推理
-        model = self._ensure_model()
-        self.logger.info("Running Ceph keypoint detection on %s", processed_path)
-        results = model.predict(
-            source=processed_path,
-            imgsz=self.image_size,
-            device=self.device,
-            conf=self.conf,
-            iou=self.iou,
-            max_det=self.max_det,
-            verbose=False,
-        )
+        # 2. YOLO 推理
+        with timer.record("ceph_point.inference"):
+            model = self._ensure_model()
+            self.logger.info("Running Ceph keypoint detection on %s", processed_path)
+            results = model.predict(
+                source=processed_path,
+                imgsz=self.image_size,
+                device=self.device,
+                conf=self.conf,
+                iou=self.iou,
+                max_det=self.max_det,
+                verbose=False,
+            )
 
-        # 后处理：提取关键点和置信度
-        return postprocess_results(results, processed_path, self.weights_path, self.logger)
+        # 3. 后处理：提取关键点和置信度
+        with timer.record("ceph_point.post"):
+            landmark_result = postprocess_results(results, processed_path, self.weights_path, self.logger)
+        
+        return landmark_result
 
 
 class CephInferenceEngine:
@@ -201,8 +207,12 @@ class CephInferenceEngine:
         self._validate_patient_info(patient_info)
         self.logger.info("Running Ceph inference on %s", image_path)
 
+        # 关键点检测（内部已埋点 ceph_point.pre/inference/post）
         landmark_result = self.detector.predict(image_path)
-        measurements = calculate_measurements(landmark_result.coordinates)
+        
+        # 测量计算
+        with timer.record("ceph_point.measurement"):
+            measurements = calculate_measurements(landmark_result.coordinates)
 
         inference_bundle = {
             "landmarks": self._landmark_result_to_dict(landmark_result),

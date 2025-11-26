@@ -19,6 +19,7 @@ if project_root not in sys.path:
 
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 from pipelines.pano.modules.teeth_seg.pre_post import process_teeth_masks  # 后处理
 
 logger = logging.getLogger(__name__)
@@ -134,30 +135,35 @@ class TeethSegmentationModule:
         logger.info("Starting YOLOv11 teeth segmentation inference.")
 
         try:
-            results = self.model.predict(
-                source=image,
-                conf=self.conf,
-                iou=self.iou,
-                device=self.device,
-                verbose=False,
-                save=False,
-            )
+            # YOLO 实例分割推理
+            with timer.record("teeth_seg.inference"):
+                results = self.model.predict(
+                    source=image,
+                    conf=self.conf,
+                    iou=self.iou,
+                    device=self.device,
+                    verbose=False,
+                    save=False,
+                )
 
-            if not results or len(results) == 0:
-                logger.warning("No teeth detected.")
-                return {"masks": [], "class_names": [], "original_shape": original_shape}
+                if not results or len(results) == 0:
+                    logger.warning("No teeth detected.")
+                    return {"masks": [], "class_names": [], "original_shape": original_shape}
 
-            # 提取 masks 和 class names (YOLO 实例分割输出)
-            # masks: [N, H, W] binary masks (normalized to [0,1])
-            masks = results[0].masks.data.cpu().numpy() if results[0].masks is not None else np.array([])
+            # 结果提取（Post-processing）
+            with timer.record("teeth_seg.post"):
+                # 提取 masks 和 class names (YOLO 实例分割输出)
+                # masks: [N, H, W] binary masks (normalized to [0,1])
+                masks = results[0].masks.data.cpu().numpy() if results[0].masks is not None else np.array([])
 
-            # classes: class indices [N]
-            class_indices = results[0].boxes.cls.cpu().numpy() if results[0].boxes is not None else np.array([])
+                # classes: class indices [N]
+                class_indices = results[0].boxes.cls.cpu().numpy() if results[0].boxes is not None else np.array([])
 
-            # class names: 从模型 names 字典获取 (假设 names = {0: 'tooth-11', 1: 'tooth-12', ...})
-            class_names = [self.model.names[int(idx)] for idx in class_indices] if len(class_indices) > 0 else []
+                # class names: 从模型 names 字典获取 (假设 names = {0: 'tooth-11', 1: 'tooth-12', ...})
+                class_names = [self.model.names[int(idx)] for idx in class_indices] if len(class_indices) > 0 else []
 
-            logger.info(f"Detected {len(class_names)} teeth segments.")
+                logger.info(f"Detected {len(class_names)} teeth segments.")
+
             return {
                 "masks": masks,  # [N, H, W] binary masks
                 "class_names": class_names,  # [N] strings like "tooth-11"
