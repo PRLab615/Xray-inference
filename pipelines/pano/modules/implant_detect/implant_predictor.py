@@ -116,7 +116,12 @@ class ImplantDetectionModule:
             logger.info(f"Initializing Implant YOLO model from: {self.weights_path}")
             logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
             model = YOLO(self.weights_path)
-            # YOLO 模型不需要手动调用 .to()，在 predict 时指定 device 即可
+            if torch.cuda.is_available() and str(self.device).startswith('cuda'):
+                try:
+                    model.to(self.device)
+                    logger.info("Implant YOLO model moved to %s", self.device)
+                except Exception as exc:
+                    logger.warning("Failed to move Implant model to %s: %s", self.device, exc)
             logger.info("YOLOv11 Implant Detection Model initialized successfully.")
             return model
         except Exception as e:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import torch
 from ultralytics import YOLO
 from pipelines.ceph.utils.ceph_report import calculate_measurements
 from pipelines.ceph.modules.point.pre_post import (
@@ -56,7 +57,7 @@ class CephModel:
         self.weights_force_download = weights_force_download
         self.weights_key = weights_key
         self.weights_path = self._resolve_weights_path(weights_path)
-        self.device = device
+        self.device = self._normalize_device(device)
         self.image_size = image_size
         self.conf = conf
         self.iou = iou
@@ -130,9 +131,37 @@ class CephModel:
                 f"Ceph model weights not found: {self.weights_path}"
             )
         self.logger.info("Loading Ceph model weights: %s", self.weights_path)
-        return YOLO(self.weights_path)
+        model = YOLO(self.weights_path)
+        if self.device != "cpu":
+            try:
+                model.to(self.device)
+                self.logger.info("Ceph YOLO model moved to %s", self.device)
+            except Exception as exc:
+                self.logger.warning("Failed to move Ceph model to %s: %s", self.device, exc)
+        return model
 
+    def _normalize_device(self, device: Optional[str]) -> str:
+        """
+        将配置的 device 统一转换为 PyTorch/Ultralytics 可识别的格式。
+        """
+        if not torch.cuda.is_available():
+            return "cpu"
 
+        if device is None:
+            return "cuda:0"
+
+        device_str = str(device).strip()
+        if device_str.lower() == "cpu":
+            return "cpu"
+
+        if device_str.lower().startswith("cuda"):
+            return device_str.lower()
+
+        if device_str.isdigit():
+            return f"cuda:{device_str}"
+
+        # 回退：直接返回原始字符串（例如自定义 "cuda:1"）
+        return device_str
 
     def predict(self, image_path: str) -> LandmarkResult:
         """

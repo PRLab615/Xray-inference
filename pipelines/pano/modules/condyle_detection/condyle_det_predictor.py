@@ -166,7 +166,33 @@ class JointPredictor:
             logger.info(f"Loading YOLO weights from: {self.weights_path}")
             logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
             self.model = YOLO(self.weights_path)
-            # YOLO 模型不需要手动调用 .to()，在 predict 时指定 device 即可
+            
+            # 显式将模型移动到目标设备（GPU），实现预加载
+            if torch.cuda.is_available() and str(self.device).startswith('cuda'):
+                try:
+                    self.model.to(self.device)
+                    logger.info("Condyle Detection YOLO model moved to %s", self.device)
+                except Exception as exc:
+                    logger.warning("Failed to move Condyle Detection model to %s: %s", self.device, exc)
+            
+            # 预热推理：执行一次 dummy 推理，确保模型权重完全加载到 GPU 并完成 CUDA kernel 编译
+            logger.info("Warming up Condyle Detection model (preloading weights to GPU)...")
+            try:
+                # 创建一个小的 dummy 图像用于预热
+                dummy_image = np.zeros((640, 640, 3), dtype=np.uint8)
+                with torch.no_grad():
+                    _ = self.model.predict(
+                        source=dummy_image,
+                        device=self.device,
+                        verbose=False,
+                        conf=0.25,
+                        iou=0.45
+                    )
+                logger.info("Condyle Detection model warmup completed successfully.")
+            except Exception as warmup_exc:
+                logger.warning(f"Model warmup failed (non-critical): {warmup_exc}")
+            #     # 预热失败不影响模型使用，继续初始化
+            
             logger.info("YOLO Model initialized successfully.")
 
         except Exception as e:
@@ -188,8 +214,15 @@ class JointPredictor:
         try:
             # YOLO 推理（包含内置的 Pre/Post）
             with timer.record("condyle_det.inference"):
+                # 显式指定 device 参数，确保使用正确的设备
                 # verbose=False 不打印默认的推理日志，保持清爽
-                results = self.model(image, verbose=False)
+                results = self.model.predict(
+                    source=image,
+                    device=self.device,
+                    verbose=False,
+                    conf=0.25,
+                    iou=0.45
+                )
                 result = results[0]  # 取第一张图结果
 
             # 结果解析（Post-processing）
