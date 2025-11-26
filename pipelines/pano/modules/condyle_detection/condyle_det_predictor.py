@@ -1,25 +1,32 @@
 # -*- coding: utf-8 -*-
+"""
+髁突(关节)检测推理器 - YOLOv11
+
+权重路径通过 config.yaml 统一配置，不再使用硬编码路径。
+"""
 import os
 import sys
 import logging
 import numpy as np
 import torch
 import json
+from typing import Optional
 from ultralytics import YOLO
 
-# 1. 引用根目录 (确保能找到 tools 和 pipelines)
-sys.path.append(os.getcwd())
+# --- 稳健路径设置 ---
+current_file_path = os.path.abspath(__file__)
+current_dir = os.path.dirname(current_file_path)
+project_root = os.path.abspath(os.path.join(current_dir, "../../../../"))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
-# 2. 引用 MinIO 配置和 Client 生成器
-# 确保 tools/load_weight.py 存在且包含这些变量
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
+# 导入统一的权重获取工具
+from tools.weight_fetcher import ensure_weight_file, WeightFetchError
 
-# 3. 引用格式化工具
+# 引用格式化工具
 try:
-    # 尝试导入真实工具类
     from pipelines.pano.utils import pano_report_utils
 except ImportError:
-    # 如果导入失败，使用 Mock 类作为兜底，确保流程测试通畅
     class MockReportUtils:
         MORPHOLOGY_MAP = {
             0: {"detail": "髁突形态正常", "label": "正常"},
@@ -35,10 +42,8 @@ except ImportError:
             right_morphology = right_feature.get("class_id", 0)
             left_conf = left_feature.get("confidence", 0.0)
             right_conf = right_feature.get("confidence", 0.0)
-            left_detail = MockReportUtils.MORPHOLOGY_MAP.get(left_morphology, MockReportUtils.MORPHOLOGY_MAP[0])[
-                "detail"]
-            right_detail = MockReportUtils.MORPHOLOGY_MAP.get(right_morphology, MockReportUtils.MORPHOLOGY_MAP[0])[
-                "detail"]
+            left_detail = MockReportUtils.MORPHOLOGY_MAP.get(left_morphology, MockReportUtils.MORPHOLOGY_MAP[0])["detail"]
+            right_detail = MockReportUtils.MORPHOLOGY_MAP.get(right_morphology, MockReportUtils.MORPHOLOGY_MAP[0])["detail"]
             return {
                 "CondyleAssessment": {
                     "condyle_Left": {"Morphology": left_morphology, "IsSymmetrical": False, "Detail": left_detail,
@@ -53,14 +58,11 @@ except ImportError:
 
 
     pano_report_utils = MockReportUtils()
-    print("⚠️ WARNING: Could not import real pano_report_utils. Using MockReportUtils for robustness.")
+    logging.warning("Could not import real pano_report_utils. Using MockReportUtils.")
 
-# 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # 类名到形态学分类的映射
-# YOLO模型输出的类名格式: condyle_normal, condyle_resorption, condyle_suspect
 CLASS_NAME_TO_MORPHOLOGY = {
     'condyle_normal': 0,      # 正常
     'condyle_resorption': 1,  # 吸收
@@ -74,61 +76,102 @@ CLASS_NAME_TO_MORPHOLOGY = {
 class JointPredictor:
     """
     髁突(关节)检测推理器 - YOLOv11
+    
+    权重路径通过 config.yaml 统一配置。
     """
 
-    def __init__(self):
-        # --- 配置区域 ---
-        # MinIO 中的路径 (不含 Bucket 名)
-        self.s3_weight_path = "weights/panoramic/candlye_detec_best.pt"
+    def __init__(
+        self,
+        *,
+        weights_key: Optional[str] = None,
+        weights_force_download: bool = False,
+        device: Optional[str] = None,
+    ):
+        """
+        初始化髁突检测模块
+        
+        Args:
+            weights_key: S3 权重路径（从 config.yaml 传入）
+            weights_force_download: 是否强制重新下载权重
+            device: 推理设备（"0", "cpu" 等）
+        """
+        self.weights_key = weights_key
+        self.weights_force_download = weights_force_download
+        
+        # 处理 device 参数
+        # config.yaml 中 device: "0" 表示 GPU 0，"cpu" 表示 CPU
+        if device is None:
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        elif device == "cpu":
+            self.device = 'cpu'
+        else:
+            # "0", "1" 等数字字符串表示 GPU 索引
+            self.device = f'cuda:{device}' if torch.cuda.is_available() else 'cpu'
 
-        # 拼接本地缓存的绝对路径
-        self.local_weight_path = os.path.join(LOCAL_WEIGHTS_DIR, self.s3_weight_path)
-
+        self.weights_path = None
         self.model = None
         self._init_model()
 
+    def _resolve_weights_path(self) -> str:
+        """
+        解析权重文件路径
+        
+        优先级：
+            1. 配置的 weights_key（从 config.yaml 传入，可通过 S3 下载）
+            2. 环境变量 PANO_CONDYLE_DET_WEIGHTS（可选覆盖）
+        """
+        env_weights = os.getenv("PANO_CONDYLE_DET_WEIGHTS")
+        
+        candidates = [
+            ("weights_key", self.weights_key),
+            ("env", env_weights),
+        ]
+        
+        for origin, candidate in candidates:
+            if not candidate:
+                continue
+            
+            # 如果是本地存在的文件，直接返回
+            if os.path.exists(candidate):
+                logger.info(f"Using local weights file: {candidate} (from {origin})")
+                return candidate
+            
+            # 尝试从 S3 下载
+            if origin == "weights_key":
+                try:
+                    downloaded = ensure_weight_file(candidate, force_download=self.weights_force_download)
+                    logger.info(f"Downloaded Condyle Det weights from S3 key '{candidate}' to {downloaded}")
+                    return downloaded
+                except WeightFetchError as e:
+                    logger.warning(f"Failed to download from {origin}: {e}")
+                    continue
+        
+        # 所有候选路径都失败
+        error_msg = (
+            f"Condyle detection model weights not found. "
+            f"Please configure weights_key in config.yaml under pipelines.panoramic.modules.condyle_det"
+        )
+        raise FileNotFoundError(error_msg)
+
     def _init_model(self):
-        """
-        初始化流程：
-        1. 检查本地是否有权重文件
-        2. 如果没有，从 MinIO 下载
-        3. 使用 ultralytics.YOLO 加载本地文件路径
-        """
-        logger.info(">>> [1/3] Initializing Model...")
+        """解析权重路径并初始化 YOLO 模型"""
+        logger.info("Initializing Condyle Detection YOLO Model...")
 
         try:
-            # 步骤 A: 确保权重文件存在
-            self._ensure_weight_exists()
+            # 解析权重路径
+            self.weights_path = self._resolve_weights_path()
 
-            # 步骤 B: 加载 YOLO
-            logger.info(f"Loading YOLO weights from: {self.local_weight_path}")
-            self.model = YOLO(self.local_weight_path)
-            logger.info("✅ YOLO Model initialized successfully.")
+            # 加载 YOLO
+            logger.info(f"Loading YOLO weights from: {self.weights_path}")
+            logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
+            self.model = YOLO(self.weights_path)
+            # YOLO 模型不需要手动调用 .to()，在 predict 时指定 device 即可
+            logger.info("YOLO Model initialized successfully.")
 
         except Exception as e:
-            logger.critical(f"❌ Failed to initialize YOLO model: {e}")
+            logger.critical(f"Failed to initialize YOLO model: {e}")
             self.model = None
-
-    def _ensure_weight_exists(self):
-        """
-        检查本地缓存，不存在则下载
-        """
-        local_folder = os.path.dirname(self.local_weight_path)
-        if not os.path.exists(local_folder):
-            os.makedirs(local_folder)
-
-        if not os.path.exists(self.local_weight_path):
-            logger.info(f"Cache miss. Downloading from S3: {self.s3_weight_path} ...")
-            try:
-                s3 = get_s3_client()
-                # 下载文件
-                s3.download_file(S3_BUCKET_NAME, self.s3_weight_path, self.local_weight_path)
-                logger.info("Download completed.")
-            except Exception as e:
-                logger.error(f"Download failed. Please check S3 config. Error: {e}")
-                raise e
-        else:
-            logger.info(f"Cache hit. Found local weights.")
+            raise
 
     def predict(self, image) -> dict:
         """

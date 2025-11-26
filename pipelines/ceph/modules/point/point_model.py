@@ -19,10 +19,6 @@ from tools.weight_fetcher import ensure_weight_file, WeightFetchError
 
 
 logger = logging.getLogger(__name__)
-DEFAULT_WEIGHTS_PATH = os.getenv(
-    "CEPH_MODEL_WEIGHTS",
-    str(Path(__file__).resolve().parents[2] / "15_best.pt"),
-)
 
 @dataclass
 class LandmarkResult:
@@ -79,22 +75,31 @@ class CephModel:
         决定最终用于 YOLO 的权重文件。
 
         优先级：
-            1. 显式传入且存在的本地路径
-            2. 配置的 S3 Key（weights_path 作为 Key 或单独提供 weights_key）
-            3. 默认内置路径
+            1. 显式传入且存在的本地路径（或可通过 S3 下载）
+            2. 配置的 weights_key（从 config.yaml 传入，可通过 S3 下载）
+            3. 环境变量 CEPH_MODEL_WEIGHTS（可选覆盖）
+        
+        注意：权重路径应在 config.yaml 中统一配置，不再使用硬编码的默认路径。
         """
+        # 检查环境变量（可选覆盖）
+        env_weights = os.getenv("CEPH_MODEL_WEIGHTS")
+        
         candidates = [
             ("explicit", explicit_path),
             ("weights_key", self.weights_key),
-            ("default", DEFAULT_WEIGHTS_PATH),
+            ("env", env_weights),
         ]
+        
         for origin, candidate in candidates:
             if not candidate:
                 continue
 
+            # 如果是本地存在的文件，直接返回
             if os.path.exists(candidate):
+                self.logger.info("Using local weights file: %s (from %s)", candidate, origin)
                 return candidate
 
+            # 尝试从 S3 下载（仅对 explicit 和 weights_key）
             if origin in {"explicit", "weights_key"}:
                 try:
                     downloaded = ensure_weight_file(candidate, force_download=self.weights_force_download)
@@ -102,10 +107,21 @@ class CephModel:
                     return downloaded
                 except WeightFetchError:
                     continue
-
-        raise FileNotFoundError(
-            f"Ceph model weights not found. Checked explicit path, weights_key and default {DEFAULT_WEIGHTS_PATH}"
+        
+        # 所有候选路径都失败，抛出明确的错误
+        checked = []
+        if explicit_path:
+            checked.append(f"explicit path '{explicit_path}'")
+        if self.weights_key:
+            checked.append(f"weights_key '{self.weights_key}'")
+        if env_weights:
+            checked.append(f"env CEPH_MODEL_WEIGHTS '{env_weights}'")
+        
+        error_msg = (
+            f"Ceph model weights not found. Checked: {', '.join(checked) if checked else 'none'}. "
+            f"Please configure weights_key in config.yaml or provide explicit weights_path."
         )
+        raise FileNotFoundError(error_msg)
 
     def __init__model(self) -> YOLO:
         if not os.path.exists(self.weights_path):

@@ -28,7 +28,7 @@ class PanoPipeline(BasePipeline):
     架构设计（v3.2）：
         - 在初始化时，一次性加载所有 enabled 的模块
         - 支持多模块并存（teeth_seg, bone_density, joint 等）
-        - 通过 modules 参数接收配置
+        - 通过 modules 参数接收配置（从 config.yaml 传入）
     """
     
     def __init__(self, *, modules: dict = None):
@@ -36,45 +36,77 @@ class PanoPipeline(BasePipeline):
         初始化全景片 Pipeline
         
         Args:
-            modules: 模块配置字典（可选）
-                格式与 CephPipeline 相同，当前为空字典（子模块未实现）
-        
-        Note:
-            - v3: 初始化基础结构，子模块用 TODO 占位
-            - v4: 实现子模块的真实初始化
+            modules: 模块配置字典，格式如下：
+                {
+                    "teeth_seg": {
+                        "weights_key": "weights/panoramic/1116_teeth_seg.pt",
+                        "device": "0",
+                        ...
+                    },
+                    "mandible_seg": {...},
+                    "implant_detect": {...},
+                    "condyle_seg": {...},
+                    "condyle_det": {...}
+                }
         """
         super().__init__()
         self.pipeline_type = "panoramic"
         self.modules = {}  # 存储所有已初始化的模块实例
+        self._modules_config = modules or {}
         
         # 初始化五个核心模块
         logger.info("Initializing Pano Pipeline modules...")
+        self._initialize_modules()
+        logger.info("PanoPipeline initialized successfully")
+    
+    def _get_module_config(self, module_name: str) -> dict:
+        """
+        获取指定模块的配置，排除元数据字段
+        
+        Args:
+            module_name: 模块名称
+            
+        Returns:
+            dict: 模块初始化参数
+        """
+        config = self._modules_config.get(module_name, {})
+        if not isinstance(config, dict):
+            return {}
+        # 排除元数据字段
+        exclude_keys = {'description'}
+        return {k: v for k, v in config.items() if k not in exclude_keys}
+    
+    def _initialize_modules(self):
+        """初始化所有模块，从配置中读取参数"""
         try:
             # 1. 髁突分割模块 (condyle_seg)
-            self.modules['condyle_seg'] = CondyleSegPredictor()
+            condyle_seg_cfg = self._get_module_config('condyle_seg')
+            self.modules['condyle_seg'] = CondyleSegPredictor(**condyle_seg_cfg)
             logger.info("  ✓ Condyle Segmentation module loaded")
             
             # 2. 髁突检测模块 (condyle_detection)
-            self.modules['condyle_det'] = CondyleDetPredictor()
+            condyle_det_cfg = self._get_module_config('condyle_det')
+            self.modules['condyle_det'] = CondyleDetPredictor(**condyle_det_cfg)
             logger.info("  ✓ Condyle Detection module loaded")
             
             # 3. 下颌骨分割模块 (mandible_seg)
-            self.modules['mandible'] = MandiblePredictor()
+            mandible_cfg = self._get_module_config('mandible_seg')
+            self.modules['mandible'] = MandiblePredictor(**mandible_cfg)
             logger.info("  ✓ Mandible Segmentation module loaded")
             
             # 4. 种植体检测模块 (implant_detect)
-            self.modules['implant_detect'] = ImplantDetectionModule()
+            implant_cfg = self._get_module_config('implant_detect')
+            self.modules['implant_detect'] = ImplantDetectionModule(**implant_cfg)
             logger.info("  ✓ Implant Detection module loaded")
             
             # 5. 牙齿分割模块 (teeth_seg)
-            self.modules['teeth_seg'] = TeethSegmentationModule()
+            teeth_cfg = self._get_module_config('teeth_seg')
+            self.modules['teeth_seg'] = TeethSegmentationModule(**teeth_cfg)
             logger.info("  ✓ Teeth Segmentation module loaded")
             
         except Exception as e:
             logger.error(f"Failed to initialize some modules: {e}")
             raise
-        
-        logger.info("PanoPipeline initialized successfully")
     
     def run(self, image_path: str) -> dict:
         """
