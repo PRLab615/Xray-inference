@@ -179,6 +179,7 @@ h2 {
     min-height: 600px;
     margin-top: 20px;
     gap: 0;
+    position: relative; /* 为图层控制面板提供定位基准 */
 }
 
 /* 左侧: 图像查看区 (70%) */
@@ -199,13 +200,32 @@ h2 {
     border: 1px solid #ddd;
     border-left: none;
     background: #fff;
-    overflow-y: auto;
-    padding: 20px;
+    overflow: hidden; /* 防止自身滚动 */
+    display: flex;
+    flex-direction: column;
 }
 
-/* 报告区块样式 */
-.report-section {
-    margin-bottom: 25px;
+/* 报告内容滚动区域 */
+#reportContent {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    padding-top: 0;
+}
+
+/* 图层控制面板样式 */
+.layer-control-panel {
+    flex: 0 0 auto; /* 不伸缩，保持原有大小 */
+    margin: 0; /* 移除外边距，紧贴顶部 */
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    border-radius: 0; /* 移除圆角，贴合边框 */
+    padding: 15px;
+    width: 100%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    font-size: 14px;
+    display: none; /* 默认隐藏，渲染完成后显示 */
+    z-index: 10;
 }
 
 .report-section h2 {
@@ -628,4 +648,105 @@ h2 {
         padding: 14px 20px;
         font-size: 16px;
     }
+}
+
+/* 图层控制面板样式 */
+.layer-control-panel {
+    position: sticky; /* 改为 sticky 定位 */
+    top: 0;
+    z-index: 100;
+    margin-bottom: 20px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 15px;
+    width: 100%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* 添加轻微阴影，增加层次感 */
+    font-size: 14px;
+    display: none; /* 默认隐藏，渲染完成后显示 */
+}
+
+.layer-control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.layer-control-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.layer-control-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-layer-control {
+    padding: 4px 12px;
+    font-size: 12px;
+    border: 1px solid #bdc3c7;
+    background-color: #fff;
+    color: #7f8c8d;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-layer-control:hover {
+    border-color: #3498db;
+    color: #3498db;
+    background-color: #f0f8ff;
+}
+
+.layer-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: none; /* 移除高度限制 */
+    overflow-y: visible;
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+    border-radius: 4px;
+    background: #fff;
+    border: 1px solid #dcdfe6;
+    margin: 0;
+}
+
+.layer-item:hover {
+    border-color: #b3d8ff;
+    background-color: #ecf5ff;
+}
+
+.layer-item input[type="checkbox"] {
+    margin-right: 6px;
+    cursor: pointer;
+}
+
+.layer-item label {
+    cursor: pointer;
+    font-size: 13px;
+    color: #606266;
+}
+
+.layer-item.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #f5f7fa;
+}
+
+.layer-item.disabled label {
+    color: #95a5a6;
 }

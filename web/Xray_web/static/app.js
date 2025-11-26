@@ -28,7 +28,8 @@ const appState = {
     konvaStage: null,          // Konva Stage 实例
     konvaLayers: {},           // 图层对象集合
     originalImage: null,       // 原始图片对象
-    imageScale: 1.0            // 图片缩放比例
+    imageScale: 1.0,           // 图片缩放比例
+    layerVisibility: {}        // 图层显示状态 {layerKey: true/false}
 };
 
 // 全局配置常量
@@ -571,15 +572,22 @@ function clearCanvas() {
     appState.konvaLayers = {};
     appState.originalImage = null;
     appState.imageScale = 1.0;
+    appState.layerVisibility = {};
+    
+    // 隐藏图层控制面板
+    const panel = document.getElementById('layerControlPanel');
+    if (panel) {
+        panel.style.display = 'none';
+    }
 }
 
 /**
  * 清空报告容器
  */
 function clearReport() {
-    const reportContainer = document.getElementById('reportContainer');
-    if (reportContainer) {
-        reportContainer.innerHTML = '';
+    const reportContent = document.getElementById('reportContent');
+    if (reportContent) {
+        reportContent.innerHTML = '';
     }
 }
 
@@ -733,6 +741,9 @@ function renderCephalometric(data) {
         // 绘制画布
         stage.draw();
         
+        // 6. 初始化图层控制面板
+        initLayerControlPanel();
+        
         console.log('侧位片渲染完成');
     };
     
@@ -808,6 +819,10 @@ function drawLandmarks(data, stage, scale) {
             text.on('mouseleave', function() {
                 hideTooltip();
             });
+            
+            // 添加点击切换图层显示/隐藏功能
+            addClickToggleToNode(circle, 'landmarks');
+            addClickToggleToNode(text, 'landmarks');
             
             landmarkLayer.add(circle);
             landmarkLayer.add(text);
@@ -1083,9 +1098,9 @@ function showFindingTooltip(node, findingData, event) {
  * @param {Object} data - 侧位片分析数据
  */
 function buildCephReport(data) {
-    const container = document.getElementById('reportContainer');
+    const container = document.getElementById('reportContent');
     if (!container) {
-        console.error('报告容器不存在');
+        console.error('报告内容容器不存在');
         return;
     }
     
@@ -1636,6 +1651,9 @@ function renderPanoramic(data) {
         // 绘制画布
         stage.draw();
         
+        // 7. 初始化图层控制面板
+        initLayerControlPanel();
+        
         console.log('全景片渲染完成');
     };
     
@@ -1716,6 +1734,9 @@ function drawToothSegments(data, stage, scale) {
                 hideTooltip();
             });
             
+            // 添加点击切换图层显示/隐藏功能
+            addClickToggleToNode(line, 'toothSegments');
+            
             toothLayer.add(line);
             drawnCount++;
         });
@@ -1731,20 +1752,16 @@ function drawToothSegments(data, stage, scale) {
 
 /**
  * 绘制区域性发现（种植体、根尖密度影、髁突等）
+ * 将不同类型的发现绘制到独立的图层中
  * @param {Object} data - 全景片分析数据
  * @param {Konva.Stage} stage - Konva Stage 实例
  * @param {number} scale - 缩放比例
  */
 function drawRegionalFindings(data, stage, scale) {
-    // 创建区域性发现图层
-    const findingLayer = new Konva.Layer();
-    
+    // 1. 种植体图层
+    const implantLayer = new Konva.Layer();
     let implantCount = 0;
-    let densityCount = 0;
-    let condyleCount = 0;
-    let mandibleCount = 0;
     
-    // 绘制种植体
     if (data.ImplantAnalysis && data.ImplantAnalysis.Items && Array.isArray(data.ImplantAnalysis.Items)) {
         console.log('开始绘制种植体，总数:', data.ImplantAnalysis.Items.length);
         
@@ -1786,14 +1803,25 @@ function drawRegionalFindings(data, stage, scale) {
                 hideTooltip();
             });
             
-            findingLayer.add(rect);
+            // 添加点击切换图层显示/隐藏功能
+            addClickToggleToNode(rect, 'implants');
+            
+            implantLayer.add(rect);
             implantCount++;
         });
         
         console.log('种植体绘制完成，已绘制:', implantCount, '个');
     }
     
-    // 绘制根尖密度影
+    if (implantCount > 0) {
+        stage.add(implantLayer);
+        appState.konvaLayers.implants = implantLayer;
+    }
+    
+    // 2. 根尖密度影图层
+    const densityLayer = new Konva.Layer();
+    let densityCount = 0;
+    
     if (data.RootTipDensityAnalysis && data.RootTipDensityAnalysis.Items && Array.isArray(data.RootTipDensityAnalysis.Items)) {
         console.log('开始绘制根尖密度影，总数:', data.RootTipDensityAnalysis.Items.length);
         
@@ -1836,12 +1864,24 @@ function drawRegionalFindings(data, stage, scale) {
                 hideTooltip();
             });
             
-            findingLayer.add(rect);
+            // 添加点击切换图层显示/隐藏功能
+            addClickToggleToNode(rect, 'density');
+            
+            densityLayer.add(rect);
             densityCount++;
         });
         
         console.log('根尖密度影绘制完成，已绘制:', densityCount, '个');
     }
+    
+    if (densityCount > 0) {
+        stage.add(densityLayer);
+        appState.konvaLayers.density = densityLayer;
+    }
+    
+    // 3. 髁突图层
+    const condyleLayer = new Konva.Layer();
+    let condyleCount = 0;
     
     // 绘制髁突区域（来自 AnatomyResults 多边形坐标）
     if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
@@ -1909,16 +1949,25 @@ function drawRegionalFindings(data, stage, scale) {
                     poly.condyleSide = side;
                     poly.on('mouseenter', function(e) { showCondyleTooltip(this, info, side, e); });
                     poly.on('mouseleave', function() { hideTooltip(); });
-                    findingLayer.add(poly);
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'condyle');
+                    condyleLayer.add(poly);
                     condyleCount++;
                 });
             }
         });
         
-        if (condyleCount > 0) {
-            console.log('髁突区域绘制完成，已绘制:', condyleCount, '个');
-        }
+        console.log('髁突区域绘制完成，已绘制:', condyleCount, '个');
     }
+    
+    if (condyleCount > 0) {
+        stage.add(condyleLayer);
+        appState.konvaLayers.condyle = condyleLayer;
+    }
+    
+    // 4. 下颌升支图层
+    const mandibleLayer = new Konva.Layer();
+    let mandibleCount = 0;
     
     // 绘制下颌分支区域（来自 AnatomyResults 多边形坐标）
     if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
@@ -2005,21 +2054,21 @@ function drawRegionalFindings(data, stage, scale) {
                         document.body.style.cursor = 'default';
                     });
                     
-                    findingLayer.add(poly);
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'mandible');
+                    
+                    mandibleLayer.add(poly);
                     mandibleCount++;
                 });
             }
         });
         
-        if (mandibleCount > 0) {
-            console.log('下颌分支区域绘制完成，已绘制:', mandibleCount, '个');
-        }
+        console.log('下颌分支区域绘制完成，已绘制:', mandibleCount, '个');
     }
     
-    // 只有当图层中有内容时才添加到 Stage
-    if (implantCount > 0 || densityCount > 0 || condyleCount > 0 || mandibleCount > 0) {
-        stage.add(findingLayer);
-        appState.konvaLayers.regionalFindings = findingLayer;
+    if (mandibleCount > 0) {
+        stage.add(mandibleLayer);
+        appState.konvaLayers.mandible = mandibleLayer;
     }
 }
 
@@ -2260,9 +2309,9 @@ function showCondyleTooltip(node, condyleInfo, side, event) {
  * @param {Object} data - 全景片分析数据
  */
 function buildPanoReport(data) {
-    const container = document.getElementById('reportContainer');
+    const container = document.getElementById('reportContent');
     if (!container) {
-        console.error('报告容器不存在');
+        console.error('报告内容容器不存在');
         return;
     }
     
@@ -3167,4 +3216,282 @@ function addReportCardHoverEffects() {
  * setupKeyboardShortcuts();
  * enableSmoothScrolling();
  */
+
+// ============================================
+// 步骤16：图层显示/隐藏控制功能
+// ============================================
+
+/**
+ * 图层配置映射表
+ * 定义每个图层的显示名称和对应的图层key
+ */
+const LAYER_CONFIG = {
+    // 侧位片图层
+    landmarks: { name: '关键点', taskType: 'cephalometric' },
+    // 全景片图层
+    toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
+     implants: { name: '种植体', taskType: 'panoramic' },
+    condyle: { name: '髁突', taskType: 'panoramic' },
+    mandible: { name: '下颌升支', taskType: 'panoramic' },
+    density: { name: '根尖密度影', taskType: 'panoramic' }
+};
+
+/**
+ * 初始化图层控制面板
+ * 根据当前任务类型动态生成图层列表
+ */
+function initLayerControlPanel() {
+    console.log('初始化图层控制面板...');
+    const panel = document.getElementById('layerControlPanel');
+    const layerList = document.getElementById('layerList');
+    
+    if (!panel) {
+        console.error('图层控制面板元素不存在: layerControlPanel');
+        return;
+    }
+    
+    if (!layerList) {
+        console.error('图层列表元素不存在: layerList');
+        return;
+    }
+    
+    console.log('找到图层控制面板元素');
+    
+    // 清空现有列表
+    layerList.innerHTML = '';
+    
+    // 根据任务类型显示对应的图层
+    const taskType = appState.currentTaskType;
+    if (!taskType) {
+        console.warn('任务类型未设置，隐藏面板');
+        panel.style.display = 'none';
+        return;
+    }
+    
+    console.log('任务类型:', taskType, '已创建的图层:', Object.keys(appState.konvaLayers));
+    
+    // 生成图层列表项（只显示实际存在的图层）
+    let hasLayers = false;
+    Object.keys(LAYER_CONFIG).forEach(layerKey => {
+        const config = LAYER_CONFIG[layerKey];
+        
+        // 只显示当前任务类型对应的图层，且该图层必须存在
+        if (config.taskType === taskType && appState.konvaLayers[layerKey]) {
+            console.log('添加图层项:', layerKey, config.name);
+            const layerItem = createLayerItem(layerKey, config.name);
+            layerList.appendChild(layerItem);
+            hasLayers = true;
+            
+            // 初始化显示状态为true
+            if (appState.layerVisibility[layerKey] === undefined) {
+                appState.layerVisibility[layerKey] = true;
+            }
+        }
+    });
+    
+    // 如果没有任何图层，隐藏面板
+    if (!hasLayers) {
+        console.warn('没有找到可用的图层，隐藏面板');
+        panel.style.display = 'none';
+        return;
+    }
+    
+    // 显示面板 - 使用多种方式确保显示
+    panel.style.display = 'block';
+    panel.style.visibility = 'visible';
+    panel.style.opacity = '1';
+    panel.style.pointerEvents = 'auto';
+    
+    // 确保面板在最上层
+    panel.style.zIndex = '10000';
+    
+    console.log('图层控制面板已显示，包含', layerList.children.length, '个图层项');
+    console.log('面板位置:', panel.getBoundingClientRect());
+    
+    // 绑定全部隐藏/显示按钮事件
+    const hideAllBtn = document.getElementById('hideAllBtn');
+    const showAllBtn = document.getElementById('showAllBtn');
+    
+    if (hideAllBtn) {
+        hideAllBtn.onclick = hideAllLayers;
+        console.log('已绑定全部隐藏按钮');
+    } else {
+        console.warn('未找到全部隐藏按钮: hideAllBtn');
+    }
+    
+    if (showAllBtn) {
+        showAllBtn.onclick = showAllLayers;
+        console.log('已绑定全部显示按钮');
+    } else {
+        console.warn('未找到全部显示按钮: showAllBtn');
+    }
+    
+    // 更新所有图层的显示状态
+    updateAllLayersVisibility();
+    
+    // 延迟再次检查，确保面板显示（处理可能的异步问题）
+    setTimeout(() => {
+        if (panel.style.display === 'none' || panel.style.display === '') {
+            console.warn('面板被隐藏，强制显示');
+            panel.style.display = 'block';
+        }
+        const rect = panel.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) {
+            console.warn('面板尺寸为0，可能被遮挡');
+        } else {
+            console.log('面板最终位置和尺寸:', rect);
+        }
+    }, 100);
+}
+
+/**
+ * 创建图层列表项
+ * @param {string} layerKey - 图层key
+ * @param {string} layerName - 图层显示名称
+ * @returns {HTMLElement} 图层列表项元素
+ */
+function createLayerItem(layerKey, layerName) {
+    const item = document.createElement('div');
+    item.className = 'layer-item';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `layer-${layerKey}`;
+    checkbox.checked = appState.layerVisibility[layerKey] !== false;
+    
+    const label = document.createElement('label');
+    label.htmlFor = `layer-${layerKey}`;
+    label.textContent = layerName;
+    
+    // 绑定事件：利用 checkbox 的 change 事件作为单一事实来源
+    checkbox.onchange = function(e) {
+        toggleLayerVisibility(layerKey, checkbox.checked);
+    };
+
+    // 容器点击事件：将点击代理到 checkbox
+    item.onclick = function(e) {
+        // 如果点击的是 label，浏览器会自动触发 checkbox 的点击，无需干预
+        if (e.target === label) {
+            return;
+        }
+        
+        // 如果点击的是 checkbox 本身，无需干预（会自动触发 change）
+        if (e.target === checkbox) {
+            return;
+        }
+
+        // 点击容器其他区域，手动触发 checkbox 的点击
+        // 这会触发 input change 事件，从而执行上面的逻辑
+        checkbox.click();
+    };
+    
+    item.appendChild(checkbox);
+    item.appendChild(label);
+    
+    return item;
+}
+
+/**
+ * 切换图层显示/隐藏
+ * @param {string} layerKey - 图层key
+ * @param {boolean} visible - 是否显示
+ */
+function toggleLayerVisibility(layerKey, visible) {
+    appState.layerVisibility[layerKey] = visible;
+    
+    const layer = appState.konvaLayers[layerKey];
+    if (layer) {
+        layer.visible(visible);
+        if (appState.konvaStage) {
+            appState.konvaStage.draw();
+        }
+    }
+    
+    console.log(`图层 ${layerKey} ${visible ? '显示' : '隐藏'}`);
+}
+
+/**
+ * 更新所有图层的显示状态
+ * 根据 appState.layerVisibility 同步图层实际显示状态
+ */
+function updateAllLayersVisibility() {
+    Object.keys(appState.layerVisibility).forEach(layerKey => {
+        const visible = appState.layerVisibility[layerKey] !== false;
+        const layer = appState.konvaLayers[layerKey];
+        
+        if (layer) {
+            layer.visible(visible);
+        }
+    });
+    
+    // 更新checkbox状态
+    Object.keys(appState.layerVisibility).forEach(layerKey => {
+        const checkbox = document.getElementById(`layer-${layerKey}`);
+        if (checkbox) {
+            checkbox.checked = appState.layerVisibility[layerKey] !== false;
+        }
+    });
+    
+    if (appState.konvaStage) {
+        appState.konvaStage.draw();
+    }
+}
+
+/**
+ * 全部隐藏所有图层
+ */
+function hideAllLayers() {
+    Object.keys(LAYER_CONFIG).forEach(layerKey => {
+        const config = LAYER_CONFIG[layerKey];
+        if (config.taskType === appState.currentTaskType) {
+            appState.layerVisibility[layerKey] = false;
+            toggleLayerVisibility(layerKey, false);
+        }
+    });
+    
+    console.log('全部图层已隐藏');
+}
+
+/**
+ * 全部显示所有图层
+ */
+function showAllLayers() {
+    Object.keys(LAYER_CONFIG).forEach(layerKey => {
+        const config = LAYER_CONFIG[layerKey];
+        if (config.taskType === appState.currentTaskType) {
+            appState.layerVisibility[layerKey] = true;
+            toggleLayerVisibility(layerKey, true);
+        }
+    });
+    
+    console.log('全部图层已显示');
+}
+
+/**
+ * 为可视化元素添加点击切换显示/隐藏功能
+ * 点击元素时，切换其所在图层的显示状态
+ * @param {Konva.Node} node - Konva节点
+ * @param {string} layerKey - 图层key
+ */
+function addClickToggleToNode(node, layerKey) {
+    if (!node || !layerKey) return;
+    
+    node.on('click', function(e) {
+        e.cancelBubble = true; // 阻止事件冒泡
+        
+        // 切换图层显示状态
+        const currentVisible = appState.layerVisibility[layerKey] !== false;
+        const newVisible = !currentVisible;
+        
+        toggleLayerVisibility(layerKey, newVisible);
+        
+        // 更新对应的checkbox
+        const checkbox = document.getElementById(`layer-${layerKey}`);
+        if (checkbox) {
+            checkbox.checked = newVisible;
+        }
+        
+        console.log(`点击切换图层 ${layerKey}，新状态: ${newVisible ? '显示' : '隐藏'}`);
+    });
+}
 
