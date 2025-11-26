@@ -85,13 +85,26 @@ def generate_standard_output(
         "ToothAnalysis": []  # 部分真实：从 teeth 模块填充（但 Properties 为 mock）
     }
 
-    # 2. 组装 AnatomyResults (髁突分割掩码) - 真实数据
+    # 2. 组装 AnatomyResults (髁突和下颌分支分割掩码) - 真实数据
+    anatomy_results_list = []
+    
+    # 2.1 添加髁突分割结果
     logger.info(f"[generate_standard_output] condyle_seg exists: {bool(condyle_seg)}")
     if condyle_seg:
-        logger.info(f"[generate_standard_output] Calling format_anatomy_results...")
-        anatomy_data = format_anatomy_results(condyle_seg)
-        logger.info(f"[generate_standard_output] AnatomyResults count: {len(anatomy_data)}")
-        report["AnatomyResults"] = anatomy_data
+        logger.info(f"[generate_standard_output] Calling format_anatomy_results for condyle...")
+        condyle_anatomy_data = format_anatomy_results(condyle_seg)
+        logger.info(f"[generate_standard_output] Condyle AnatomyResults count: {len(condyle_anatomy_data)}")
+        anatomy_results_list.extend(condyle_anatomy_data)
+    
+    # 2.2 添加下颌分支分割结果
+    logger.info(f"[generate_standard_output] mandible_res exists: {bool(mandible_res)}")
+    if mandible_res:
+        logger.info(f"[generate_standard_output] Calling format_mandible_anatomy_results...")
+        mandible_anatomy_data = format_mandible_anatomy_results(mandible_res)
+        logger.info(f"[generate_standard_output] Mandible AnatomyResults count: {len(mandible_anatomy_data)}")
+        anatomy_results_list.extend(mandible_anatomy_data)
+    
+    report["AnatomyResults"] = anatomy_results_list
 
     # 3. 组装髁突部分 (CondyleAssessment) - 真实数据
     
@@ -189,6 +202,67 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Label": "condyle_right",
+                "Coordinates": right_contour if right_contour else [],
+                "SerializedMask": right_rle
+            }
+        })
+    
+    return anatomy_results
+
+
+def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
+    """
+    格式化 AnatomyResults（解剖结构分割掩码）- 下颌分支部分
+    
+    Args:
+        mandible_seg: 下颌骨分割结果 {raw_features: {left: {...}, right: {...}}, ...}
+    
+    Returns:
+        list: AnatomyResults 列表，包含 mandible_left 和 mandible_right
+    """
+    anatomy_results = []
+    
+    # 调试日志
+    logger.info(f"[format_mandible_anatomy_results] mandible_seg keys: {list(mandible_seg.keys()) if mandible_seg else 'EMPTY'}")
+    
+    seg_features = mandible_seg.get("raw_features", {})
+    logger.info(f"[format_mandible_anatomy_results] seg_features keys: {list(seg_features.keys()) if seg_features else 'EMPTY'}")
+    
+    seg_left = seg_features.get("left", {})
+    seg_right = seg_features.get("right", {})
+    
+    logger.info(f"[format_mandible_anatomy_results] seg_left exists: {seg_left.get('exists', False)}, keys: {list(seg_left.keys())}")
+    logger.info(f"[format_mandible_anatomy_results] seg_right exists: {seg_right.get('exists', False)}, keys: {list(seg_right.keys())}")
+    
+    # 左侧下颌分支
+    if seg_left.get("exists", False):
+        left_mask = seg_left.get("mask", None)
+        left_contour = seg_left.get("contour", [])
+        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
+        
+        anatomy_results.append({
+            "Label": "mandible_left",
+            "Confidence": round(seg_left.get("confidence", 0.0), 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Label": "mandible_left",
+                "Coordinates": left_contour if left_contour else [],
+                "SerializedMask": left_rle
+            }
+        })
+    
+    # 右侧下颌分支
+    if seg_right.get("exists", False):
+        right_mask = seg_right.get("mask", None)
+        right_contour = seg_right.get("contour", [])
+        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
+        
+        anatomy_results.append({
+            "Label": "mandible_right",
+            "Confidence": round(seg_right.get("confidence", 0.0), 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Label": "mandible_right",
                 "Coordinates": right_contour if right_contour else [],
                 "SerializedMask": right_rle
             }

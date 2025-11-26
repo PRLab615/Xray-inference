@@ -19,6 +19,7 @@
         "Type": "Polygon", 
         "Label": "condyle_left", 
         "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]], 
+        "SerializedMask": "rle:..." 
       },
       "Label": "mandible_left", //下颌分支左
       "Confidence": 0.99, 
@@ -26,6 +27,7 @@
         "Type": "Polygon", 
         "Label": "mandible_left", 
         "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]],
+        "SerializedMask": "rle:..." 
       },
       "Label": "sinus_left", //上颌窦 （有左右两个）为了唯一性，实际标注中inus_inflam(炎症）
       "Confidence": 0.99, 

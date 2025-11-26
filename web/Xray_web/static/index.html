@@ -67,7 +67,24 @@
             
             <!-- 右侧: AI 分析报告区 -->
             <div class="report-container" id="reportContainer">
-                <!-- 报告内容将在这里动态生成 -->
+                <!-- 图层控制面板 -->
+                <div class="layer-control-panel" id="layerControlPanel">
+                    <div class="layer-control-header">
+                        <h3>显示设置</h3>
+                        <div class="layer-control-buttons">
+                            <button class="btn-layer-control" id="hideAllBtn">全部隐藏</button>
+                            <button class="btn-layer-control" id="showAllBtn">全部显示</button>
+                        </div>
+                    </div>
+                    <div class="layer-list" id="layerList">
+                        <!-- 图层列表将在这里动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 报告内容容器 -->
+                <div id="reportContent">
+                    <!-- 报告内容将在这里动态生成 -->
+                </div>
             </div>
         </div>
         
