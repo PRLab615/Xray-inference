@@ -19,6 +19,9 @@ from server import load_config
 from pipelines.pano.pano_pipeline import PanoPipeline
 from pipelines.ceph.ceph_pipeline import CephPipeline
 
+# Timer 配置初始化
+from tools.timer import configure_from_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +61,10 @@ def _preload_pipelines() -> None:
         return
 
     config = load_config()
+    
+    # 初始化 Timer 配置
+    configure_from_config(config)
+    
     pipeline_config = config.get('pipelines', {})
     _PIPELINE_SETTINGS = pipeline_config
 

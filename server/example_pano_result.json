@@ -13,11 +13,25 @@
   // =========================================================================
   "AnatomyResults": [ 
     {
-      "Label": "condyle_left", 
+      "Label": "condyle_left", //髁突左
       "Confidence": 0.99, 
       "SegmentationMask": { 
         "Type": "Polygon", 
         "Label": "condyle_left", 
+        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]], 
+      },
+      "Label": "mandible_left", //下颌分支左
+      "Confidence": 0.99, 
+      "SegmentationMask": { 
+        "Type": "Polygon", 
+        "Label": "mandible_left", 
+        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]],
+      },
+      "Label": "sinus_left", //上颌窦 （有左右两个）为了唯一性，实际标注中inus_inflam(炎症）
+      "Confidence": 0.99, 
+      "SegmentationMask": { 
+        "Type": "Polygon", 
+        "Label": "sinus_left", 
         "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]], 
         "SerializedMask": "rle:..." 
       }
@@ -30,23 +44,21 @@
   "JointAndMandible": { 
     "CondyleAssessment": { 
       "condyle_Left": { 
-        "Morphology": 1, 
-        "IsSymmetrical": false, 
+        "Morphology": 1, // 0正常    1吸收
         "Detail": "左侧髁突形态吸收，灰度外围低密度影像", 
         "Confidence": 0.92 
       },
       "condyle_Right": { 
         "Morphology": 0, 
-        "IsSymmetrical": false, 
         "Detail": "右侧髁突形态正常", 
         "Confidence": 0.98 
       },
-      "OverallSymmetry": 1,  
+      "OverallSymmetry": 1,  // 髁突是否对称，0对称 1是左侧大 2是右侧大
       "Confidence_Overall": 0.92 
     },
     
-    "RamusSymmetry": false, 
-    "GonialAngleSymmetry": true, 
+    "RamusSymmetry": false,  //下颌升支对对称性 true为对称 / false 不对称 
+    "GonialAngleSymmetry": true, //下颌下颌角对称性 true为对称 / false 不对称 
     "Detail": "下颌升支不对称，左右下颌角对称", 
     "Confidence": 0.90 
   },
@@ -55,10 +67,10 @@
     {
       "Side": "left", 
       "Pneumatization": 2, 
-      "TypeClassification": "III", 
-      "Inflammation": true, 
+      "TypeClassification": "III", //气化 
+      "Inflammation": true, //炎症
       "RootEntryToothFDI": ["26"], 
-      "Detail": "左上颌窦过度气化，26牙位牙根进入上颌窦，疑似炎症，建议耳鼻喉科会诊。", 
+      "Detail": "左上颌窦过度气化，26牙位牙根进入上颌窦，建议耳鼻喉科会诊。", 
       "Confidence_Pneumatization": 0.95, 
       "Confidence_Inflammation": 0.85 
     },
@@ -228,7 +240,6 @@
         "Type": "Polygon",
         "Label": "tooth-16", 
         "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
-        "SerializedMask": "rle:..." 
       },
       
       "Properties": [ 
@@ -252,7 +263,6 @@
         "Type": "Polygon",
         "Label": "tooth-55", 
         "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
-        "SerializedMask": "rle:..." 
       },
       
       "Properties": [ 
@@ -268,7 +278,6 @@
         "Type": "Polygon",
         "Label": "tooth-18", 
         "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
-        "SerializedMask": "rle:..." 
       },
       
       "Properties": [ 

@@ -18,6 +18,7 @@ if project_root not in sys.path:
 
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 
 # 引用下颌骨前处理
 from pipelines.pano.modules.mandible_seg.pre_post import MandiblePrePostProcessor
@@ -151,18 +152,20 @@ class MandiblePredictor:
 
         try:
             # 1. 前处理 (Image -> Tensor)
-            input_tensor = self.pre_post.preprocess(image)
-
-            # 转 Numpy 喂给 ONNX
-            input_numpy = input_tensor.cpu().numpy()
+            with timer.record("mandible_seg.pre"):
+                input_tensor = self.pre_post.preprocess(image)
+                # 转 Numpy 喂给 ONNX
+                input_numpy = input_tensor.cpu().numpy()
 
             # 2. ONNX 推理
-            outputs = self.session.run(None, {self.input_name: input_numpy})
-            raw_logits = outputs[0]
+            with timer.record("mandible_seg.inference"):
+                outputs = self.session.run(None, {self.input_name: input_numpy})
+                raw_logits = outputs[0]
 
             # 3. 后处理 (解析 Mask -> 几何计算 -> 获得 analysis 字典)
-            # pre_post 返回: { "analysis": {...}, "mask_shape": ..., "raw_features": ... }
-            raw_results = self.pre_post.postprocess(raw_logits)
+            with timer.record("mandible_seg.post"):
+                # pre_post 返回: { "analysis": {...}, "mask_shape": ..., "raw_features": ... }
+                raw_results = self.pre_post.postprocess(raw_logits)
 
             return raw_results
 

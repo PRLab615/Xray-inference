@@ -19,6 +19,7 @@ if project_root not in sys.path:
 
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 from pipelines.pano.modules.teeth_seg.pre_post import process_teeth_masks  # 后处理
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,12 @@ class TeethSegmentationModule:
             logger.info(f"Initializing Teeth YOLO model from: {self.weights_path}")
             logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
             model = YOLO(self.weights_path)
-            # YOLO 模型不需要手动调用 .to()，在 predict 时指定 device 即可
+            if torch.cuda.is_available() and str(self.device).startswith('cuda'):
+                try:
+                    model.to(self.device)
+                    logger.info("Teeth YOLO model moved to %s", self.device)
+                except Exception as exc:
+                    logger.warning("Failed to move Teeth model to %s: %s", self.device, exc)
             logger.info("YOLOv11 Teeth Segmentation Model initialized successfully.")
             return model
         except Exception as e:
@@ -134,32 +140,60 @@ class TeethSegmentationModule:
         logger.info("Starting YOLOv11 teeth segmentation inference.")
 
         try:
-            results = self.model.predict(
-                source=image,
-                conf=self.conf,
-                iou=self.iou,
-                device=self.device,
-                verbose=False,
-                save=False,
-            )
+            # YOLO 实例分割推理
+            with timer.record("teeth_seg.inference"):
+                results = self.model.predict(
+                    source=image,
+                    conf=self.conf,
+                    iou=self.iou,
+                    device=self.device,
+                    verbose=False,
+                    save=False,
+                )
 
-            if not results or len(results) == 0:
-                logger.warning("No teeth detected.")
-                return {"masks": [], "class_names": [], "original_shape": original_shape}
+                if not results or len(results) == 0:
+                    logger.warning("No teeth detected.")
+                    return {"masks": [], "class_names": [], "original_shape": original_shape}
 
-            # 提取 masks 和 class names (YOLO 实例分割输出)
-            # masks: [N, H, W] binary masks (normalized to [0,1])
-            masks = results[0].masks.data.cpu().numpy() if results[0].masks is not None else np.array([])
+            # 结果提取（Post-processing）
+            with timer.record("teeth_seg.post"):
+                # 提取 masks 和 class names (YOLO 实例分割输出)
+                # masks: [N, H, W] binary masks (normalized to [0,1])
+                # 注意：YOLO的masks已经是原始图像尺寸，不需要resize
+                masks = results[0].masks.data.cpu().numpy() if results[0].masks is not None else np.array([])
 
-            # classes: class indices [N]
-            class_indices = results[0].boxes.cls.cpu().numpy() if results[0].boxes is not None else np.array([])
+                segments: Optional[List[np.ndarray]] = None
+                masks_obj = results[0].masks
+                if masks_obj is not None and getattr(masks_obj, "xy", None) is not None:
+                    xy_data = masks_obj.xy
+                    segments = []
+                    for idx, poly in enumerate(xy_data):
+                        try:
+                            poly_arr = np.array(poly, dtype=float)
+                            if poly_arr.ndim == 2 and poly_arr.shape[1] == 2:
+                                segments.append(poly_arr)
+                            else:
+                                logger.warning(f"Polygon {idx} has unexpected shape {poly_arr.shape}, skipping")
+                        except Exception as exc:
+                            logger.warning(f"Failed to convert polygon {idx}: {exc}")
+                    if not segments:
+                        segments = None
+                if segments is not None:
+                    logger.info(f"Extracted {len(segments)} tooth polygons from YOLO masks.")
+                else:
+                    logger.warning("No segmentation polygons extracted from YOLO masks.")
 
-            # class names: 从模型 names 字典获取 (假设 names = {0: 'tooth-11', 1: 'tooth-12', ...})
-            class_names = [self.model.names[int(idx)] for idx in class_indices] if len(class_indices) > 0 else []
+                # classes: class indices [N]
+                class_indices = results[0].boxes.cls.cpu().numpy() if results[0].boxes is not None else np.array([])
 
-            logger.info(f"Detected {len(class_names)} teeth segments.")
+                # class names: 从模型 names 字典获取 (假设 names = {0: 'tooth-11', 1: 'tooth-12', ...})
+                class_names = [self.model.names[int(idx)] for idx in class_indices] if len(class_indices) > 0 else []
+
+                logger.info(f"Detected {len(class_names)} teeth segments.")
+
             return {
-                "masks": masks,  # [N, H, W] binary masks
+                "masks": masks,  # [N, H, W] binary masks (已经是原始图像尺寸)
+                "segments": segments,  # [N, num_points, 2] 多边形坐标（原始图像坐标）
                 "class_names": class_names,  # [N] strings like "tooth-11"
                 "original_shape": original_shape
             }
@@ -171,7 +205,7 @@ class TeethSegmentationModule:
 
 def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
     """
-    调用后处理，生成缺牙/智齿/乳牙报告，并保留原始掩码数据。
+    调用后处理，生成缺牙/智齿/乳牙报告，并保留原始掩码数据和segments。
     """
     processed_results = process_teeth_masks(
         raw_results["masks"], 
@@ -179,8 +213,9 @@ def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
         raw_results["original_shape"]
     )
     
-    # 保留原始掩码数据，以便后续生成 ToothAnalysis
+    # 保留原始掩码数据和segments，以便后续生成 ToothAnalysis
     processed_results["raw_masks"] = raw_results["masks"]
+    processed_results["segments"] = raw_results.get("segments", None)  # 多边形坐标
     processed_results["original_shape"] = raw_results["original_shape"]
     
     return processed_results

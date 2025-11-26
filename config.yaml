@@ -32,6 +32,12 @@ callback:
 task:
   result_ttl: 3600  # Redis 中任务元数据 TTL（秒）
 
+# Timer 计时器配置
+timer:
+  enabled: true                    # 全局开关，控制是否启用计时
+  report_file: "timer_report.txt"  # 报告输出路径
+  console_output: true             # 是否打印到控制台
+
 # 图像下载配置（v2 新增）
 image_download:
   timeout: 30                    # 下载超时时间（秒）
