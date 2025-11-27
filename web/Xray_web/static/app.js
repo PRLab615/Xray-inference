@@ -35,6 +35,7 @@ const appState = {
 // 全局配置常量
 const CONFIG = {
     AI_BACKEND_URL: 'http://192.168.1.17:18000/api/v1/analyze',
+    FLASK_UPLOAD_URL: 'http://192.168.1.17:5000/upload',  // Flask 服务器上传接口
     CALLBACK_URL: 'http://192.168.1.17:5000/callback',
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000       // 6分钟
@@ -303,13 +304,14 @@ function normalizeMaskPolygons(coords, scale) {
 // ============================================
 
 /**
- * 处理任务提交
+ * 处理任务提交（v3 JSON 协议）
  * 功能：
- * 1. 生成 UUID 作为 taskId
- * 2. 构建 FormData，包含 taskId, taskType, callbackUrl, image
- * 3. 如果需要患者信息，添加 patientInfo 字段（JSON 字符串）
- * 4. 发送 POST 请求到 AI 后端
- * 5. 处理响应：202 成功、4xx 错误、网络错误
+ * 1. 先上传图片到 Flask Web 服务器，获取 imageUrl
+ * 2. 生成 UUID 作为 taskId
+ * 3. 构建 JSON 请求体，包含 taskId, taskType, imageUrl, callbackUrl
+ * 4. 如果需要患者信息，添加 patientInfo 字段
+ * 5. 发送 POST 请求到 AI 后端（JSON 格式）
+ * 6. 处理响应：202 成功、4xx 错误、网络错误
  */
 async function onSubmit() {
     const fileInput = document.getElementById('imageFile');
@@ -321,43 +323,72 @@ async function onSubmit() {
         return;
     }
     
-    // 生成 taskId (UUID v4) - 兼容不支持 crypto.randomUUID 的环境
-    const taskId = generateUUID();
-    console.log('生成任务ID:', taskId);
-    
-    // 构建 FormData
-    const formData = new FormData();
-    formData.append('taskId', taskId);
-    formData.append('taskType', document.getElementById('taskType').value);
-    formData.append('callbackUrl', CONFIG.CALLBACK_URL);
-    formData.append('image', file);
-    
-    // 如果患者信息表单显示，添加 patientInfo 字段
-    const patientInfoSection = document.getElementById('patientInfoSection');
-    if (!patientInfoSection.classList.contains('hidden')) {
-        const patientInfo = {
-            gender: document.getElementById('gender').value,
-            DentalAgeStage: document.getElementById('dentalStage').value
-        };
-        formData.append('patientInfo', JSON.stringify(patientInfo));
-        console.log('患者信息:', patientInfo);
-    }
-    
     // 禁用提交按钮，防止重复提交
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     
     try {
-        console.log('发送请求到:', CONFIG.AI_BACKEND_URL);
+        // 步骤1：先上传图片到 Flask Web 服务器，获取 imageUrl
+        console.log('步骤1：上传图片到 Flask Web 服务器...');
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', file);
+        
+        const uploadResponse = await fetch(CONFIG.FLASK_UPLOAD_URL, {
+            method: 'POST',
+            body: uploadFormData
+        });
+        
+        if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            const errorMsg = errorData.error || '图片上传失败';
+            alert('错误：' + errorMsg);
+            console.error('图片上传失败:', errorData);
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        const uploadResult = await uploadResponse.json();
+        const imageUrl = uploadResult.imageUrl;
+        console.log('图片上传成功，URL:', imageUrl);
+        
+        // 步骤2：生成 taskId (UUID v4)
+        const taskId = generateUUID();
+        console.log('生成任务ID:', taskId);
+        
+        // 步骤3：构建 JSON 请求体
+        const requestBody = {
+            taskId: taskId,
+            taskType: document.getElementById('taskType').value,
+            imageUrl: imageUrl,
+            callbackUrl: CONFIG.CALLBACK_URL
+        };
+        
+        // 如果患者信息表单显示，添加 patientInfo 字段
+        const patientInfoSection = document.getElementById('patientInfoSection');
+        if (!patientInfoSection.classList.contains('hidden')) {
+            requestBody.patientInfo = {
+                gender: document.getElementById('gender').value,
+                DentalAgeStage: document.getElementById('dentalStage').value
+            };
+            console.log('患者信息:', requestBody.patientInfo);
+        }
+        
+        // 步骤4：发送 JSON 请求到 AI 后端
+        console.log('步骤2：发送 JSON 请求到 AI 后端:', CONFIG.AI_BACKEND_URL);
+        console.log('请求体:', requestBody);
+        
         const response = await fetch(CONFIG.AI_BACKEND_URL, {
             method: 'POST',
-            body: formData
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
         });
         
         if (response.status === 202) {
             // 提交成功 (202 Accepted)
             appState.currentTaskId = taskId;
-            appState.currentTaskType = document.getElementById('taskType').value; // 保存任务类型
+            appState.currentTaskType = requestBody.taskType;
             showLoading();
             console.log('任务提交成功，taskId:', taskId, 'taskType:', appState.currentTaskType);
             
@@ -366,7 +397,7 @@ async function onSubmit() {
         } else {
             // 同步验证失败（4xx 错误）
             const errorData = await response.json();
-            const errorMsg = errorData.error?.displayMessage || '提交失败';
+            const errorMsg = errorData.detail?.message || errorData.message || '提交失败';
             alert('错误：' + errorMsg);
             console.error('提交失败:', errorData);
             submitBtn.disabled = false;

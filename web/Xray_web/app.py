@@ -1,21 +1,36 @@
 # -*- coding: utf-8 -*-
 """
 Flask 微型回调服务器
-提供三个核心功能：
+提供四个核心功能：
 1. 静态文件服务：为前端页面提供 HTTP 访问
-2. 回调接收接口：接收 AI 后端的异步回调
-3. 结果查询接口：供前端轮询查询任务结果
+2. 图片上传接口：接收前端上传的图片，返回可访问的 URL
+3. 回调接收接口：接收 AI 后端的异步回调
+4. 结果查询接口：供前端轮询查询任务结果
 """
 from flask import Flask, send_from_directory, jsonify, request
+from werkzeug.utils import secure_filename
 import os
+import uuid
 
 # 配置 Flask 应用的静态文件路径
 app = Flask(__name__, 
             static_folder='static',
             static_url_path='/static')
 
+# 配置上传目录
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'bmp', 'dcm'}
+
+# 确保上传目录存在
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # 全局内存存储：存储任务结果
 task_results = {}
+
+
+def allowed_file(filename):
+    """检查文件扩展名是否允许"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 @app.route('/')
@@ -43,6 +58,66 @@ def health():
     返回: {"status": "ok"}
     """
     return jsonify({"status": "ok"})
+
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """
+    接收前端上传的图片文件，保存到本地，返回可访问的 URL
+    
+    请求格式：multipart/form-data
+    - file: 图片文件
+    
+    返回格式 (JSON):
+    - 成功: {"imageUrl": "http://host:port/uploads/filename.jpg"} (HTTP 200)
+    - 失败: {"error": "错误信息"} (HTTP 400)
+    """
+    # 检查是否有文件
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    
+    file = request.files['file']
+    
+    # 检查是否选择了文件
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    
+    # 检查文件扩展名
+    if not allowed_file(file.filename):
+        return jsonify({"error": f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
+    
+    # 生成唯一文件名
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+    
+    try:
+        # 保存文件
+        file.save(file_path)
+        
+        # 生成可访问的 URL
+        # 在 Docker 环境中，AI 后端需要通过 Flask 服务名访问
+        # 使用 request.host 获取当前主机地址
+        host = request.host
+        image_url = f"http://{host}/uploads/{unique_filename}"
+        
+        print(f"文件上传成功: {file.filename} -> {file_path}")
+        print(f"图片 URL: {image_url}")
+        
+        return jsonify({"imageUrl": image_url}), 200
+    
+    except Exception as e:
+        print(f"文件保存失败: {e}")
+        return jsonify({"error": f"Failed to save file: {str(e)}"}), 500
+
+
+@app.route('/uploads/<filename>')
+def serve_uploaded_file(filename):
+    """
+    提供上传文件的静态访问服务
+    这样 AI 后端可以通过 HTTP 下载图片
+    """
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 
 @app.route('/callback', methods=['POST'])
@@ -130,8 +205,10 @@ if __name__ == '__main__':
     print("=" * 60)
     print("Flask 微型回调服务器启动中...")
     print("监听地址: 0.0.0.0:{}".format(port))
+    print("上传目录: {}".format(UPLOAD_FOLDER))
     print("前端页面: http://localhost:5000/")
     print("健康检查: http://localhost:5000/health")
+    print("图片上传: http://localhost:5000/upload")
     print("回调接口: http://localhost:5000/callback")
     print("结果查询: http://localhost:5000/get-result?taskId=xxx")
     print("=" * 60)
