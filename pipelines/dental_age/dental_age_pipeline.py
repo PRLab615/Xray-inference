@@ -46,9 +46,13 @@ class DentalAgePipeline(BasePipeline):
         
         # 复用全景片的牙齿分割模块配置
         teeth_config = modules.get('teeth_seg', {}) if modules else {}
-        self.teeth_seg = TeethSegmentationModule(**teeth_config)
         
-        logger.info(f"DentalAgePipeline initialized with teeth_seg config: {teeth_config}")
+        # 过滤掉 'description' 等非模块参数（config.yaml 中的文档字段）
+        filtered_config = {k: v for k, v in teeth_config.items() if k != 'description'}
+        
+        self.teeth_seg = TeethSegmentationModule(**filtered_config)
+        
+        logger.info(f"DentalAgePipeline initialized with teeth_seg config: {filtered_config}")
     
     def run(self, image_path: str, **kwargs) -> dict:
         """
