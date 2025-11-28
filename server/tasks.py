@@ -18,6 +18,7 @@ from server import load_config
 # v3 新增：导入 Pipeline
 from pipelines.pano.pano_pipeline import PanoPipeline
 from pipelines.ceph.ceph_pipeline import CephPipeline
+from pipelines.dental_age.dental_age_pipeline import DentalAgePipeline  # v4 新增
 
 # Timer 配置初始化
 from tools.timer import configure_from_config
@@ -31,6 +32,7 @@ _PIPELINES_INITIALIZED = False
 _PIPELINE_BUILDERS: Dict[str, Type] = {
     'panoramic': PanoPipeline,
     'cephalometric': CephPipeline,
+    'dental_age_stage': DentalAgePipeline,  # v4 新增
 }
 
 
@@ -115,136 +117,109 @@ except Exception:
 
 
 @celery_app.task(name='server.tasks.analyze_task', bind=True)
-def analyze_task(self, task_id: str):
+def analyze_task(self, task_id: str, task_type: str, image_path: str, 
+                 image_url: str = None, patient_info=None, callback_url=None, metadata=None):
     """
-    异步推理任务（v3 协议：真实 Pipeline）
+    统一的推理任务（v4 架构：支持伪同步和纯异步）
     
-    Args:
+    参数:
         self: Celery 任务实例（bind=True 时自动注入）
         task_id: 任务 ID
-        
-    工作流程:
-        1. 从 Redis 获取任务元数据（v2 扩展字段）
-        2. 检查图像文件是否存在
-        3. 根据 taskType 实例化对应的 Pipeline（v3 新增）
-        4. 调用 pipeline.run() 获取真实推理结果（v3 新增）
-        5. 构造回调负载 v3（data 来自 Pipeline）
-        6. 发送 HTTP 回调
-        7. 清理 Redis 元数据（回调成功时）
-        
-    变更点（v2 → v3）:
-        - ❌ 移除 load_mock_data() 调用
-        - ✅ 新增 Pipeline 实例化和调用
-        - ✅ 传递 patient_info 给 CephPipeline
-    """
-    logger.info(f"Task started: {task_id}")
+        task_type: 任务类型（panoramic/cephalometric/dental_age_stage）
+        image_path: 图像文件路径
+        image_url: 原始图像 URL（可选，纯异步回调时使用）
+        patient_info: 患者信息（可选，侧位片必需）
+        callback_url: 回调 URL（可选）
+            - None：伪同步模式（直接返回结果）
+            - 有值：纯异步模式（发送回调）
+        metadata: 客户端元数据（可选）
     
-    # 加载配置和初始化组件
-    config = load_config()
-    persistence = TaskPersistence(config)
-    callback_mgr = CallbackManager(config)
+    执行流程:
+        1. 加载 Pipeline
+        2. 执行推理
+        3. 根据 callback_url 决定行为：
+           - 如果为 None：返回结果（伪同步）
+           - 如果有值：发送回调（纯异步）
+    
+    v4 架构特点:
+        - 所有参数通过 Celery 传递，不依赖 Redis
+        - 统一任务同时支持伪同步和纯异步
+        - 伪同步时 P1 等待，不占用 GPU/CPU
+    """
+    logger.info(f"[Worker] Task started: {task_id}, type={task_type}, "
+                f"mode={'pseudo-sync' if not callback_url else 'async'}")
     
     try:
-        # 1. 获取任务元数据 v2
-        metadata_v2 = persistence.get_task(task_id)
-        if not metadata_v2:
-            logger.error(f"Task not found in Redis: {task_id}")
-            return
+        # 1. 获取 Pipeline
+        pipeline = get_pipeline(task_type)
         
-        task_type = metadata_v2['taskType']
-        image_path = metadata_v2['imagePath']
-        callback_url = metadata_v2['callbackUrl']
-        client_metadata = metadata_v2.get('metadata', {})
-        image_url = metadata_v2.get('imageUrl', '')
-        patient_info = metadata_v2.get('patientInfo')
-        
-        logger.info(f"Task metadata retrieved: task_type={task_type}, image_path={image_path}")
-        
-        # 2. 检查图像文件是否存在
-        if not os.path.exists(image_path):
-            # v3 暂不实现错误回调（延后到 v4）
-            logger.error(f"Image file not found: {image_path}")
-            return
-        
-        # 3. 根据 taskType 实例化 Pipeline 并执行推理（v3 新增）
-        try:
-            pipeline = get_pipeline(task_type)
-
-            if task_type == 'panoramic':
-                # 全景片推理
-                logger.info(f"Running PanoPipeline for {task_id}")
-                data_dict = pipeline.run(image_path=image_path)
-
-            elif task_type == 'cephalometric':
-                # 侧位片推理（需要 patient_info）
-                logger.info(f"Running CephPipeline for {task_id}")
-                data_dict = pipeline.run(image_path=image_path, patient_info=patient_info)
-
-            else:
-                logger.error(f"Unknown task_type: {task_type}")
-                return
-            
-            logger.info(f"Pipeline execution completed for {task_id}")
-        
-        except Exception as e:
-            # v3 暂不实现错误回调（延后到 v4）
-            logger.error(f"Pipeline execution failed: {task_id}, {e}", exc_info=True)
-            return
-        
-        # 4. 构造 CallbackPayload v3（data 来自 Pipeline）
-        payload_v3 = {
-            "taskId": task_id,
-            "status": "SUCCESS",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "metadata": client_metadata,
-            "requestParameters": {
-                "taskType": task_type,
-                "imageUrl": image_url
-            },
-            "data": data_dict,  # v3: 来自 Pipeline 真实推理
-            "error": None
-        }
-        
-        # 调试：打印 CephalometricMeasurements 的 Level 值
-        if task_type == 'cephalometric' and 'CephalometricMeasurements' in data_dict:
-            measurements = data_dict['CephalometricMeasurements'].get('AllMeasurements', [])
-            logger.info(f"[调试] Pipeline 返回的 Level 值 (taskId={task_id}):")
-            for m in measurements:
-                label = m.get('Label', 'N/A')
-                level = m.get('Level', 'N/A')
-                level_type = type(level).__name__
-                if 'Angle' in m:
-                    value = m.get('Angle')
-                    logger.info(f"  {label}: Level={level} (type={level_type}), Angle={value}")
-                elif 'Ratio' in m:
-                    value = m.get('Ratio')
-                    logger.info(f"  {label}: Level={level} (type={level_type}), Ratio={value}")
-            
-            # 检查 JSON 序列化后的数据
-            import json
-            try:
-                serialized = json.dumps(data_dict['CephalometricMeasurements'], ensure_ascii=False)
-                logger.info(f"[调试] JSON 序列化测试: 成功，长度={len(serialized)}")
-                # 反序列化检查
-                deserialized = json.loads(serialized)
-                logger.info(f"[调试] JSON 反序列化后的 Level 值:")
-                for m in deserialized.get('AllMeasurements', []):
-                    label = m.get('Label', 'N/A')
-                    level = m.get('Level', 'N/A')
-                    level_type = type(level).__name__
-                    logger.info(f"  {label}: Level={level} (type={level_type})")
-            except Exception as e:
-                logger.error(f"[调试] JSON 序列化测试失败: {e}")
-        
-        # 5. 发送回调 v3
-        success = callback_mgr.send_callback(callback_url, payload_v3)
-        
-        # 6. 清理任务元数据（仅当回调成功时）
-        if success:
-            persistence.delete_task(task_id)
-            logger.info(f"Task completed and cleaned: {task_id}")
+        # 2. 执行推理
+        if task_type == 'panoramic':
+            data_dict = pipeline.run(image_path=image_path)
+        elif task_type == 'cephalometric':
+            data_dict = pipeline.run(image_path=image_path, patient_info=patient_info)
+        elif task_type == 'dental_age_stage':
+            data_dict = pipeline.run(image_path=image_path)
         else:
-            logger.warning(f"Task completed but callback failed, metadata retained: {task_id}")
+            raise ValueError(f"Unknown task_type: {task_type}")
+        
+        logger.info(f"[Worker] Task completed: {task_id}")
+        
+        # 3. 根据 callback_url 决定行为
+        if callback_url:
+            # 纯异步：发送回调
+            from server.core.callback import CallbackManager
+            
+            config = load_config()
+            callback_mgr = CallbackManager(config)
+            
+            payload = {
+                "taskId": task_id,
+                "status": "SUCCESS",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "metadata": metadata or {},
+                "requestParameters": {
+                    "taskType": task_type,
+                    "imageUrl": image_url or ""  # v4：通过任务参数传递
+                },
+                "data": data_dict,
+                "error": None
+            }
+            
+            success = callback_mgr.send_callback(callback_url, payload)
+            logger.info(f"[Worker] Callback sent: {callback_url}, success={success}")
+            return None  # 纯异步不返回结果
+        else:
+            # 伪同步：直接返回结果
+            return data_dict
     
     except Exception as e:
-        logger.error(f"Task execution failed: {task_id}, {e}", exc_info=True)
+        logger.error(f"[Worker] Task failed: {task_id}, {e}", exc_info=True)
+        
+        # 如果是纯异步模式，发送错误回调
+        if callback_url:
+            try:
+                from server.core.callback import CallbackManager
+                
+                config = load_config()
+                callback_mgr = CallbackManager(config)
+                
+                payload = {
+                    "taskId": task_id,
+                    "status": "FAILURE",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "metadata": metadata or {},
+                    "requestParameters": {"taskType": task_type},
+                    "data": None,
+                    "error": {
+                        "code": 12001,
+                        "message": "Pipeline execution failed",
+                        "displayMessage": str(e)
+                    }
+                }
+                callback_mgr.send_callback(callback_url, payload)
+            except Exception as cb_error:
+                logger.error(f"[Worker] Failed to send error callback: {cb_error}")
+        
+        # 异常会被 Celery 捕获，P1 会收到 TaskError（伪同步模式）
+        raise

@@ -34,7 +34,9 @@ const appState = {
 
 // 全局配置常量
 const CONFIG = {
-    AI_BACKEND_URL: 'http://192.168.1.17:18000/api/v1/analyze',
+    AI_BACKEND_SYNC_URL: 'http://192.168.1.17:18000/api/v1/analyze',      // 同步/伪同步接口
+    AI_BACKEND_ASYNC_URL: 'http://192.168.1.17:18000/api/v1/analyze_async', // 纯异步接口
+    FLASK_UPLOAD_URL: 'http://192.168.1.17:5000/upload',  // Flask 服务器上传接口
     CALLBACK_URL: 'http://192.168.1.17:5000/callback',
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000       // 6分钟
@@ -303,13 +305,14 @@ function normalizeMaskPolygons(coords, scale) {
 // ============================================
 
 /**
- * 处理任务提交
+ * 处理任务提交（v3 JSON 协议）
  * 功能：
- * 1. 生成 UUID 作为 taskId
- * 2. 构建 FormData，包含 taskId, taskType, callbackUrl, image
- * 3. 如果需要患者信息，添加 patientInfo 字段（JSON 字符串）
- * 4. 发送 POST 请求到 AI 后端
- * 5. 处理响应：202 成功、4xx 错误、网络错误
+ * 1. 先上传图片到 Flask Web 服务器，获取 imageUrl
+ * 2. 生成 UUID 作为 taskId
+ * 3. 构建 JSON 请求体，包含 taskId, taskType, imageUrl, callbackUrl
+ * 4. 如果需要患者信息，添加 patientInfo 字段
+ * 5. 发送 POST 请求到 AI 后端（JSON 格式）
+ * 6. 处理响应：202 成功、4xx 错误、网络错误
  */
 async function onSubmit() {
     const fileInput = document.getElementById('imageFile');
@@ -321,57 +324,122 @@ async function onSubmit() {
         return;
     }
     
-    // 生成 taskId (UUID v4) - 兼容不支持 crypto.randomUUID 的环境
-    const taskId = generateUUID();
-    console.log('生成任务ID:', taskId);
-    
-    // 构建 FormData
-    const formData = new FormData();
-    formData.append('taskId', taskId);
-    formData.append('taskType', document.getElementById('taskType').value);
-    formData.append('callbackUrl', CONFIG.CALLBACK_URL);
-    formData.append('image', file);
-    
-    // 如果患者信息表单显示，添加 patientInfo 字段
-    const patientInfoSection = document.getElementById('patientInfoSection');
-    if (!patientInfoSection.classList.contains('hidden')) {
-        const patientInfo = {
-            gender: document.getElementById('gender').value,
-            DentalAgeStage: document.getElementById('dentalStage').value
-        };
-        formData.append('patientInfo', JSON.stringify(patientInfo));
-        console.log('患者信息:', patientInfo);
-    }
-    
     // 禁用提交按钮，防止重复提交
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     
+    // 获取处理模式
+    const syncMode = document.querySelector('input[name="syncMode"]:checked').value;
+    const isSync = syncMode === 'sync';
+    
     try {
-        console.log('发送请求到:', CONFIG.AI_BACKEND_URL);
-        const response = await fetch(CONFIG.AI_BACKEND_URL, {
+        // 步骤1：先上传图片到 Flask Web 服务器，获取 imageUrl
+        console.log('步骤1：上传图片到 Flask Web 服务器...');
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', file);
+        
+        const uploadResponse = await fetch(CONFIG.FLASK_UPLOAD_URL, {
             method: 'POST',
-            body: formData
+            body: uploadFormData
         });
         
-        if (response.status === 202) {
-            // 提交成功 (202 Accepted)
-            appState.currentTaskId = taskId;
-            appState.currentTaskType = document.getElementById('taskType').value; // 保存任务类型
-            showLoading();
-            console.log('任务提交成功，taskId:', taskId, 'taskType:', appState.currentTaskType);
-            
-            // 启动轮询
-            startPolling(taskId);
-        } else {
-            // 同步验证失败（4xx 错误）
-            const errorData = await response.json();
-            const errorMsg = errorData.error?.displayMessage || '提交失败';
+        if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            const errorMsg = errorData.error || '图片上传失败';
             alert('错误：' + errorMsg);
-            console.error('提交失败:', errorData);
+            console.error('图片上传失败:', errorData);
             submitBtn.disabled = false;
+            return;
+        }
+        
+        const uploadResult = await uploadResponse.json();
+        const imageUrl = uploadResult.imageUrl;
+        console.log('图片上传成功，URL:', imageUrl);
+        
+        // 步骤2：生成 taskId (UUID v4)
+        const taskId = generateUUID();
+        console.log('生成任务ID:', taskId);
+        
+        // 步骤3：构建 JSON 请求体
+        const taskType = document.getElementById('taskType').value;
+        const requestBody = {
+            taskId: taskId,
+            taskType: taskType,
+            imageUrl: imageUrl
+        };
+        
+        // 如果是异步模式，添加 callbackUrl
+        if (!isSync) {
+            requestBody.callbackUrl = CONFIG.CALLBACK_URL;
+        }
+        
+        // 如果患者信息表单显示，添加 patientInfo 字段
+        const patientInfoSection = document.getElementById('patientInfoSection');
+        if (!patientInfoSection.classList.contains('hidden')) {
+            requestBody.patientInfo = {
+                gender: document.getElementById('gender').value,
+                DentalAgeStage: document.getElementById('dentalStage').value
+            };
+            console.log('患者信息:', requestBody.patientInfo);
+        }
+        
+        // 步骤4：发送 JSON 请求到 AI 后端
+        const targetUrl = isSync ? CONFIG.AI_BACKEND_SYNC_URL : CONFIG.AI_BACKEND_ASYNC_URL;
+        console.log(`步骤2：发送 JSON 请求到 AI 后端 (${isSync ? '同步' : '异步'}):`, targetUrl);
+        console.log('请求体:', requestBody);
+        
+        // 显示加载中
+        showLoading();
+        
+        const response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (isSync) {
+            // 同步模式处理
+            if (response.ok) { // 200 OK
+                const responseData = await response.json();
+                console.log('同步请求成功:', responseData);
+                
+                appState.currentTaskId = responseData.taskId || taskId;
+                appState.currentTaskType = taskType;
+                
+                // 直接处理结果
+                displayResult(responseData);
+            } else {
+                hideLoading();
+                const errorData = await response.json();
+                const errorMsg = errorData.detail?.message || errorData.message || '请求失败';
+                alert('错误：' + errorMsg);
+                console.error('同步请求失败:', errorData);
+                submitBtn.disabled = false;
+            }
+        } else {
+            // 异步模式处理 (原有逻辑)
+            if (response.status === 202) {
+                // 提交成功 (202 Accepted)
+                appState.currentTaskId = taskId;
+                appState.currentTaskType = taskType;
+                console.log('异步任务提交成功，taskId:', taskId, 'taskType:', appState.currentTaskType);
+                
+                // 启动轮询
+                startPolling(taskId);
+            } else {
+                hideLoading();
+                // 同步验证失败（4xx 错误）
+                const errorData = await response.json();
+                const errorMsg = errorData.detail?.message || errorData.message || '提交失败';
+                alert('错误：' + errorMsg);
+                console.error('提交失败:', errorData);
+                submitBtn.disabled = false;
+            }
         }
     } catch (error) {
+        hideLoading();
         // 网络错误
         console.error('网络错误:', error);
         alert('网络连接失败，请检查后重试');
@@ -523,6 +591,9 @@ function displayResult(resultJson) {
     } else if (taskType === 'panoramic') {
         console.log('调用 renderPanoramic');
         renderPanoramic(data);
+    } else if (taskType === 'dental_age_stage') {
+        console.log('调用 renderDentalAgeStage');
+        renderDentalAgeStage(data);
     } else {
         console.error('未知的任务类型:', taskType);
         displayError({ displayMessage: '未知的任务类型: ' + taskType });
@@ -589,6 +660,141 @@ function clearReport() {
     if (reportContent) {
         reportContent.innerHTML = '';
     }
+}
+
+/**
+ * 渲染牙期检测结果
+ * @param {Object} data - 牙期检测数据
+ */
+function renderDentalAgeStage(data) {
+    console.log('开始渲染牙期检测结果...', data);
+    
+    // 显示主容器
+    const mainContainer = document.getElementById('mainContainer');
+    if (mainContainer) {
+        mainContainer.classList.remove('hidden');
+    }
+    
+    // 生成文本报告
+    const reportContent = document.getElementById('reportContent');
+    if (reportContent) {
+        const stage = data.dentalAgeStage || '未知';
+        const analysis = data.teethAnalysis || {};
+        const total = analysis.totalDetected || 0;
+        const deciduous = analysis.deciduousCount || 0;
+        const permanent = analysis.permanentCount || 0;
+        
+        let stageText = stage;
+        if (stage === 'Mixed') stageText = '混合牙期 (Mixed)';
+        else if (stage === 'Permanent') stageText = '恒牙期 (Permanent)';
+        
+        let html = `
+            <div class="report-section">
+                <h2 class="report-title">牙期检测报告</h2>
+                
+                <div class="measurement-group">
+                    <h3>检测结论</h3>
+                    <div class="measurement-item">
+                        <span class="label">牙期阶段:</span>
+                        <span class="value" style="font-weight: bold; color: #2c3e50;">${stageText}</span>
+                    </div>
+                </div>
+                
+                <div class="measurement-group">
+                    <h3>牙齿统计</h3>
+                    <div class="measurement-item">
+                        <span class="label">检测总数:</span>
+                        <span class="value">${total}</span>
+                    </div>
+                    <div class="measurement-item">
+                        <span class="label">乳牙数量:</span>
+                        <span class="value">${deciduous}</span>
+                    </div>
+                    <div class="measurement-item">
+                        <span class="label">恒牙数量:</span>
+                        <span class="value">${permanent}</span>
+                    </div>
+                </div>
+                
+                <div class="measurement-group">
+                    <h3>详细列表</h3>
+                    <div class="measurement-item" style="flex-direction: column; align-items: flex-start;">
+                        <span class="label" style="margin-bottom: 5px;">乳牙 (FDI):</span>
+                        <span class="value" style="word-break: break-all; line-height: 1.4;">${(analysis.deciduousTeeth || []).join(', ') || '无'}</span>
+                    </div>
+                    <div class="measurement-item" style="flex-direction: column; align-items: flex-start; margin-top: 10px;">
+                        <span class="label" style="margin-bottom: 5px;">恒牙 (FDI):</span>
+                        <span class="value" style="word-break: break-all; line-height: 1.4;">${(analysis.permanentTeeth || []).join(', ') || '无'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        reportContent.innerHTML = html;
+    }
+    
+    // 加载并显示原图
+    const imageFile = document.getElementById('imageFile').files[0];
+    if (!imageFile) {
+        console.error('未找到图片文件');
+        return;
+    }
+    
+    const img = new Image();
+    img.onerror = function() {
+        console.error('图片加载失败');
+        displayError({ displayMessage: '图片加载失败' });
+    };
+    
+    img.onload = function() {
+        const container = document.getElementById('imageContainer');
+        if (!container) return;
+        
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        
+        // 计算缩放比例
+        let scale = 1.0;
+        if (containerWidth > 0 && containerHeight > 0) {
+            const scaleX = containerWidth / img.width;
+            const scaleY = containerHeight / img.height;
+            scale = Math.min(scaleX, scaleY, 1.0);
+        }
+        
+        const displayWidth = img.width * scale;
+        const displayHeight = img.height * scale;
+        
+        // 初始化 Stage
+        const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
+        if (!stage) return;
+        
+        // 创建背景层
+        const bgLayer = new Konva.Layer();
+        const bgImage = new Konva.Image({
+            x: 0,
+            y: 0,
+            image: img,
+            width: displayWidth,
+            height: displayHeight
+        });
+        bgLayer.add(bgImage);
+        stage.add(bgLayer);
+        
+        // 保存状态
+        appState.konvaStage = stage;
+        appState.originalImage = img;
+        appState.imageScale = scale;
+        appState.konvaLayers['background'] = bgLayer;
+        
+        stage.draw();
+        
+        // 如果有 initLayerControlPanel 函数，调用它
+        if (typeof initLayerControlPanel === 'function') {
+            initLayerControlPanel();
+        }
+    };
+    
+    img.src = URL.createObjectURL(imageFile);
 }
 
 // ============================================
