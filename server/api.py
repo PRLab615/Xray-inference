@@ -179,8 +179,32 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     import celery.exceptions
     import asyncio
     
-    # 1. 生成或使用 taskId
-    task_id = request.taskId or str(uuid.uuid4())
+    # 1. 检查 taskId 是否已存在（推理任务中 taskId 必须唯一）
+    task_id = request.taskId
+    if _persistence.task_exists(task_id):
+        logger.warning(f"Task already exists: {task_id}")
+        raise HTTPException(
+            status_code=409,
+            detail=ErrorResponse(
+                code=10002,
+                message="Task ID already exists",
+                detail=f"taskId {task_id} is already in use"
+            ).model_dump()
+        )
+    
+    # 在 Redis 中设置临时标记，表示任务正在处理（防止并发重复提交）
+    # 同步接口不持久化结果，但需要标记 taskId 已被使用
+    try:
+        _persistence.save_task(task_id, {
+            "taskId": task_id,
+            "taskType": request.taskType,
+            "status": "PROCESSING",
+            "mode": "sync"
+        })
+    except Exception as e:
+        logger.error(f"Failed to mark task as processing: {task_id}, {e}")
+        # 如果 Redis 操作失败，仍然继续处理，但记录警告
+    
     logger.info(f"[Pseudo-Sync] Request received: taskId={task_id}, taskType={request.taskType}")
     
     # 2. 下载图像
@@ -237,7 +261,13 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
             os.remove(image_path)
             logger.info(f"Cleaned up temp file: {image_path}")
         
-        # 7. 返回结果
+        # 7. 清理 Redis 中的临时标记（同步接口不持久化结果）
+        try:
+            _persistence.delete_task(task_id)
+        except Exception as e:
+            logger.warning(f"Failed to clean up task marker: {task_id}, {e}")
+        
+        # 8. 返回结果
         return SyncAnalyzeResponse(
             taskId=task_id,
             status="SUCCESS",
@@ -252,6 +282,11 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         # 清理临时文件
         if os.path.exists(image_path):
             os.remove(image_path)
+        # 清理 Redis 中的临时标记
+        try:
+            _persistence.delete_task(task_id)
+        except Exception as e:
+            logger.warning(f"Failed to clean up task marker: {task_id}, {e}")
         raise HTTPException(
             status_code=504,
             detail=ErrorResponse(
@@ -266,6 +301,11 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         # 清理临时文件
         if os.path.exists(image_path):
             os.remove(image_path)
+        # 清理 Redis 中的临时标记
+        try:
+            _persistence.delete_task(task_id)
+        except Exception as e2:
+            logger.warning(f"Failed to clean up task marker: {task_id}, {e2}")
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
@@ -458,7 +498,7 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
     """
     from pipelines.pano.utils.pano_report_utils import generate_standard_output
     
-    logger.info(f"[Pano Recalculate] Request received")
+    logger.info(f"[Pano Recalculate] Request received: taskId={request.taskId}")
     
     try:
         # 构造 metadata（使用客户端提供的或默认值）
@@ -473,10 +513,11 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
             inference_results=request.inferenceResults
         )
         
-        logger.info(f"[Pano Recalculate] Report generated successfully")
+        logger.info(f"[Pano Recalculate] Report generated successfully: taskId={request.taskId}")
         
         # 返回结果
         return RecalculateResponse(
+            taskId=request.taskId,
             status="SUCCESS",
             timestamp=datetime.now(timezone.utc).isoformat(),
             data=report,
@@ -532,7 +573,7 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
     from pipelines.ceph.utils.ceph_report_json import generate_standard_output
     import numpy as np
     
-    logger.info(f"[Ceph Recalculate] Request received")
+    logger.info(f"[Ceph Recalculate] Request received: taskId={request.taskId}")
     
     try:
         # 1. 转换坐标格式（dict -> numpy.ndarray）
@@ -541,12 +582,12 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
             for label, coord in request.landmarks.items()
         }
         
-        logger.info(f"[Ceph Recalculate] Converted {len(landmarks)} landmarks")
+        logger.info(f"[Ceph Recalculate] Converted {len(landmarks)} landmarks: taskId={request.taskId}")
         
         # 2. 计算测量值
         measurements = calculate_measurements(landmarks)
         
-        logger.info(f"[Ceph Recalculate] Calculated measurements")
+        logger.info(f"[Ceph Recalculate] Calculated measurements: taskId={request.taskId}")
         
         # 3. 构造 inference_results
         inference_results = {
@@ -563,10 +604,11 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
             patient_info=request.patientInfo.model_dump()
         )
         
-        logger.info(f"[Ceph Recalculate] Report generated successfully")
+        logger.info(f"[Ceph Recalculate] Report generated successfully: taskId={request.taskId}")
         
         # 返回结果
         return RecalculateResponse(
+            taskId=request.taskId,
             status="SUCCESS",
             timestamp=datetime.now(timezone.utc).isoformat(),
             data=report,

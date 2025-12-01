@@ -184,7 +184,6 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "Confidence": round(seg_left.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": "condyle_left",
                 "Coordinates": left_contour if left_contour else [],
                 "SerializedMask": left_rle
             }
@@ -201,7 +200,6 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "Confidence": round(seg_right.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": "condyle_right",
                 "Coordinates": right_contour if right_contour else [],
                 "SerializedMask": right_rle
             }
@@ -245,7 +243,6 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
             "Confidence": round(seg_left.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": "mandible_left",
                 "Coordinates": left_contour if left_contour else [],
                 "SerializedMask": left_rle
             }
@@ -262,7 +259,6 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
             "Confidence": round(seg_right.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": "mandible_right",
                 "Coordinates": right_contour if right_contour else [],
                 "SerializedMask": right_rle
             }
@@ -575,7 +571,6 @@ def format_teeth_report(teeth_results: dict) -> dict:
             "Confidence": 0.85,  # Mock: 需要从模型输出获取实际置信度
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": f"tooth-{fdi}",
                 "Coordinates": coordinates,
                 "SerializedMask": serialized_mask
             },
@@ -776,24 +771,22 @@ def _get_maxillary_sinus_mock() -> List[dict]:
         {
             "Side": "left",
             "Pneumatization": 0,  # 0=正常, 1=轻度气化, 2=过度气化
-            "TypeClassification": "I",
+            "TypeClassification": 0,  # 0, 1 数字类型
             "Inflammation": False,
             "RootEntryToothFDI": [],
             "Detail": "左上颌窦气化正常（待检测）",
             "Confidence_Pneumatization": 0.0,
-            "Confidence_Inflammation": 0.0,
-            "_mock": True
+            "Confidence_Inflammation": 0.0
         },
         {
             "Side": "right",
             "Pneumatization": 0,
-            "TypeClassification": "I",
+            "TypeClassification": 0,
             "Inflammation": False,
             "RootEntryToothFDI": [],
             "Detail": "右上颌窦气化正常（待检测）",
             "Confidence_Pneumatization": 0.0,
-            "Confidence_Inflammation": 0.0,
-            "_mock": True
+            "Confidence_Inflammation": 0.0
         }
     ]
 
@@ -801,20 +794,11 @@ def _get_maxillary_sinus_mock() -> List[dict]:
 def _get_periodontal_mock() -> dict:
     """Mock: PeriodontalCondition - 无模型支持"""
     return {
-        "_mock": True,  # Mock标记
-        "Up_CEJ_to_ABC_Distance_mm": 0.0,
         "BoneAbsorptionLevel": 0,
         "Detail": "未检测（需专门牙周模型）",
-        "AbsorptionRatio": 0.0,
         "Confidence": 0.0,
-        "Lower_CEJ_to_ABC_Distance_mm": 0.0,
-        "SpecificAbsorption": [
-            {
-                "FDI": "16",
-                "AbsorptionLevel": 0,
-                "Detail": "待检测"
-            }
-        ]
+        "AbsorptionRatio": 0.0,
+        "SpecificAbsorption": []
     }
 
 
@@ -831,7 +815,6 @@ def _get_implant_default() -> dict:
 def _get_root_tip_density_mock() -> dict:
     """Mock: RootTipDensityAnalysis - 无模型支持"""
     return {
-        "_mock": True,  # Mock标记
         "TotalCount": 0,
         "Items": [],
         "Detail": "未检测（需根尖密度影检测模型）",

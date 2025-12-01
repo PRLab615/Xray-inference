@@ -261,21 +261,31 @@ class SyncAnalyzeRequest(BaseModel):
     同步分析请求模型
     
     与 AnalyzeRequest 的区别：
-        - taskId 可选（服务端生成）
-        - callbackUrl 可选（同步返回，无需回调）
+        - taskId 必填（由客户端提供，推理任务中必须唯一）
+        - callbackUrl 不需要（同步返回，无需回调）
     
     Attributes:
-        taskType: 任务类型（panoramic/cephalometric）
+        taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供，推理任务中必须唯一
+        taskType: 任务类型（panoramic/cephalometric/dental_age_stage）
         imageUrl: 图像 URL（HTTP/HTTPS）
-        taskId: 任务唯一标识（可选，服务端自动生成）
         metadata: 客户端自定义元数据（可选）
         patientInfo: 患者信息（侧位片必需）
     """
+    taskId: str
     taskType: str
     imageUrl: str
-    taskId: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
     patientInfo: Optional[PatientInfo] = None
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        """验证 taskId 是否为有效的 UUID v4 格式"""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
     
     @field_validator('taskType')
     @classmethod
@@ -345,6 +355,7 @@ class PanoRecalculateRequest(BaseModel):
     用于客户端修改检测结果后，重新生成完整报告（跳过模型推理）
     
     Attributes:
+        taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供
         inferenceResults: 修改后的推理结果（包含所有模块结果）
             - condyle_seg: 髁突分割结果
             - condyle_det: 髁突检测结果
@@ -353,8 +364,19 @@ class PanoRecalculateRequest(BaseModel):
             - teeth: 牙齿分割结果
         metadata: 图像元信息（可选）
     """
+    taskId: str
     inferenceResults: Dict[str, Any]
     metadata: Optional[Dict[str, Any]] = None
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        """验证 taskId 是否为有效的 UUID v4 格式"""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
 
 
 class CephRecalculateRequest(BaseModel):
@@ -364,6 +386,7 @@ class CephRecalculateRequest(BaseModel):
     用于客户端修改关键点坐标后，重新计算测量值和生成完整报告
     
     Attributes:
+        taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供
         landmarks: 修改后的关键点坐标字典
             格式: {"S": {"x": 512.5, "y": 245.3}, "N": {"x": 508.0, "y": 312.1}, ...}
         patientInfo: 患者信息（必需）
@@ -371,9 +394,20 @@ class CephRecalculateRequest(BaseModel):
             - DentalAgeStage: 牙期（Permanent/Mixed）
         imageSpacing: 图像间距（可选，默认 {"X": 0.1, "Y": 0.1}）
     """
+    taskId: str
     landmarks: Dict[str, Dict[str, float]]
     patientInfo: PatientInfo
     imageSpacing: Optional[Dict[str, float]] = None
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        """验证 taskId 是否为有效的 UUID v4 格式"""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
     
     @field_validator('landmarks')
     @classmethod
@@ -398,11 +432,13 @@ class RecalculateResponse(BaseModel):
     重算响应模型（v4 新增）
     
     Attributes:
+        taskId: 任务唯一标识（回显客户端提供的 taskId）
         status: 状态（SUCCESS/FAILURE）
         timestamp: 完成时间（ISO8601 格式）
         data: 重算后的完整报告数据（nullable）
         error: 失败时的错误信息（nullable）
     """
+    taskId: str
     status: str
     timestamp: str
     data: Optional[Dict[str, Any]] = None
