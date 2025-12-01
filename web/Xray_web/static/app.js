@@ -801,33 +801,51 @@ function renderDentalAgeStage(data) {
 // 步骤7：侧位片渲染 - 背景图加载和关键点绘制
 // ============================================
 
-// 关键点全名映射表
+// 关键点全名映射表（完整英文名称 -> 中文名称）
+// 新规范中 Landmarks 的 Label 已经是完整英文名称
 const LANDMARK_FULL_NAMES = {
+    // 完整英文名称 -> 中文
+    'Sella': '蝶鞍点',
+    'Nasion': '鼻根点',
+    'Orbitale': '眶下点',
+    'Porion': '耳点',
+    'Subspinale': '上齿槽座点',
+    'Supramentale': '下齿槽座点',
+    'Pogonion': '颏前点',
+    'Menton': '颏下点',
+    'Gnathion': '颏顶点',
+    'Gonion': '下颌角点',
+    'Incision inferius': '下中切牙切点',
+    'Incision superius': '上中切牙切点',
+    'Posterior nasal spine': '后鼻棘点',
+    'Anterior nasal spine': '前鼻棘点',
+    'Articulare': '关节点',
+    'Co': '髁顶点',
+    'PTM': '翼上颌裂',
+    'Pt': '翼点',
+    'U1A': '上中切牙根尖点',
+    'L1A': '下中切牙根尖点',
+    'U6': '上颌第一磨牙近中颊尖点',
+    'L6': '下颌第一磨牙近中颊尖点',
+    'Ba': '颅底点',
+    'Bo': '颅底角点',
+    'Pcd': '下颌髁突后缘切点',
+    // 兼容旧格式简称
     'S': '蝶鞍点',
     'N': '鼻根点',
-    'Ba': '颅底点',
-    'Po': '耳点',
     'Or': '眶下点',
-    'Bo': '颅底角点',
-    'Co': '髁顶点',
-    'Ar': '关节点',
-    'Pcd': '下颌髁突后缘切点',
-    'Pt': '翼点',
+    'Po': '耳点',
     'A': '上齿槽座点',
-    'PNS': '后鼻棘点',
-    'ANS': '前鼻棘点',
-    'UI': '上中切牙切点',
-    'PTM': '翼上颌裂',
-    'U1A': '上中切牙根尖点',
-    'U6': '上颌第一磨牙近中颊尖点',
     'B': '下齿槽座点',
     'Pog': '颏前点',
-    'Gn': '颏顶点',
     'Me': '颏下点',
+    'Gn': '颏顶点',
     'Go': '下颌角点',
     'L1': '下中切牙点',
-    'L1A': '下中切牙根尖点',
-    'L6': '下颌第一磨牙近中颊尖点'
+    'UI': '上中切牙切点',
+    'PNS': '后鼻棘点',
+    'ANS': '前鼻棘点',
+    'Ar': '关节点'
 };
 
 /**
@@ -1058,7 +1076,7 @@ function showLandmarkTooltip(node, landmark, event) {
     // 移除已存在的 Tooltip
     hideTooltip();
     
-    // 获取关键点全名
+    // 获取关键点全名（新规范中 Label 已经是完整英文名称）
     const fullName = LANDMARK_FULL_NAMES[landmark.Label] || landmark.Label;
     
     // 创建 Tooltip 元素
@@ -1069,7 +1087,10 @@ function showLandmarkTooltip(node, landmark, event) {
     // 构建 Tooltip 内容
     let content = `<strong>${fullName}</strong><br>`;
     content += `标签: ${landmark.Label}<br>`;
-    content += `坐标: (${landmark.X.toFixed(1)}, ${landmark.Y.toFixed(1)})<br>`;
+    // 新规范中坐标是整数，但也兼容小数格式
+    const xDisplay = Number.isInteger(landmark.X) ? landmark.X : landmark.X.toFixed(1);
+    const yDisplay = Number.isInteger(landmark.Y) ? landmark.Y : landmark.Y.toFixed(1);
+    content += `坐标: (${xDisplay}, ${yDisplay})<br>`;
     if (landmark.Confidence !== undefined) {
         content += `置信度: ${(landmark.Confidence * 100).toFixed(1)}%`;
     }
@@ -1335,10 +1356,11 @@ function buildCephReport(data) {
         // 显示具体检测到的关键点列表
         if (data.LandmarkPositions && data.LandmarkPositions.Landmarks) {
             const detectedLabels = data.LandmarkPositions.Landmarks
-                .filter(l => l.Status === 'Detected' && l.X !== undefined && l.Y !== undefined)
+                .filter(l => l.Status === 'Detected' && l.X !== undefined && l.X !== null && l.Y !== undefined && l.Y !== null)
                 .map(l => {
-                    const fullName = LANDMARK_FULL_NAMES[l.Label] || l.Label;
-                    return `${l.Label}(${fullName})`;
+                    // 新规范中 Label 已经是完整英文名称，映射到中文
+                    const chineseName = LANDMARK_FULL_NAMES[l.Label] || '';
+                    return chineseName ? `${l.Label}(${chineseName})` : l.Label;
                 });
             
             if (detectedLabels.length > 0) {
@@ -1348,11 +1370,11 @@ function buildCephReport(data) {
                 summarySection.appendChild(pointsListDiv);
             }
             
-            // 显示缺失的关键点
+            // 显示缺失的关键点（新规范中 MissingLandmarks 也是完整英文名称数组）
             if (data.VisibilityMetrics && data.VisibilityMetrics.MissingLandmarks && data.VisibilityMetrics.MissingLandmarks.length > 0) {
                 const missingLabels = data.VisibilityMetrics.MissingLandmarks.map(label => {
-                    const fullName = LANDMARK_FULL_NAMES[label] || label;
-                    return `${label}(${fullName})`;
+                    const chineseName = LANDMARK_FULL_NAMES[label] || '';
+                    return chineseName ? `${label}(${chineseName})` : label;
                 });
                 const missingPointsDiv = document.createElement('div');
                 missingPointsDiv.className = 'missing-points-list';
@@ -1567,7 +1589,9 @@ function createMeasurementItem(measurement) {
     // }
     
     if (measurement.Confidence !== undefined) {
-        content += `<div class="measurement-confidence">置信度: ${(measurement.Confidence * 100).toFixed(1)}%</div>`;
+        // 新规范中 Confidence 是 0.00-1.00 的小数，需要乘以 100 显示为百分比
+        const confidencePercent = measurement.Confidence <= 1 ? (measurement.Confidence * 100) : measurement.Confidence;
+        content += `<div class="measurement-confidence">置信度: ${confidencePercent.toFixed(1)}%</div>`;
     }
     
     item.innerHTML = content;

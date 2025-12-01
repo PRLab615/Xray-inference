@@ -1,212 +1,165 @@
 {
-  // =========================================================================
-  // 1. 元数据 (Metadata)
-  // =========================================================================
-  "Metadata": { 
-    "ImageName": "panoramic_xray_001.jpg", 
-    "DiagnosisID": "AI-DX-20251027-002", 
-    "AnalysisTime": "2025-10-27T12:00:00Z" 
+  "Metadata": {
+    "ImageName": "panoramic_xray_001.jpg",
+    "DiagnosisID": "AI-DX-20251027-002",
+    "AnalysisTime": "2025-10-27T12:00:00Z"
   },
-  
-  // =========================================================================
-  // 2. 解剖结构分割结果 (AnatomyResults)
-  // =========================================================================
-  "AnatomyResults": [ 
+  "AnatomyResults": [
     {
-      "Label": "condyle_left", //髁突左
-      "Confidence": 0.99, 
-      "SegmentationMask": { 
-        "Type": "Polygon", 
-        "Label": "condyle_left", 
-        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]], 
-        "SerializedMask": "rle:..." 
-      },
-      "Label": "mandible_left", //下颌分支左
-      "Confidence": 0.99, 
-      "SegmentationMask": { 
-        "Type": "Polygon", 
-        "Label": "mandible_left", 
+      "Label": "condyle_left",
+      "Confidence": 0.99,
+      "SegmentationMask": {
+        "Type": "Polygon",
         "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]],
-        "SerializedMask": "rle:..." 
-      },
-      "Label": "sinus_left", //上颌窦 （有左右两个）为了唯一性，实际标注中inus_inflam(炎症）
-      "Confidence": 0.99, 
-      "SegmentationMask": { 
-        "Type": "Polygon", 
-        "Label": "sinus_left", 
-        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]], 
-        "SerializedMask": "rle:..." 
+        "SerializedMask": "rle:..."
+      }
+    },
+    {
+      "Label": "mandible_left",
+      "Confidence": 0.99,
+      "SegmentationMask": {
+        "Type": "Polygon",
+        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]],
+        "SerializedMask": "rle:..."
+      }
+    },
+    {
+      "Label": "sinus_left",
+      "Confidence": 0.99,
+      "SegmentationMask": {
+        "Type": "Polygon",
+        "Coordinates": [[10, 50], [30, 70], [20, 90], [15, 60]],
+        "SerializedMask": "rle:..."
       }
     }
   ],
-  
-  // =========================================================================
-  // 3. 颌骨与关节诊断 (JointAndMandible, MaxillarySinus)
-  // =========================================================================
-  "JointAndMandible": { 
-    "CondyleAssessment": { 
-      "condyle_Left": { 
-        "Morphology": 1, // 0正常    1吸收
-        "Detail": "左侧髁突形态吸收，灰度外围低密度影像", 
-        "Confidence": 0.92 
+  "JointAndMandible": {
+    "CondyleAssessment": {
+      "condyle_Left": {
+        "Morphology": 1,
+        "Detail": "左侧髁突形态吸收，灰度外围低密度影像",
+        "Confidence": 0.92
       },
-      "condyle_Right": { 
-        "Morphology": 0, 
-        "Detail": "右侧髁突形态正常", 
-        "Confidence": 0.98 
+      "condyle_Right": {
+        "Morphology": 0,
+        "Detail": "右侧髁突形态正常",
+        "Confidence": 0.98
       },
-      "OverallSymmetry": 1,  // 髁突是否对称，0对称 1是左侧大 2是右侧大
-      "Confidence_Overall": 0.92 
+      "OverallSymmetry": 1,
+      "Confidence_Overall": 0.92
     },
-    
-    "RamusSymmetry": false,  //下颌升支对对称性 true为对称 / false 不对称 
-    "GonialAngleSymmetry": true, //下颌下颌角对称性 true为对称 / false 不对称 
-    "Detail": "下颌升支不对称，左右下颌角对称", 
-    "Confidence": 0.90 
-  },
-  
-  "MaxillarySinus": [ 
-    {
-      "Side": "left", 
-      "Pneumatization": 2, 
-      "TypeClassification": "III", //气化 
-      "Inflammation": true, //炎症
-      "RootEntryToothFDI": ["26"], 
-      "Detail": "左上颌窦过度气化，26牙位牙根进入上颌窦，建议耳鼻喉科会诊。", 
-      "Confidence_Pneumatization": 0.95, 
-      "Confidence_Inflammation": 0.85 
-    },
-    {
-      "Side": "right", 
-      "Pneumatization": 0, 
-      "TypeClassification": "I", 
-      "Inflammation": false, 
-      "RootEntryToothFDI": [], 
-      "Detail": "右上颌窦气化正常。", 
-      "Confidence_Pneumatization": 0.99, 
-      "Confidence_Inflammation": 0.99 
-    }
-  ],
-
-  // =========================================================================
-  // 4. 牙周、缺牙、智齿情况 (Periodontal, Missing, Wisdom)
-  // =========================================================================
-  //牙周
-  "PeriodontalCondition": {
-    "Up_CEJ_to_ABC_Distance_mm": 3.5,           
-    "BoneAbsorptionLevel": 2, // 0:未见明显吸收, 1:轻度, 2:中度, 3:重度
-    "Detail": "上牙槽骨中度吸收，16牙位牙槽骨吸收达根中1/3",
-    "AbsorptionRatio": 0.45,
-    "Confidence": 0.94
-    
-    "Lower_CEJ_to_ABC_Distance_mm": 2.1,           
-    "BoneAbsorptionLevel": 1, // 0:未见明显吸收, 1:轻度, 2:中度, 3:重度
-    "Detail": "下牙槽骨轻度吸收，47牙位牙槽骨轻度吸收",
-    "AbsorptionRatio": 0.2,
+    "RamusSymmetry": false,
+    "GonialAngleSymmetry": true,
+    "Detail": "下颌升支不对称，左右下颌角对称",
     "Confidence": 0.90
-    "SpecificAbsorption": [
-        {
-            "FID": "16",
-            "AbsorptionLevel": 2, // 1:轻度, 2:中度, 3:重度
-            "Detail": "牙槽骨吸收达根中1/3"//2:中度1/3-2/3即“根中1/3”；3:重度>2/3即“根尖1/3”
-        },
-        {
-            "ToothPosition": "47",
-            "AbsorptionLevel": 1, // 1:轻度吸收, 2:中度1/3-2/3即“根中1/3”；3:重度>2/3即“根尖1/3”
-            "Detail": "牙槽骨轻度吸收"
-        }
-    ],
-   
-}
-
-
-//缺牙
-  "MissingTeeth": [ 
+  },
+  "MaxillarySinus": [
     {
-      "FDI": "37", 
-      "Reason": "missing", 
-      "Detail": "37牙位缺牙" 
+      "Side": "left",
+      "Pneumatization": 2,
+      "TypeClassification": 1,
+      "Inflammation": true,
+      "RootEntryToothFDI": ["26"],
+      "Detail": "左上颌窦过度气化，26牙位牙根进入上颌窦，建议耳鼻喉科会诊。",
+      "Confidence_Pneumatization": 0.95,
+      "Confidence_Inflammation": 0.85
+    },
+    {
+      "Side": "right",
+      "Pneumatization": 0,
+      "TypeClassification": 0,
+      "Inflammation": false,
+      "RootEntryToothFDI": [],
+      "Detail": "右上颌窦气化正常。",
+      "Confidence_Pneumatization": 0.99,
+      "Confidence_Inflammation": 0.99
     }
   ],
-  
-//智齿情况
-  "ThirdMolarSummary": { 
+  "PeriodontalCondition": {
+    "BoneAbsorptionLevel": 2,
+    "Detail": "上牙槽骨中度吸收，16牙位牙槽骨吸收达根中1/3",
+    "Confidence": 0.94,
+    "AbsorptionRatio": 0.2,
+    "SpecificAbsorption": [
+      {
+        "FDI": "16",
+        "AbsorptionLevel": 2,
+        "Detail": "牙槽骨吸收达根中1/3"
+      },
+      {
+        "FDI": "47",
+        "AbsorptionLevel": 1,
+        "Detail": "牙槽骨轻度吸收"
+      }
+    ]
+  },
+  "MissingTeeth": [
+    {
+      "FDI": "37",
+      "Reason": "missing",
+      "Detail": "37牙位缺牙"
+    }
+  ],
+  "ThirdMolarSummary": {
     "18": {
-      "Level": 1, 
-      "Impactions":"Impacted", 
+      "Level": 0,
+      "Impactions": "Impacted",
       "Detail": "阻生"
     },
     "28": {
-      "Level": 2, 
+      "Level": 1,
       "Impactions": null,
-       "Detail": "牙胚状态（未形成牙根）",
+      "Detail": "牙胚状态（未形成牙根）",
       "Confidence": 0.95
     },
     "38": {
-      "Level": 3, 
+      "Level": 2,
       "Impactions": null,
       "Detail": "待萌出（垂直生长，无阻碍）",
       "Confidence": 0.90
     },
     "48": {
-      "Level": 4, 
+      "Level": 4,
       "Impactions": null,
-       "Detail": "未见智齿",
-      "Confidence": 0.98 
-    } 
+      "Detail": "未见智齿",
+      "Confidence": 0.98
+    }
   },
-
-  
-  // 5.种植体分析 (ImplantAnalysis)
- 
   "ImplantAnalysis": {
-    // 字段含义: 种植体总数量
-    "TotalCount": 2, 
-    // 字段含义: 单个种植体的详细检测列表
+    "TotalCount": 2,
     "Items": [
       {
-        "ID": "implant", // 唯一标识
-        "Quadrant": "第一象限", // 字段含义: 所属象限
-        "Confidence": 0.95, // 字段含义: 检测置信度
-        "BBox": [100, 200, 150, 300], // 字段含义: [x1, y1, x2, y2] 坐标
-        "Detail": "第一象限检测到种植体" // 单项描述
+        "ID": "implant_1",
+        "Quadrant": "第一象限",
+        "Confidence": 0.95,
+        "BBox": [100, 200, 150, 300],
+        "Detail": "第一象限检测到种植体"
       },
       {
-        "ID": "implant",
+        "ID": "implant_2",
         "Quadrant": "第三象限",
         "Confidence": 0.92,
         "BBox": [400, 500, 450, 600],
         "Detail": "第三象限检测到种植体"
       }
-    ]
-    // 字段含义: 自动生成的分析文本，对应代码中的 analysis_text
-    "Detail": "第一象限存在种植体，个数为1；第三象限存在种植体，个数为1", 
-    // 字段含义: 各象限的统计分布 (Q1=第一象限, Q2=第二象限, Q3=第三象限, Q4=第四象限)
+    ],
+    "Detail": "第一象限存在种植体，个数为1；第三象限存在种植体，个数为1",
     "QuadrantCounts": {
       "Q1": 1,
       "Q2": 0,
       "Q3": 1,
       "Q4": 0
-    },
-    
+    }
   },
-  
-  //根尖周 高/低密度影检测
-   // 6. 【新增】根尖密度影分析 (RootTipDensityAnalysis)
-  // =========================================================================
   "RootTipDensityAnalysis": {
-    // 字段含义: 密度影检测框总数量 (虽然业务上可能不关注具体个数，但作为检测结果通常保留此计数)
-    "TotalCount": 2, 
-
-    // 字段含义: 密度影详细检测列表
+    "TotalCount": 2,
     "Items": [
       {
-        "ID": "density_low", 
-        "Quadrant": 1, // 字段含义: 所属象限
-      
-        "Confidence": 0.88, 
-        "BBox": [120, 210, 160, 250], 
-        "Detail": "第一象限检测到高密度影" 
+        "ID": "density_low",
+        "Quadrant": 1,
+        "Confidence": 0.88,
+        "BBox": [120, 210, 160, 250],
+        "Detail": "第一象限检测到高密度影"
       },
       {
         "ID": "density_high",
@@ -215,79 +168,58 @@
         "BBox": [300, 400, 350, 460],
         "Detail": "第二象限检测到低密度影"
       }
-    ]
-    // 字段含义: 自动生成的分析文本
-    // 逻辑调整: 根据你的要求，这里不强调“个数为X”，而是强调“检测到高/低密度影”
-    "Detail": "第一象限检测到高密度影；第二象限检测到低密度影", 
-    
-    // 字段含义: 各象限的统计分布 (Q1=第一象限, Q2=第二象限, Q3=第三象限, Q4=第四象限)
-    // 如果某个象限同时存在高和低，这里依然统计总数，具体类型看 Items
+    ],
+    "Detail": "第一象限检测到高密度影；第二象限检测到低密度影",
     "QuadrantCounts": {
       "Q1": 1,
       "Q2": 1,
       "Q3": 0,
       "Q4": 0
-    },
-    
+    }
   },
-
-  // =========================================================================
-  // 6. 单牙诊断结果 (ToothAnalysis)
-  // =========================================================================
-  "ToothAnalysis": [ 
+  "ToothAnalysis": [
     {
-      "FDI": "16", 
-      "Confidence": 0.99, 
-      "SegmentationMask": { 
+      "FDI": "16",
+      "Confidence": 0.99,
+      "SegmentationMask": {
         "Type": "Polygon",
-        "Label": "tooth-16", 
-        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
+        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]],
+        "SerializedMask": "rle:..."
       },
-      
-      "Properties": [ 
-        {"Value": "embedded_tooth", "Description": "埋伏牙", "Confidence": 0.99}, 
-        {"Value": "restored_tooth", "Description": "修复牙", "Confidence": 0.95}, 
-        {"Value": "carious_lesion", "Description": "龋坏", "Confidence": 0.98}, 
-        {"Value": "residual_root", "Description": "残根 ","Confidence": 0.90},
-        {"Value": "residual_crown", "Description": "残冠", "Confidence": 0.95}, 
-        {"Value": "rct_treated", "Description": "根管治疗", "Confidence": 0.98}, 
-        {"Value": "root_absorption", "Description": "牙根吸收", "Confidence": 0.95}, 
-        {"Value": "curved_short_root", "Description": "牙根形态弯曲短小", "Confidence": 0.98},  
-      ],
- 
+      "Properties": [
+        {"Value": "embedded_tooth", "Description": "埋伏牙", "Confidence": 0.99},
+        {"Value": "restored_tooth", "Description": "修复牙", "Confidence": 0.95},
+        {"Value": "carious_lesion", "Description": "龋坏", "Confidence": 0.98},
+        {"Value": "residual_root", "Description": "残根", "Confidence": 0.90},
+        {"Value": "residual_crown", "Description": "残冠", "Confidence": 0.95},
+        {"Value": "rct_treated", "Description": "根管治疗", "Confidence": 0.98},
+        {"Value": "root_absorption", "Description": "牙根吸收", "Confidence": 0.95},
+        {"Value": "curved_short_root", "Description": "牙根形态弯曲短小", "Confidence": 0.98}
+      ]
     },
-    
-    
-     {
-      "FDI": "55", 
-      "Confidence": 0.91, 
-      "SegmentationMask": { 
-        "Type": "Polygon",
-        "Label": "tooth-55", 
-        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
-      },
-      
-      "Properties": [ 
-        {"Value": "retained_primary_tooth", "Description": "滞留乳牙", "Confidence": 0.85}, 
-      ],
- 
-    },
-    
     {
-      "FDI": "18", 
-      "Confidence": 0.91, 
-      "SegmentationMask": { 
+      "FDI": "55",
+      "Confidence": 0.91,
+      "SegmentationMask": {
         "Type": "Polygon",
-        "Label": "tooth-18", 
-        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]], 
+        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]],
+        "SerializedMask": "rle:..."
       },
-      
-      "Properties": [ 
-        {"Value": "Impacted", "Description": "阻生", "Confidence": 0.89}, 
-      ],
- 
+      "Properties": [
+        {"Value": "retained_primary_tooth", "Description": "滞留乳牙", "Confidence": 0.85}
+      ]
     },
-    
+    {
+      "FDI": "18",
+      "Confidence": 0.91,
+      "SegmentationMask": {
+        "Type": "Polygon",
+        "Coordinates": [[100, 300], [150, 350], [120, 400], [90, 350]],
+        "SerializedMask": "rle:..."
+      },
+      "Properties": [
+        {"Value": "Impacted", "Description": "阻生", "Confidence": 0.89}
+      ]
+    }
   ]
-  
 }
