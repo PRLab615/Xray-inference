@@ -4,8 +4,10 @@ API 路由定义
 负责处理 HTTP 请求，实现 202/400 逻辑
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from server import load_config
 from server.schemas import (
     AnalyzeRequest, 
@@ -58,6 +60,40 @@ def create_app() -> FastAPI:
 
 # 创建应用实例
 app = create_app()
+
+
+# ==================== 自定义异常处理器（统一错误响应格式）====================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    处理 Pydantic 参数验证错误，统一返回接口定义的错误格式
+    
+    将 Pydantic 的 422 错误格式转换为：
+    {
+        "code": 10003,
+        "message": "Validation error: ...",
+        "displayMessage": "请求参数验证失败"
+    }
+    """
+    # 提取错误信息
+    errors = exc.errors()
+    error_messages = []
+    for error in errors:
+        loc = ".".join(str(x) for x in error.get("loc", []))
+        msg = error.get("msg", "Unknown error")
+        error_messages.append(f"{loc}: {msg}")
+    
+    detail_message = "; ".join(error_messages)
+    
+    return JSONResponse(
+        status_code=400,  # 使用 400 而非 422，与接口定义一致
+        content={
+            "code": 10003,
+            "message": f"Validation error: {detail_message}",
+            "displayMessage": "请求参数验证失败"
+        }
+    )
 
 
 @app.get("/")
@@ -469,61 +505,78 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
 @app.post("/api/v1/measurements/pano/recalculate", status_code=200)
 def recalculate_pano_measurements(request: PanoRecalculateRequest) -> RecalculateResponse:
     """
-    全景片点位重算接口（v4 新增）
+    全景片重算接口（v4 新增）
     
     功能：
-        接收客户端修改后的检测结果（牙齿、髁突、种植体等），
-        跳过模型推理，直接调用报告生成函数，返回完整的全景片报告。
+        接收客户端修改后的基础几何数据（分割掩码、检测框、分类结果），
+        跳过模型推理，重新计算所有衍生数据（对称性判断、缺牙推导、描述文本等），
+        返回完整的全景片报告。
     
     技术细节:
+        - 在 P1 中实现（不在 P2）
         - 使用 def 而非 async def，因为报告生成是同步 CPU 密集型任务
         - FastAPI 会自动在线程池中运行，不会阻塞事件循环
     
     Args:
-        request: 重算请求
-            - inferenceResults: 修改后的推理结果
-            - metadata: 图像元信息（可选）
+        request: 重算请求（对齐接口定义）
+            - taskId: 任务唯一标识，仅用于日志追踪
+            - data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
     
     Returns:
-        RecalculateResponse: 包含重算后的完整报告
+        RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
         
     Raises:
         HTTPException(400): 参数验证失败
         HTTPException(500): 报告生成失败
     
-    工作流程:
+    工作流程（当前实现）:
         1. 验证请求参数
-        2. 调用 pano_report_utils.generate_standard_output()
-        3. 返回完整报告
-    """
-    from pipelines.pano.utils.pano_report_utils import generate_standard_output
+        2. 暂时直接返回 data（不做处理）
+        3. 后续实现：提取"因"字段，重新计算"果"字段
     
+    注意:
+        - 当前暂时直接返回，因为需要所有推理模块的后处理写完才能集成
+        - 输入是推理的格式，输出返回的也是推理的格式，所以直接返回就是正确的格式
+    """
     logger.info(f"[Pano Recalculate] Request received: taskId={request.taskId}")
     
     try:
-        # 构造 metadata（使用客户端提供的或默认值）
-        metadata = request.metadata or {
-            "source": "manual_edit",
-            "timestamp": time.time()
-        }
+        # 1. 校验 taskId（schema 已校验 UUID 格式，这里再次确认）
+        if not request.taskId:
+            raise ValueError("taskId is required")
         
-        # 调用报告生成函数
-        report = generate_standard_output(
-            metadata=metadata,
-            inference_results=request.inferenceResults
-        )
+        # 2. 校验 data 不为空
+        if not request.data:
+            raise ValueError("data is required and cannot be empty")
         
-        logger.info(f"[Pano Recalculate] Report generated successfully: taskId={request.taskId}")
+        # TODO: 后续实现重算逻辑
+        # 3. 从 request.data 中提取"因"字段（基础几何数据）
+        # 4. 重新计算"果"字段（对称性判断、缺牙推导、描述文本等）
+        # 5. 返回完整的全景片报告
         
-        # 返回结果
+        # 当前实现：直接返回 data（因为输入输出格式一致）
+        logger.info(f"[Pano Recalculate] Directly returning data (recalculation logic to be implemented): taskId={request.taskId}")
+        
         return RecalculateResponse(
             taskId=request.taskId,
             status="SUCCESS",
             timestamp=datetime.now(timezone.utc).isoformat(),
-            data=report,
+            metadata=None,  # 接口定义中 metadata 可选
+            data=request.data,  # 直接返回，格式与推理接口一致
             error=None
         )
     
+    except ValueError as e:
+        # 参数验证错误，返回 400
+        logger.warning(f"[Pano Recalculate] Validation failed: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10009,
+                message="Pano recalculation validation failed",
+                detail=str(e)
+            ).model_dump()
+        )
     except Exception as e:
         logger.error(f"[Pano Recalculate] Failed: {e}", exc_info=True)
         raise HTTPException(
@@ -539,82 +592,93 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
 @app.post("/api/v1/measurements/ceph/recalculate", status_code=200)
 def recalculate_ceph_measurements(request: CephRecalculateRequest) -> RecalculateResponse:
     """
-    侧位片点位重算接口（v4 新增）
+    侧位片重算接口（v4 新增）
     
     功能：
-        接收客户端修改后的关键点坐标，
-        重新计算测量值，生成完整的侧位片报告。
+        接收客户端修改后的完整推理结果（关键点坐标 + 颈椎分割），
+        重新计算所有测量值，生成完整的侧位片报告。
     
     技术细节:
+        - 在 P1 中实现（不在 P2）
         - 使用 def 而非 async def，因为测量计算和报告生成是同步 CPU 密集型任务
         - FastAPI 会自动在线程池中运行，不会阻塞事件循环
     
     Args:
-        request: 重算请求
-            - landmarks: 修改后的关键点坐标
-            - patientInfo: 患者信息
-            - imageSpacing: 图像间距（可选）
+        request: 重算请求（对齐接口定义）
+            - taskId: 任务唯一标识，仅用于日志追踪
+            - data: 完整的侧位片推理结果 JSON（即 example_ceph_result.json 格式）
     
     Returns:
-        RecalculateResponse: 包含重算后的完整报告
+        RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
         
     Raises:
         HTTPException(400): 参数验证失败
         HTTPException(500): 报告生成失败
     
-    工作流程:
+    工作流程（当前实现）:
         1. 验证请求参数
-        2. 转换坐标格式（dict -> numpy.ndarray）
-        3. 调用 calculate_measurements() 计算测量值
-        4. 调用 generate_standard_output() 生成报告
-        5. 返回完整报告
-    """
-    from pipelines.ceph.utils.ceph_report import calculate_measurements
-    from pipelines.ceph.utils.ceph_report_json import generate_standard_output
-    import numpy as np
+        2. 暂时直接返回 data（不做处理）
+        3. 后续实现：提取"因"字段，重新计算"果"字段
     
+    注意:
+        - 当前暂时直接返回，因为需要所有推理模块的后处理写完才能集成
+        - 输入是推理的格式，输出返回的也是推理的格式，所以直接返回就是正确的格式
+    """
     logger.info(f"[Ceph Recalculate] Request received: taskId={request.taskId}")
     
     try:
-        # 1. 转换坐标格式（dict -> numpy.ndarray）
-        landmarks = {
-            label: np.array([coord['x'], coord['y']]) 
-            for label, coord in request.landmarks.items()
-        }
+        # 1. 校验 taskId（schema 已校验 UUID 格式，这里再次确认）
+        if not request.taskId:
+            raise ValueError("taskId is required")
         
-        logger.info(f"[Ceph Recalculate] Converted {len(landmarks)} landmarks: taskId={request.taskId}")
+        # 2. 校验 data 不为空
+        if not request.data:
+            raise ValueError("data is required and cannot be empty")
         
-        # 2. 计算测量值
-        measurements = calculate_measurements(landmarks)
+        # 3. 校验 patientInfo（侧位片必填，schema 已校验，这里再次确认）
+        if not request.patientInfo:
+            raise ValueError("patientInfo is required for cephalometric recalculation")
         
-        logger.info(f"[Ceph Recalculate] Calculated measurements: taskId={request.taskId}")
+        # 4. 校验 Gender（schema 已校验，这里再次确认）
+        gender = request.patientInfo.gender
+        if gender not in ["Male", "Female"]:
+            raise ValueError(f"patientInfo.gender must be 'Male' or 'Female', got '{gender}'")
         
-        # 3. 构造 inference_results
-        inference_results = {
-            "landmarks": {
-                "coordinates": landmarks,
-                "confidences": {k: 1.0 for k in landmarks.keys()}  # 手动编辑视为高置信度
-            },
-            "measurements": measurements
-        }
+        # 5. 校验 DentalAgeStage（schema 已校验，这里再次确认）
+        dental_age_stage = request.patientInfo.DentalAgeStage
+        if dental_age_stage not in ["Permanent", "Mixed"]:
+            raise ValueError(f"patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'")
         
-        # 4. 生成报告
-        report = generate_standard_output(
-            inference_results=inference_results,
-            patient_info=request.patientInfo.model_dump()
-        )
+        logger.info(f"[Ceph Recalculate] Validation passed: taskId={request.taskId}, gender={gender}, dentalAgeStage={dental_age_stage}")
         
-        logger.info(f"[Ceph Recalculate] Report generated successfully: taskId={request.taskId}")
+        # TODO: 后续实现重算逻辑
+        # 6. 从 request.data 中提取"因"字段（关键点坐标、颈椎分割等）
+        # 7. 重新计算"果"字段（所有测量值、测量值Level等）
+        # 8. 返回完整的侧位片报告
         
-        # 返回结果
+        # 当前实现：直接返回 data（因为输入输出格式一致）
+        logger.info(f"[Ceph Recalculate] Directly returning data (recalculation logic to be implemented): taskId={request.taskId}")
+        
         return RecalculateResponse(
             taskId=request.taskId,
             status="SUCCESS",
             timestamp=datetime.now(timezone.utc).isoformat(),
-            data=report,
+            metadata=None,  # 接口定义中 metadata 可选
+            data=request.data,  # 直接返回，格式与推理接口一致
             error=None
         )
     
+    except ValueError as e:
+        # 参数验证错误，返回 400
+        logger.warning(f"[Ceph Recalculate] Validation failed: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10010,
+                message="Ceph recalculation validation failed",
+                detail=str(e)
+            ).model_dump()
+        )
     except Exception as e:
         logger.error(f"[Ceph Recalculate] Failed: {e}", exc_info=True)
         raise HTTPException(
