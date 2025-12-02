@@ -12,11 +12,16 @@ import time
 from flask import Flask, request
 from datetime import datetime
 
-# ==================== 配置 ====================
-API_URL = "http://192.168.1.17:18000/api/v1/analyze"
-CALLBACK_PORT = 5556
-CALLBACK_URL = f"http://192.168.1.27:5556/callback"
-TEST_IMAGE_PATH = "D:/硕士文档/个人/证件照/头像.jpg"
+# ==================== 配置（支持环境变量覆盖） ====================
+API_HOST = os.getenv('API_HOST', 'localhost')
+API_PORT = os.getenv('API_PORT', '18000')
+API_URL = os.getenv('API_URL', f"http://{API_HOST}:{API_PORT}/api/v1/analyze")
+
+CALLBACK_HOST = os.getenv('CALLBACK_HOST', 'localhost')
+CALLBACK_PORT = int(os.getenv('CALLBACK_PORT', '5556'))
+CALLBACK_URL = os.getenv('CALLBACK_URL', f"http://{CALLBACK_HOST}:{CALLBACK_PORT}/callback")
+
+TEST_IMAGE_PATH = os.getenv('TEST_IMAGE_PATH', "./test_image.jpg")
 # ============================================
 
 # ==================== 回调服务器 ====================
@@ -203,8 +208,8 @@ except requests.exceptions.ConnectionError as e:
     print(f"  3. 网络不通")
     print(f"\n排查步骤:")
     print(f"  1. 确认服务器上 API 是否运行: docker ps | grep xray_api")
-    print(f"  2. 确认端口是否对外开放: telnet 192.168.1.17 18000")
-    print(f"  3. 尝试访问健康检查: curl http://192.168.1.17:18000/health")
+    print(f"  2. 确认端口是否对外开放: telnet {API_HOST} {API_PORT}")
+    print(f"  3. 尝试访问健康检查: curl http://{API_HOST}:{API_PORT}/health")
 
 except requests.exceptions.Timeout as e:
     print(f"\n❌ 请求超时!")

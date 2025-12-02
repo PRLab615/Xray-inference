@@ -8,13 +8,20 @@ from pipelines.base_pipeline import BasePipeline
 from pipelines.pano.utils import pano_report_utils
 from tools.timer import timer
 import logging
+import cv2
+import numpy as np
 
-# 导入五个模块的预测器
+# 导入原有五个模块的预测器
 from pipelines.pano.modules.condyle_seg import JointPredictor as CondyleSegPredictor
 from pipelines.pano.modules.condyle_detection import JointPredictor as CondyleDetPredictor
 from pipelines.pano.modules.mandible_seg import MandiblePredictor
 from pipelines.pano.modules.implant_detect import ImplantDetectionModule
 from pipelines.pano.modules.teeth_seg import TeethSegmentationModule, process_teeth_results
+
+# 导入重构后的上颌窦模块预测器
+# 假设您已经按照建议重构了这两个文件，分别只负责分割和分类
+from pipelines.pano.modules.sinus_seg.sinus_seg_predictor import SinusSegPredictor
+from pipelines.pano.modules.sinus_class.sinus_class_predictor import SinusClassPredictor
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +31,10 @@ class PanoPipeline(BasePipeline):
     全景片推理管道
     
     负责协调各个子模块完成全景片的完整分析流程，并生成符合规范的 JSON 输出。
-    子模块包括：牙齿分割、骨密度分析、关节检测等。
-    
-    架构设计（v3.2）：
-        - 在初始化时，一次性加载所有 enabled 的模块
-        - 支持多模块并存（teeth_seg, bone_density, joint 等）
-        - 通过 modules 参数接收配置（从 config.yaml 传入）
+    架构设计（v3.5）：
+        - 支持多模块并存（teeth, mandible, condyle, implant, sinus）
+        - 上颌窦分析流程：分割(sinus_seg) -> 裁剪ROI -> 分类(sinus_class)
+        - 所有模块配置通过 config 传入，避免硬编码
     """
     
     def __init__(self, *, modules: dict = None):
@@ -55,7 +60,7 @@ class PanoPipeline(BasePipeline):
         self.modules = {}  # 存储所有已初始化的模块实例
         self._modules_config = modules or {}
         
-        # 初始化五个核心模块
+        # 初始化所有模块
         logger.info("Initializing Pano Pipeline modules...")
         self._initialize_modules()
         logger.info("PanoPipeline initialized successfully")
@@ -104,6 +109,16 @@ class PanoPipeline(BasePipeline):
             teeth_cfg = self._get_module_config('teeth_seg')
             self.modules['teeth_seg'] = TeethSegmentationModule(**teeth_cfg)
             logger.info("  ✓ Teeth Segmentation module loaded")
+            
+            # 6. 上颌窦分割模块 (sinus_seg)
+            sinus_seg_cfg = self._get_module_config('sinus_seg')
+            self.modules['sinus_seg'] = SinusSegPredictor(**sinus_seg_cfg)
+            logger.info("  ✓ Sinus Segmentation module loaded")
+            
+            # 7. 上颌窦分类模块 (sinus_class)
+            sinus_class_cfg = self._get_module_config('sinus_class')
+            self.modules['sinus_class'] = SinusClassPredictor(**sinus_class_cfg)
+            logger.info("  ✓ Sinus Classification module loaded")
             
         except Exception as e:
             logger.error(f"Failed to initialize some modules: {e}")
@@ -159,6 +174,9 @@ class PanoPipeline(BasePipeline):
             # 2.5 牙齿分割
             teeth_results = self._run_teeth_seg(image_path)
             
+            # 2.6 上颌窦分析 (分割 + 分类)
+            sinus_results = self._run_sinus_workflow(image_path)
+            
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
@@ -172,6 +190,7 @@ class PanoPipeline(BasePipeline):
         logger.debug(f"[Pipeline] mandible_results keys: {list(mandible_results.keys()) if mandible_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] implant_results keys: {list(implant_results.keys()) if implant_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] teeth_results keys: {list(teeth_results.keys()) if teeth_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] sinus_results keys: {list(sinus_results.keys()) if sinus_results else 'EMPTY'}")
         
         # 如果检测模块有结果，打印详细信息
         if condyle_det_results:
@@ -183,9 +202,10 @@ class PanoPipeline(BasePipeline):
             condyle_det=condyle_det_results,
             mandible=mandible_results,
             implant=implant_results,
-            teeth=teeth_results
+            teeth=teeth_results,
+            sinus=sinus_results  # 加入上颌窦结果
         )
-        logger.info(f"Results collected: condyle_seg={bool(condyle_seg_results)}, condyle_det={bool(condyle_det_results)}, mandible={bool(mandible_results)}, implant={bool(implant_results)}, teeth={bool(teeth_results)}")
+        logger.info(f"Results collected successfully. Modules: {list(inference_results.keys())}")
         
         # 4. 生成符合规范的 JSON
         logger.info("Generating standard output...")
@@ -196,13 +216,13 @@ class PanoPipeline(BasePipeline):
             "AnalysisTime": ""  # 由 pano_report_utils 自动生成
         }
         
-        # 报告生成埋点
+        # 报告生成
         with timer.record("report.generation"):
             data_dict = pano_report_utils.generate_standard_output(metadata, inference_results)
         
         # 保存计时报告
         timer.print_report()
-        timer.save_report()  # 使用配置中的路径
+        timer.save_report()
         
         self._log_step("全景片推理完成", f"data keys: {list(data_dict.keys())}")
         logger.info("Pano pipeline run completed successfully")
@@ -384,6 +404,112 @@ class PanoPipeline(BasePipeline):
             logger.error(traceback.format_exc())
             return {}
     
+    def _run_sinus_workflow(self, image_path: str) -> dict:
+        """
+        执行上颌窦分析工作流：
+        1. 分割 (Sinus Seg): 获取 mask
+        2. 逻辑处理: 连通域分析、左右侧判定、ROI 裁剪
+        3. 分类 (Sinus Class): 对 ROI 进行炎症判断
+        
+        Args:
+            image_path: 图像路径
+            
+        Returns:
+            dict: 包含结果列表和 mask 信息
+        """
+        self._log_step("上颌窦分析", "分割(sinus_seg) + 分类(sinus_class)")
+        
+        try:
+            import time
+            start_time = time.time()
+            
+            # 1. 准备图片
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            h, w = image.shape[:2]
+            
+            # 2. 分割 (Sinus Seg)
+            # 调用分割模块，获取全图 Mask
+            logger.info("Running Sinus Segmentation...")
+            seg_res = self.modules['sinus_seg'].predict(image)
+            mask_full = seg_res.get('mask')  # 预期 Seg 模块返回 {'mask': np.array}
+            
+            if mask_full is None:
+                logger.warning("Sinus segmentation returned no mask.")
+                return {}
+            
+            # 3. 连通域分析 (获取左右侧 ROI)
+            # 使用 8 连通性
+            num, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
+            
+            results_list = []
+            masks_info = []
+            
+            logger.info(f"Found {num - 1} sinus components.")
+            
+            for i in range(1, num):
+                # 过滤小面积噪点
+                if stats[i, cv2.CC_STAT_AREA] < 500: continue
+                
+                # 获取位置信息
+                x, y, sw, sh = stats[i][:4]
+                cx = centroids[i][0]
+                # 判定左右侧：图像左侧 = 患者右侧
+                location = "Right" if cx < (w / 2) else "Left"
+                side_lower = location.lower()
+                
+                # 裁剪 ROI (加 Padding)
+                pad = 30
+                x1, y1 = max(0, x - pad), max(0, y - pad)
+                x2, y2 = min(w, x + sw + pad), min(h, y + sh + pad)
+                
+                crop = image[y1:y2, x1:x2]
+                
+                # 4. 分类 (Sinus Class)
+                is_inflam = False
+                conf = 0.0
+                
+                if crop.size > 0:
+                    logger.info(f"Classifying {location} sinus ROI...")
+                    # 调用分类模块，传入 Crop 图片
+                    cls_res = self.modules['sinus_class'].predict(crop)
+                    is_inflam = cls_res.get('is_inflam', False)
+                    conf = cls_res.get('confidence', 0.0)
+                else:
+                    logger.warning(f"Invalid crop for {location} sinus.")
+                
+                # 5. 构造结果
+                cn_side = "左" if side_lower == 'left' else "右"
+                detail = f"{cn_side}上颌窦" + ("可见炎症影像，建议复查。" if is_inflam else "气化良好。")
+                
+                results_list.append({
+                    "Side": side_lower,
+                    "Pneumatization": 0,  # 暂时不开启气化判断
+                    "TypeClassification": 0,
+                    "Inflammation": is_inflam,
+                    "RootEntryToothFDI": [],
+                    "Detail": detail,
+                    "Confidence_Pneumatization": 0.99,
+                    "Confidence_Inflammation": float(f"{conf:.2f}")
+                })
+                
+                masks_info.append({
+                    "label": f"sinus_{side_lower}",
+                    "bbox": [int(x), int(y), int(sw), int(sh)]
+                })
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Sinus workflow completed in {elapsed:.2f}s")
+            
+            return {"MaxillarySinus": results_list, "masks_info": masks_info}
+            
+        except Exception as e:
+            logger.error(f"Sinus workflow failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
     def _collect_results(self, **module_results) -> dict:
         """
         收集所有子模块的推理结果
@@ -395,6 +521,7 @@ class PanoPipeline(BasePipeline):
                 - mandible: 下颌骨分割结果
                 - implant: 种植体检测结果
                 - teeth: 牙齿分割结果
+                - sinus: 上颌窦分析结果
             
         Returns:
             dict: 汇总的推理结果
@@ -405,7 +532,8 @@ class PanoPipeline(BasePipeline):
                 "condyle_det": {...},
                 "mandible": {...},
                 "implant": {...},
-                "teeth": {...}
+                "teeth": {...},
+                "sinus": {...}
             }
             
         Note:
@@ -420,6 +548,7 @@ class PanoPipeline(BasePipeline):
             "mandible": module_results.get("mandible", {}),
             "implant": module_results.get("implant", {}),
             "teeth": module_results.get("teeth", {}),
+            "sinus": module_results.get("sinus", {}),  # 收集上颌窦结果
         }
         
         return inference_results
