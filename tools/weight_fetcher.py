@@ -21,7 +21,7 @@ try:
 except Exception:  # pragma: no cover - 某些环境可能没有 torch
     torch = None  # type: ignore
 
-S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://192.168.1.17:19000')
+S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://localhost:19000')
 S3_ACCESS_KEY = os.getenv('S3_ACCESS_KEY', 'root')
 S3_SECRET_KEY = os.getenv('S3_SECRET_KEY', 'Sitonholy@2023')
 S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'teeth')
