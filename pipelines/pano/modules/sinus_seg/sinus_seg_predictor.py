@@ -7,7 +7,7 @@ import numpy as np
 import onnxruntime as ort
 
 sys.path.append(os.getcwd())
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
+from tools.weight_fetcher import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
 
 logger = logging.getLogger(__name__)
 
