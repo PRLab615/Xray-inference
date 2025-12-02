@@ -185,7 +185,7 @@ def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
     
     return processed_results
 
-
+""" 
 if __name__ == "__main__":
     # 示例使用
     sample_image_path = '/app/code/x/r.png'  # 修改为实际路径
@@ -214,3 +214,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}")
         logger.error(f"Main error: {e}")
+"""
