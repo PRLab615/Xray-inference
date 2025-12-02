@@ -432,7 +432,8 @@ class PanoPipeline(BasePipeline):
             # 2. 分割 (Sinus Seg)
             # 调用分割模块，获取全图 Mask
             logger.info("Running Sinus Segmentation...")
-            seg_res = self.modules['sinus_seg'].predict(image)
+            with timer.record("sinus_seg.inference"):
+                seg_res = self.modules['sinus_seg'].predict(image)
             mask_full = seg_res.get('mask')  # 预期 Seg 模块返回 {'mask': np.array}
             
             if mask_full is None:
@@ -441,63 +442,65 @@ class PanoPipeline(BasePipeline):
             
             # 3. 连通域分析 (获取左右侧 ROI)
             # 使用 8 连通性
-            num, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
-            
-            results_list = []
-            masks_info = []
-            
-            logger.info(f"Found {num - 1} sinus components.")
-            
-            for i in range(1, num):
-                # 过滤小面积噪点
-                if stats[i, cv2.CC_STAT_AREA] < 500: continue
+            with timer.record("sinus_seg.analysis"):
+                num, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
                 
-                # 获取位置信息
-                x, y, sw, sh = stats[i][:4]
-                cx = centroids[i][0]
-                # 判定左右侧：图像左侧 = 患者右侧
-                location = "Right" if cx < (w / 2) else "Left"
-                side_lower = location.lower()
+                results_list = []
+                masks_info = []
                 
-                # 裁剪 ROI (加 Padding)
-                pad = 30
-                x1, y1 = max(0, x - pad), max(0, y - pad)
-                x2, y2 = min(w, x + sw + pad), min(h, y + sh + pad)
+                logger.info(f"Found {num - 1} sinus components.")
                 
-                crop = image[y1:y2, x1:x2]
-                
-                # 4. 分类 (Sinus Class)
-                is_inflam = False
-                conf = 0.0
-                
-                if crop.size > 0:
-                    logger.info(f"Classifying {location} sinus ROI...")
-                    # 调用分类模块，传入 Crop 图片
-                    cls_res = self.modules['sinus_class'].predict(crop)
-                    is_inflam = cls_res.get('is_inflam', False)
-                    conf = cls_res.get('confidence', 0.0)
-                else:
-                    logger.warning(f"Invalid crop for {location} sinus.")
-                
-                # 5. 构造结果
-                cn_side = "左" if side_lower == 'left' else "右"
-                detail = f"{cn_side}上颌窦" + ("可见炎症影像，建议复查。" if is_inflam else "气化良好。")
-                
-                results_list.append({
-                    "Side": side_lower,
-                    "Pneumatization": 0,  # 暂时不开启气化判断
-                    "TypeClassification": 0,
-                    "Inflammation": is_inflam,
-                    "RootEntryToothFDI": [],
-                    "Detail": detail,
-                    "Confidence_Pneumatization": 0.99,
-                    "Confidence_Inflammation": float(f"{conf:.2f}")
-                })
-                
-                masks_info.append({
-                    "label": f"sinus_{side_lower}",
-                    "bbox": [int(x), int(y), int(sw), int(sh)]
-                })
+                for i in range(1, num):
+                    # 过滤小面积噪点
+                    if stats[i, cv2.CC_STAT_AREA] < 500: continue
+                    
+                    # 获取位置信息
+                    x, y, sw, sh = stats[i][:4]
+                    cx = centroids[i][0]
+                    # 判定左右侧：图像左侧 = 患者右侧
+                    location = "Right" if cx < (w / 2) else "Left"
+                    side_lower = location.lower()
+                    
+                    # 裁剪 ROI (加 Padding)
+                    pad = 30
+                    x1, y1 = max(0, x - pad), max(0, y - pad)
+                    x2, y2 = min(w, x + sw + pad), min(h, y + sh + pad)
+                    
+                    crop = image[y1:y2, x1:x2]
+                    
+                    # 4. 分类 (Sinus Class)
+                    is_inflam = False
+                    conf = 0.0
+                    
+                    if crop.size > 0:
+                        logger.info(f"Classifying {location} sinus ROI...")
+                        # 调用分类模块，传入 Crop 图片
+                        with timer.record("sinus_class.inference"):
+                            cls_res = self.modules['sinus_class'].predict(crop)
+                        is_inflam = cls_res.get('is_inflam', False)
+                        conf = cls_res.get('confidence', 0.0)
+                    else:
+                        logger.warning(f"Invalid crop for {location} sinus.")
+                    
+                    # 5. 构造结果
+                    cn_side = "左" if side_lower == 'left' else "右"
+                    detail = f"{cn_side}上颌窦" + ("可见炎症影像，建议复查。" if is_inflam else "气化良好。")
+                    
+                    results_list.append({
+                        "Side": side_lower,
+                        "Pneumatization": 0,  # 暂时不开启气化判断
+                        "TypeClassification": 0,
+                        "Inflammation": is_inflam,
+                        "RootEntryToothFDI": [],
+                        "Detail": detail,
+                        "Confidence_Pneumatization": 0.99,
+                        "Confidence_Inflammation": float(f"{conf:.2f}")
+                    })
+                    
+                    masks_info.append({
+                        "label": f"sinus_{side_lower}",
+                        "bbox": [int(x), int(y), int(sw), int(sh)]
+                    })
             
             elapsed = time.time() - start_time
             logger.info(f"Sinus workflow completed in {elapsed:.2f}s")
