@@ -32,12 +32,16 @@ const appState = {
     layerVisibility: {}        // 图层显示状态 {layerKey: true/false}
 };
 
+// 动态获取当前主机名，支持在任意 IP 的机器上运行
+const CURRENT_HOST = window.location.hostname || 'localhost';
+
 // 全局配置常量
 const CONFIG = {
-    AI_BACKEND_SYNC_URL: 'http://192.168.1.17:18000/api/v1/analyze',      // 同步/伪同步接口
-    AI_BACKEND_ASYNC_URL: 'http://192.168.1.17:18000/api/v1/analyze_async', // 纯异步接口
-    FLASK_UPLOAD_URL: 'http://192.168.1.17:5000/upload',  // Flask 服务器上传接口
-    CALLBACK_URL: 'http://192.168.1.17:5000/callback',
+    // 动态构建 API 地址，使用当前访问的主机名
+    AI_BACKEND_SYNC_URL: `http://${CURRENT_HOST}:18000/api/v1/analyze`,      // 同步/伪同步接口
+    AI_BACKEND_ASYNC_URL: `http://${CURRENT_HOST}:18000/api/v1/analyze_async`, // 纯异步接口
+    FLASK_UPLOAD_URL: `http://${CURRENT_HOST}:5000/upload`,  // Flask 服务器上传接口
+    CALLBACK_URL: `http://${CURRENT_HOST}:5000/callback`,
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000       // 6分钟
 };
