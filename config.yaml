@@ -97,6 +97,14 @@ pipelines:
         description: "上颌窦炎症分类模块（ResNet18 ONNX）"
         weights_key: "weights/panoramic/sinus_inflam_classifier_resnet18.onnx"
         weights_force_download: false
+
+      rootTipDensity_detect:
+        description: "根尖低密度影检测模块（YOLOv11）"
+        weights_key: "weights/panoramic/rootTipDensity_12_2.onnx"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
   
   cephalometric:
     preload: true                # Worker 启动时即初始化侧位片 Pipeline
