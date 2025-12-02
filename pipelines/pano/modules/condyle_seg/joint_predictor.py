@@ -27,6 +27,7 @@ if project_root not in sys.path:
 
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 
 # 引用前处理 (负责算数)
 try:
@@ -189,23 +190,25 @@ class JointPredictor:
 
         logger.info(">>> [2/3] Running Inference...")
 
-        # --- 语法错误修正：try 后面加上冒号 : ---
         try:
-            # 1. 前处理
-            input_tensor = self.pre_post.preprocess(image)
-            logger.info(f"[predict] input_tensor shape: {input_tensor.shape}")
+            # 1. 前处理 (Pre-processing)
+            with timer.record("condyle_seg.pre"):
+                input_tensor = self.pre_post.preprocess(image)
+                logger.info(f"[predict] input_tensor shape: {input_tensor.shape}")
 
-            # 2. ONNX 推理
-            # 将 PyTorch tensor 转换为 numpy (ONNX Runtime 需要 numpy)
-            input_numpy = input_tensor.cpu().numpy()
-            logger.info(f"[predict] Running ONNX inference with input shape: {input_numpy.shape}")
-            
-            # 执行推理
-            onnx_outputs = self.session.run(None, {self.input_name: input_numpy})
-            logger.info(f"[predict] ONNX output count: {len(onnx_outputs)}, first output shape: {onnx_outputs[0].shape}")
+            # 2. ONNX 推理 (Inference)
+            with timer.record("condyle_seg.inference"):
+                # 将 PyTorch tensor 转换为 numpy (ONNX Runtime 需要 numpy)
+                input_numpy = input_tensor.cpu().numpy()
+                logger.info(f"[predict] Running ONNX inference with input shape: {input_numpy.shape}")
+                
+                # 执行推理
+                onnx_outputs = self.session.run(None, {self.input_name: input_numpy})
+                logger.info(f"[predict] ONNX output count: {len(onnx_outputs)}, first output shape: {onnx_outputs[0].shape}")
 
-            # 3. 后处理 (得到纯净的几何数据 raw_features 和 analysis)
-            raw_results = self.pre_post.postprocess(onnx_outputs[0])
+            # 3. 后处理 (Post-processing)
+            with timer.record("condyle_seg.post"):
+                raw_results = self.pre_post.postprocess(onnx_outputs[0])
 
             return raw_results
 

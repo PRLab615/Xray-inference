@@ -85,13 +85,26 @@ def generate_standard_output(
         "ToothAnalysis": []  # 部分真实：从 teeth 模块填充（但 Properties 为 mock）
     }
 
-    # 2. 组装 AnatomyResults (髁突分割掩码) - 真实数据
+    # 2. 组装 AnatomyResults (髁突和下颌分支分割掩码) - 真实数据
+    anatomy_results_list = []
+    
+    # 2.1 添加髁突分割结果
     logger.info(f"[generate_standard_output] condyle_seg exists: {bool(condyle_seg)}")
     if condyle_seg:
-        logger.info(f"[generate_standard_output] Calling format_anatomy_results...")
-        anatomy_data = format_anatomy_results(condyle_seg)
-        logger.info(f"[generate_standard_output] AnatomyResults count: {len(anatomy_data)}")
-        report["AnatomyResults"] = anatomy_data
+        logger.info(f"[generate_standard_output] Calling format_anatomy_results for condyle...")
+        condyle_anatomy_data = format_anatomy_results(condyle_seg)
+        logger.info(f"[generate_standard_output] Condyle AnatomyResults count: {len(condyle_anatomy_data)}")
+        anatomy_results_list.extend(condyle_anatomy_data)
+    
+    # 2.2 添加下颌分支分割结果
+    logger.info(f"[generate_standard_output] mandible_res exists: {bool(mandible_res)}")
+    if mandible_res:
+        logger.info(f"[generate_standard_output] Calling format_mandible_anatomy_results...")
+        mandible_anatomy_data = format_mandible_anatomy_results(mandible_res)
+        logger.info(f"[generate_standard_output] Mandible AnatomyResults count: {len(mandible_anatomy_data)}")
+        anatomy_results_list.extend(mandible_anatomy_data)
+    
+    report["AnatomyResults"] = anatomy_results_list
 
     # 3. 组装髁突部分 (CondyleAssessment) - 真实数据
     
@@ -171,7 +184,6 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "Confidence": round(seg_left.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": "condyle_left",
                 "Coordinates": left_contour if left_contour else [],
                 "SerializedMask": left_rle
             }
@@ -188,7 +200,65 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "Confidence": round(seg_right.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": "condyle_right",
+                "Coordinates": right_contour if right_contour else [],
+                "SerializedMask": right_rle
+            }
+        })
+    
+    return anatomy_results
+
+
+def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
+    """
+    格式化 AnatomyResults（解剖结构分割掩码）- 下颌分支部分
+    
+    Args:
+        mandible_seg: 下颌骨分割结果 {raw_features: {left: {...}, right: {...}}, ...}
+    
+    Returns:
+        list: AnatomyResults 列表，包含 mandible_left 和 mandible_right
+    """
+    anatomy_results = []
+    
+    # 调试日志
+    logger.info(f"[format_mandible_anatomy_results] mandible_seg keys: {list(mandible_seg.keys()) if mandible_seg else 'EMPTY'}")
+    
+    seg_features = mandible_seg.get("raw_features", {})
+    logger.info(f"[format_mandible_anatomy_results] seg_features keys: {list(seg_features.keys()) if seg_features else 'EMPTY'}")
+    
+    seg_left = seg_features.get("left", {})
+    seg_right = seg_features.get("right", {})
+    
+    logger.info(f"[format_mandible_anatomy_results] seg_left exists: {seg_left.get('exists', False)}, keys: {list(seg_left.keys())}")
+    logger.info(f"[format_mandible_anatomy_results] seg_right exists: {seg_right.get('exists', False)}, keys: {list(seg_right.keys())}")
+    
+    # 左侧下颌分支
+    if seg_left.get("exists", False):
+        left_mask = seg_left.get("mask", None)
+        left_contour = seg_left.get("contour", [])
+        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
+        
+        anatomy_results.append({
+            "Label": "mandible_left",
+            "Confidence": round(seg_left.get("confidence", 0.0), 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Coordinates": left_contour if left_contour else [],
+                "SerializedMask": left_rle
+            }
+        })
+    
+    # 右侧下颌分支
+    if seg_right.get("exists", False):
+        right_mask = seg_right.get("mask", None)
+        right_contour = seg_right.get("contour", [])
+        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
+        
+        anatomy_results.append({
+            "Label": "mandible_right",
+            "Confidence": round(seg_right.get("confidence", 0.0), 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
                 "Coordinates": right_contour if right_contour else [],
                 "SerializedMask": right_rle
             }
@@ -360,7 +430,8 @@ def format_teeth_report(teeth_results: dict) -> dict:
             'wisdom_teeth': [...],
             'deciduous_teeth': [...],
             'detected_teeth': [{'fdi': str, 'class_name': str, 'mask_index': int}, ...],
-            'raw_masks': np.ndarray,  # [N, H, W]
+            'raw_masks': np.ndarray,  # [N, H, W] (已经是原始图像尺寸)
+            'segments': np.ndarray,  # [N, num_points, 2] 多边形坐标（原始图像坐标）
             'original_shape': tuple  # (H, W)
         }
     
@@ -372,6 +443,7 @@ def format_teeth_report(teeth_results: dict) -> dict:
     deciduous_teeth_raw = teeth_results.get("deciduous_teeth", [])
     detected_teeth_list = teeth_results.get("detected_teeth", [])
     raw_masks = teeth_results.get("raw_masks", None)
+    segments = teeth_results.get("segments", None)  # 直接从YOLO获取的多边形坐标
     original_shape = teeth_results.get("original_shape", None)
     
     # 1. 格式化 MissingTeeth
@@ -423,6 +495,7 @@ def format_teeth_report(teeth_results: dict) -> dict:
         mask_index = tooth_info.get("mask_index", -1)
         
         if not fdi:
+            logger.warning(f"[format_teeth_report] 牙齿信息缺少FDI，跳过: {tooth_info}")
             continue
         
         # 构建属性列表
@@ -444,15 +517,53 @@ def format_teeth_report(teeth_results: dict) -> dict:
                 "Confidence": 0.85
             })
         
-        # 提取 mask 的轮廓坐标
+        # 提取轮廓坐标：使用YOLO直接输出的segments（格式: [N, num_points, 2]）
+        # 目标格式: [[x, y], [x, y], ...] 符合前端期望和规范
         coordinates = []
         serialized_mask = ""
         
-        if raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
-            coordinates, serialized_mask = _extract_mask_contour(
+        import numpy as np
+        
+        # 使用segments（直接从YOLO输出获取，已经是原始图像坐标）
+        # segments可能是numpy数组 [N, num_points, 2] 或列表 [[poly1], [poly2], ...]
+        if segments is not None and mask_index >= 0 and mask_index < len(segments):
+            segment_coords = segments[mask_index]  # 可能是 [num_points, 2] 数组或列表
+            
+            if segment_coords is not None and len(segment_coords) > 0:
+                # 转换为列表格式: [[x, y], [x, y], ...]
+                if isinstance(segment_coords, np.ndarray):
+                    coordinates = segment_coords.tolist()
+                else:
+                    coordinates = segment_coords
+                
+                # 确保格式正确：每个元素是 [x, y]
+                if coordinates and len(coordinates) > 0:
+                    # 验证第一个点的格式
+                    if not isinstance(coordinates[0], (list, tuple)):
+                        logger.error(f"Tooth {fdi}: Invalid segments format, expected [[x,y],...], got {type(coordinates[0])}")
+                        coordinates = []
+                    else:
+                        # 确保所有点都是 [x, y] 格式（浮点数）
+                        coordinates = [[float(pt[0]), float(pt[1])] for pt in coordinates if len(pt) >= 2]
+                
+                # 生成RLE编码
+                if raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
+                    serialized_mask = _mask_to_rle_fast(raw_masks[mask_index])
+        
+        # 如果segments不可用，从mask提取轮廓（这是正确的做法）
+        if not coordinates and raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
+            coordinates, serialized_mask = _extract_mask_contour_fallback(
                 raw_masks[mask_index],
                 original_shape
             )
+        elif not coordinates:
+            logger.warning(f"[format_teeth_report] 牙齿 {fdi}: 无法提取坐标 - segments不可用且raw_masks也不可用或mask_index无效")
+        
+        # 最终验证
+        if not coordinates:
+            logger.error(f"[format_teeth_report] 牙齿 {fdi}: 未能提取坐标，SegmentationMask.Coordinates 将为空")
+        else:
+            logger.debug(f"[format_teeth_report] 牙齿 {fdi}: 提取 {len(coordinates)} 个坐标点")
         
         # 构建 ToothAnalysis 项
         tooth_analysis.append({
@@ -460,7 +571,6 @@ def format_teeth_report(teeth_results: dict) -> dict:
             "Confidence": 0.85,  # Mock: 需要从模型输出获取实际置信度
             "SegmentationMask": {
                 "Type": "Polygon",
-                "Label": f"tooth-{fdi}",
                 "Coordinates": coordinates,
                 "SerializedMask": serialized_mask
             },
@@ -479,6 +589,19 @@ def _extract_fdi_from_text(text: str) -> str:
     import re
     match = re.search(r'tooth-(\d+)', text)
     return match.group(1) if match else ""
+
+
+def _mask_to_rle_fast(mask):
+    """
+    快速RLE编码（用于segments已存在的情况，只需要编码mask）
+    
+    Args:
+        mask: [H, W] numpy array (binary mask, 0-1 normalized 或 uint8)
+    
+    Returns:
+        str: RLE 编码字符串
+    """
+    return _mask_to_rle(mask)
 
 
 def _mask_to_rle(mask):
@@ -531,18 +654,21 @@ def _mask_to_rle(mask):
         return ""
 
 
-def _extract_mask_contour(mask, original_shape):
+def _extract_mask_contour_fallback(mask, original_shape):
     """
-    从 YOLO 输出的 mask 中提取轮廓坐标
+    从 YOLO 输出的 mask 中提取轮廓坐标（降级方案，仅在segments不可用时使用）
+    
+    注意：YOLO的masks已经是原始图像尺寸，不需要resize。
+    此函数仅作为segments不可用时的降级方案。
     
     Args:
-        mask: [H, W] numpy array (binary mask, 0-1 normalized)
-        original_shape: (H, W) 原始图像尺寸
+        mask: [H, W] numpy array (binary mask, 0-1 normalized，已经是原始图像尺寸)
+        original_shape: (H, W) 原始图像尺寸（用于验证，实际不需要resize）
     
     Returns:
         tuple: (coordinates, serialized_mask)
             - coordinates: [[x, y], ...] 轮廓坐标列表
-            - serialized_mask: RLE 编码字符串（暂时为空）
+            - serialized_mask: RLE 编码字符串
     """
     import cv2
     import numpy as np
@@ -555,8 +681,13 @@ def _extract_mask_contour(mask, original_shape):
         else:
             binary_mask = mask
         
-        # 2. 如果 mask 尺寸与原始图像不同，需要 resize（YOLO可能输出不同尺寸）
+        # 2. 如果 mask 尺寸与原始图像不同，需要 resize
+        # 虽然YOLO的masks通常是原始图像尺寸，但如果确实不匹配，必须resize以确保坐标正确
         if binary_mask.shape != original_shape:
+            logger.warning(
+                f"Mask shape {binary_mask.shape} != original_shape {original_shape}. "
+                f"Resizing mask to match original image size."
+            )
             binary_mask = cv2.resize(
                 binary_mask, 
                 (original_shape[1], original_shape[0]),  # (W, H)
@@ -640,24 +771,22 @@ def _get_maxillary_sinus_mock() -> List[dict]:
         {
             "Side": "left",
             "Pneumatization": 0,  # 0=正常, 1=轻度气化, 2=过度气化
-            "TypeClassification": "I",
+            "TypeClassification": 0,  # 0, 1 数字类型
             "Inflammation": False,
             "RootEntryToothFDI": [],
             "Detail": "左上颌窦气化正常（待检测）",
             "Confidence_Pneumatization": 0.0,
-            "Confidence_Inflammation": 0.0,
-            "_mock": True
+            "Confidence_Inflammation": 0.0
         },
         {
             "Side": "right",
             "Pneumatization": 0,
-            "TypeClassification": "I",
+            "TypeClassification": 0,
             "Inflammation": False,
             "RootEntryToothFDI": [],
             "Detail": "右上颌窦气化正常（待检测）",
             "Confidence_Pneumatization": 0.0,
-            "Confidence_Inflammation": 0.0,
-            "_mock": True
+            "Confidence_Inflammation": 0.0
         }
     ]
 
@@ -665,20 +794,11 @@ def _get_maxillary_sinus_mock() -> List[dict]:
 def _get_periodontal_mock() -> dict:
     """Mock: PeriodontalCondition - 无模型支持"""
     return {
-        "_mock": True,  # Mock标记
-        "Up_CEJ_to_ABC_Distance_mm": 0.0,
         "BoneAbsorptionLevel": 0,
         "Detail": "未检测（需专门牙周模型）",
-        "AbsorptionRatio": 0.0,
         "Confidence": 0.0,
-        "Lower_CEJ_to_ABC_Distance_mm": 0.0,
-        "SpecificAbsorption": [
-            {
-                "FDI": "16",
-                "AbsorptionLevel": 0,
-                "Detail": "待检测"
-            }
-        ]
+        "AbsorptionRatio": 0.0,
+        "SpecificAbsorption": []
     }
 
 
@@ -695,7 +815,6 @@ def _get_implant_default() -> dict:
 def _get_root_tip_density_mock() -> dict:
     """Mock: RootTipDensityAnalysis - 无模型支持"""
     return {
-        "_mock": True,  # Mock标记
         "TotalCount": 0,
         "Items": [],
         "Detail": "未检测（需根尖密度影检测模型）",

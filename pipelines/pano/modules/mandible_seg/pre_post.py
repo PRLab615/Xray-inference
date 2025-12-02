@@ -70,13 +70,21 @@ class MandiblePrePostProcessor:
         # 如果不需要原图尺寸的像素值，也可以直接用 224x224 的 mask 计算，比例是一样的
         final_mask = self._resize_mask_to_original(pred_mask)
 
-        # 3. 执行核心对称性逻辑 (原 is_symmetric 函数)
+        # 3. 提取左右两侧的特征（用于 AnatomyResults）
+        left_feats = self._extract_features(final_mask, self.CLASS_ID_LEFT)
+        right_feats = self._extract_features(final_mask, self.CLASS_ID_RIGHT)
+
+        # 4. 执行核心对称性逻辑 (原 is_symmetric 函数)
         is_sym, detail_str, metrics = self._is_symmetric(final_mask)
 
-        # 4. 包装结果
+        # 5. 包装结果
         # 注意：这里返回的结构是为了配合 Predictor 使用
         return {
             "mask_shape": final_mask.shape,
+            "raw_features": {
+                "left": left_feats,
+                "right": right_feats
+            },
             "analysis": {
                 "RamusSymmetry": is_sym,  # 升支对称性 (整体对称性)
                 "GonialAngleSymmetry": is_sym,  # 下颌角对称性 (暂复用整体结果，也可拆分)
@@ -165,3 +173,57 @@ class MandiblePrePostProcessor:
         """将 Mask 还原回原图尺寸"""
         mask = mask.astype(np.uint8)
         return cv2.resize(mask, (int(self.orig_w), int(self.orig_h)), interpolation=cv2.INTER_NEAREST)
+
+    def _extract_features(self, mask, class_id):
+        """
+        提取特征，包括面积、置信度和轮廓
+        参考 condyle_seg 模块的实现
+        
+        Args:
+            mask: 分割掩码 (H, W) numpy array
+            class_id: 类别ID (1=左, 2=右)
+        
+        Returns:
+            dict: {
+                "area": int,
+                "exists": bool,
+                "confidence": float,
+                "contour": [[x, y], ...],
+                "mask": binary_mask (H, W) numpy array
+            }
+        """
+        binary_mask = (mask == class_id).astype(np.uint8)
+        area = np.sum(binary_mask)
+        
+        if area == 0:
+            return {
+                "area": 0,
+                "exists": False,
+                "confidence": 0.0,
+                "contour": [],
+                "mask": None
+            }
+        
+        # 提取轮廓
+        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # 取最大轮廓
+        contour_coords = []
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)
+            # 转换为 [[x, y], [x, y], ...] 格式
+            contour_coords = largest_contour.squeeze().tolist()
+            # 确保是二维列表
+            if contour_coords and not isinstance(contour_coords[0], list):
+                contour_coords = [contour_coords]
+        
+        # 模拟置信度（可以根据实际需求调整）
+        confidence = 0.95 if area > 100 else 0.85
+        
+        return {
+            "area": int(area),
+            "exists": True,
+            "confidence": confidence,
+            "contour": contour_coords,
+            "mask": binary_mask
+        }

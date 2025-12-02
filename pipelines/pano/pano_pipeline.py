@@ -6,6 +6,7 @@
 
 from pipelines.base_pipeline import BasePipeline
 from pipelines.pano.utils import pano_report_utils
+from tools.timer import timer
 import logging
 
 # 导入五个模块的预测器
@@ -133,6 +134,9 @@ class PanoPipeline(BasePipeline):
             - 各子模块内部负责图像加载
             - 与 CephPipeline 保持一致的设计模式
         """
+        # 重置计时器
+        timer.reset()
+        
         self._log_step("开始全景片推理", f"image_path={image_path}")
         
         # 1. 验证图像文件存在
@@ -192,7 +196,13 @@ class PanoPipeline(BasePipeline):
             "AnalysisTime": ""  # 由 pano_report_utils 自动生成
         }
         
-        data_dict = pano_report_utils.generate_standard_output(metadata, inference_results)
+        # 报告生成埋点
+        with timer.record("report.generation"):
+            data_dict = pano_report_utils.generate_standard_output(metadata, inference_results)
+        
+        # 保存计时报告
+        timer.print_report()
+        timer.save_report()  # 使用配置中的路径
         
         self._log_step("全景片推理完成", f"data keys: {list(data_dict.keys())}")
         logger.info("Pano pipeline run completed successfully")
@@ -358,11 +368,12 @@ class PanoPipeline(BasePipeline):
             if image is None:
                 raise ValueError(f"Failed to load image: {image_path}")
             
-            # 执行推理
+            # 执行推理（内部已埋点 teeth_seg.inference 和 teeth_seg.post）
             raw_results = self.modules['teeth_seg'].predict(image)
             
             # 后处理：生成缺牙、智齿、乳牙等报告
-            processed_results = process_teeth_results(raw_results)
+            with timer.record("teeth_seg.analysis"):
+                processed_results = process_teeth_results(raw_results)
             
             elapsed = time.time() - start_time
             logger.info(f"Teeth segmentation completed in {elapsed:.2f}s")

@@ -32,6 +32,12 @@ callback:
 task:
   result_ttl: 3600  # Redis 中任务元数据 TTL（秒）
 
+# Timer 计时器配置
+timer:
+  enabled: true                    # 全局开关，控制是否启用计时
+  report_file: "timer_report.txt"  # 报告输出路径
+  console_output: true             # 是否打印到控制台
+
 # 图像下载配置（v2 新增）
 image_download:
   timeout: 30                    # 下载超时时间（秒）
@@ -42,7 +48,7 @@ image_download:
     - .png
     - .dcm
 
-# Pipeline/模型配置（v3.1）
+# Pipeline/模型配置（v3.1 + v4 dental_age_stage）
 pipelines:
   panoramic:
     preload: true                # Worker 启动时即初始化全景片 Pipeline
@@ -102,4 +108,15 @@ pipelines:
       #   conf: 0.35
       #   iou: 0.5
       #   classes: []
+  
+  dental_age_stage:              # v4 新增：牙期检测
+    preload: true                # Worker 启动时即初始化
+    modules:
+      teeth_seg:                 # 复用全景片的牙齿分割模块配置
+        description: "牙齿分割模块（用于牙期检测）"
+        weights_key: "weights/panoramic/1116_teeth_seg.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
 

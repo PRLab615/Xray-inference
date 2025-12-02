@@ -112,10 +112,10 @@ class AnalyzeRequest(BaseModel):
             str: 验证通过的 taskType
             
         Raises:
-            ValueError: taskType 不是 panoramic 或 cephalometric
+            ValueError: taskType 不在允许范围内
         """
-        if v not in ['panoramic', 'cephalometric']:
-            raise ValueError("taskType must be either 'panoramic' or 'cephalometric'")
+        if v not in ['panoramic', 'cephalometric', 'dental_age_stage']:
+            raise ValueError("taskType must be 'panoramic', 'cephalometric', or 'dental_age_stage'")
         return v
     
     @field_validator('imageUrl')
@@ -255,3 +255,172 @@ class CallbackPayload(BaseModel):
     data: Optional[Dict[str, Any]] = None
     error: Optional[ErrorDetail] = None
 
+
+class SyncAnalyzeRequest(BaseModel):
+    """
+    同步分析请求模型
+    
+    与 AnalyzeRequest 的区别：
+        - taskId 必填（由客户端提供，推理任务中必须唯一）
+        - callbackUrl 不需要（同步返回，无需回调）
+    
+    Attributes:
+        taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供，推理任务中必须唯一
+        taskType: 任务类型（panoramic/cephalometric/dental_age_stage）
+        imageUrl: 图像 URL（HTTP/HTTPS）
+        metadata: 客户端自定义元数据（可选）
+        patientInfo: 患者信息（侧位片必需）
+    """
+    taskId: str
+    taskType: str
+    imageUrl: str
+    metadata: Optional[Dict[str, Any]] = None
+    patientInfo: Optional[PatientInfo] = None
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        """验证 taskId 是否为有效的 UUID v4 格式"""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
+    
+    @field_validator('taskType')
+    @classmethod
+    def validate_task_type(cls, v: str) -> str:
+        """验证 taskType 是否在允许的范围内"""
+        if v not in ['panoramic', 'cephalometric', 'dental_age_stage']:
+            raise ValueError("taskType must be 'panoramic', 'cephalometric', or 'dental_age_stage'")
+        return v
+    
+    @field_validator('imageUrl')
+    @classmethod
+    def validate_image_url(cls, v: str) -> str:
+        """验证 imageUrl 是否为有效的 HTTP/HTTPS URL"""
+        if not (v.startswith('http://') or v.startswith('https://')):
+            raise ValueError('imageUrl must be a valid HTTP/HTTPS URL')
+        return v
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: Optional[str]) -> Optional[str]:
+        """验证 taskId 是否为有效的 UUID v4 格式（如果提供）"""
+        if v is None:
+            return v
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
+    
+    @model_validator(mode='after')
+    def validate_patient_info_required(self):
+        """验证侧位片必须提供 patientInfo"""
+        if self.taskType == 'cephalometric':
+            if not self.patientInfo:
+                raise ValueError("patientInfo is required when taskType is 'cephalometric'")
+            if not self.patientInfo.gender or not self.patientInfo.DentalAgeStage:
+                raise ValueError("gender and DentalAgeStage are required in patientInfo for cephalometric tasks")
+        return self
+
+
+class SyncAnalyzeResponse(BaseModel):
+    """
+    同步分析响应模型（200 OK）
+    
+    Attributes:
+        taskId: 任务 ID
+        status: 状态（SUCCESS/FAILURE）
+        timestamp: 完成时间（ISO8601 格式）
+        metadata: 回显客户端 metadata
+        data: 成功时的结果数据（nullable）
+        error: 失败时的错误信息（nullable）
+    """
+    taskId: str
+    status: str
+    timestamp: str
+    metadata: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[ErrorDetail] = None
+
+
+# ==================== 重算接口 Schema（v4 新增）====================
+
+class PanoRecalculateRequest(BaseModel):
+    """
+    全景片重算请求模型（v4 新增）
+    
+    用于客户端修改检测结果后，重新生成完整报告（跳过模型推理）
+    
+    根据接口定义：接收完整的全景片推理结果 JSON（example_pano_result.json 格式）
+    
+    Attributes:
+        taskId: 任务唯一标识（必填，UUID v4 格式），仅用于日志追踪
+        data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
+    """
+    taskId: str
+    data: Dict[str, Any]
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        """验证 taskId 是否为有效的 UUID v4 格式"""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
+
+
+class CephRecalculateRequest(BaseModel):
+    """
+    侧位片重算请求模型（v4 新增）
+    
+    用于客户端修改关键点坐标后，重新计算测量值和生成完整报告
+    
+    根据接口定义：接收完整的侧位片推理结果 JSON（example_ceph_result.json 格式）
+    
+    Attributes:
+        taskId: 任务唯一标识（必填，UUID v4 格式），仅用于日志追踪
+        data: 完整的侧位片推理结果 JSON（即 example_ceph_result.json 格式）
+        patientInfo: 患者信息（侧位片必填）
+            - gender: 性别（Male/Female）
+            - DentalAgeStage: 牙期（Permanent/Mixed）
+    """
+    taskId: str
+    data: Dict[str, Any]
+    patientInfo: PatientInfo  # 侧位片必填，直接设为必填字段
+    
+    @field_validator('taskId')
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        """验证 taskId 是否为有效的 UUID v4 格式"""
+        try:
+            uuid.UUID(v, version=4)
+            return v
+        except ValueError:
+            raise ValueError('taskId must be a valid UUID v4')
+
+
+class RecalculateResponse(BaseModel):
+    """
+    重算响应模型（v4 新增）
+    
+    响应格式与推理接口一致（见接口定义）
+    
+    Attributes:
+        taskId: 任务唯一标识（回显客户端提供的 taskId）
+        status: 状态（SUCCESS/FAILURE）
+        timestamp: 完成时间（ISO8601 格式）
+        metadata: 客户端 metadata（可选，从请求中提取或为空）
+        data: 重算后的完整报告数据（nullable，格式与推理接口一致）
+        error: 失败时的错误信息（nullable）
+    """
+    taskId: str
+    status: str
+    timestamp: str
+    metadata: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[ErrorDetail] = None

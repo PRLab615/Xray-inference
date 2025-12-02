@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import torch
 from ultralytics import YOLO
 from pipelines.ceph.utils.ceph_report import calculate_measurements
 from pipelines.ceph.modules.point.pre_post import (
@@ -16,6 +17,7 @@ from pipelines.ceph.modules.point.pre_post import (
     postprocess_results,
 )
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ class CephModel:
         self.weights_force_download = weights_force_download
         self.weights_key = weights_key
         self.weights_path = self._resolve_weights_path(weights_path)
-        self.device = device
+        self.device = self._normalize_device(device)
         self.image_size = image_size
         self.conf = conf
         self.iou = iou
@@ -129,9 +131,37 @@ class CephModel:
                 f"Ceph model weights not found: {self.weights_path}"
             )
         self.logger.info("Loading Ceph model weights: %s", self.weights_path)
-        return YOLO(self.weights_path)
+        model = YOLO(self.weights_path)
+        if self.device != "cpu":
+            try:
+                model.to(self.device)
+                self.logger.info("Ceph YOLO model moved to %s", self.device)
+            except Exception as exc:
+                self.logger.warning("Failed to move Ceph model to %s: %s", self.device, exc)
+        return model
 
+    def _normalize_device(self, device: Optional[str]) -> str:
+        """
+        将配置的 device 统一转换为 PyTorch/Ultralytics 可识别的格式。
+        """
+        if not torch.cuda.is_available():
+            return "cpu"
 
+        if device is None:
+            return "cuda:0"
+
+        device_str = str(device).strip()
+        if device_str.lower() == "cpu":
+            return "cpu"
+
+        if device_str.lower().startswith("cuda"):
+            return device_str.lower()
+
+        if device_str.isdigit():
+            return f"cuda:{device_str}"
+
+        # 回退：直接返回原始字符串（例如自定义 "cuda:1"）
+        return device_str
 
     def predict(self, image_path: str) -> LandmarkResult:
         """
@@ -143,24 +173,29 @@ class CephModel:
         Returns:
             LandmarkResult: 关键点检测结果
         """
-        # 前处理：验证图像路径
-        processed_path = preprocess_image(image_path, self.logger)
+        # 1. 前处理：验证图像路径
+        with timer.record("ceph_point.pre"):
+            processed_path = preprocess_image(image_path, self.logger)
         
-        # 加载模型并推理
-        model = self._ensure_model()
-        self.logger.info("Running Ceph keypoint detection on %s", processed_path)
-        results = model.predict(
-            source=processed_path,
-            imgsz=self.image_size,
-            device=self.device,
-            conf=self.conf,
-            iou=self.iou,
-            max_det=self.max_det,
-            verbose=False,
-        )
+        # 2. YOLO 推理
+        with timer.record("ceph_point.inference"):
+            model = self._ensure_model()
+            self.logger.info("Running Ceph keypoint detection on %s", processed_path)
+            results = model.predict(
+                source=processed_path,
+                imgsz=self.image_size,
+                device=self.device,
+                conf=self.conf,
+                iou=self.iou,
+                max_det=self.max_det,
+                verbose=False,
+            )
 
-        # 后处理：提取关键点和置信度
-        return postprocess_results(results, processed_path, self.weights_path, self.logger)
+        # 3. 后处理：提取关键点和置信度
+        with timer.record("ceph_point.post"):
+            landmark_result = postprocess_results(results, processed_path, self.weights_path, self.logger)
+        
+        return landmark_result
 
 
 class CephInferenceEngine:
@@ -201,8 +236,12 @@ class CephInferenceEngine:
         self._validate_patient_info(patient_info)
         self.logger.info("Running Ceph inference on %s", image_path)
 
+        # 关键点检测（内部已埋点 ceph_point.pre/inference/post）
         landmark_result = self.detector.predict(image_path)
-        measurements = calculate_measurements(landmark_result.coordinates)
+        
+        # 测量计算
+        with timer.record("ceph_point.measurement"):
+            measurements = calculate_measurements(landmark_result.coordinates)
 
         inference_bundle = {
             "landmarks": self._landmark_result_to_dict(landmark_result),

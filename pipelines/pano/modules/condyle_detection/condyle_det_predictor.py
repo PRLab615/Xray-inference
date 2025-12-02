@@ -22,6 +22,7 @@ if project_root not in sys.path:
 
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
+from tools.timer import timer
 
 # 引用格式化工具
 try:
@@ -165,7 +166,33 @@ class JointPredictor:
             logger.info(f"Loading YOLO weights from: {self.weights_path}")
             logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
             self.model = YOLO(self.weights_path)
-            # YOLO 模型不需要手动调用 .to()，在 predict 时指定 device 即可
+            
+            # 显式将模型移动到目标设备（GPU），实现预加载
+            if torch.cuda.is_available() and str(self.device).startswith('cuda'):
+                try:
+                    self.model.to(self.device)
+                    logger.info("Condyle Detection YOLO model moved to %s", self.device)
+                except Exception as exc:
+                    logger.warning("Failed to move Condyle Detection model to %s: %s", self.device, exc)
+            
+            # 预热推理：执行一次 dummy 推理，确保模型权重完全加载到 GPU 并完成 CUDA kernel 编译
+            logger.info("Warming up Condyle Detection model (preloading weights to GPU)...")
+            try:
+                # 创建一个小的 dummy 图像用于预热
+                dummy_image = np.zeros((640, 640, 3), dtype=np.uint8)
+                with torch.no_grad():
+                    _ = self.model.predict(
+                        source=dummy_image,
+                        device=self.device,
+                        verbose=False,
+                        conf=0.25,
+                        iou=0.45
+                    )
+                logger.info("Condyle Detection model warmup completed successfully.")
+            except Exception as warmup_exc:
+                logger.warning(f"Model warmup failed (non-critical): {warmup_exc}")
+            #     # 预热失败不影响模型使用，继续初始化
+            
             logger.info("YOLO Model initialized successfully.")
 
         except Exception as e:
@@ -185,82 +212,92 @@ class JointPredictor:
 
         logger.info(">>> [2/3] Running Inference...")
         try:
-            # 1. YOLO 推理
-            # verbose=False 不打印默认的推理日志，保持清爽
-            results = self.model(image, verbose=False)
-            result = results[0]  # 取第一张图结果
+            # YOLO 推理（包含内置的 Pre/Post）
+            with timer.record("condyle_det.inference"):
+                # 显式指定 device 参数，确保使用正确的设备
+                # verbose=False 不打印默认的推理日志，保持清爽
+                results = self.model.predict(
+                    source=image,
+                    device=self.device,
+                    verbose=False,
+                    conf=0.25,
+                    iou=0.45
+                )
+                result = results[0]  # 取第一张图结果
 
-            # 2. 解析 YOLO 结果 (Box, Class, Confidence)
-            all_raw_features = []
+            # 结果解析（Post-processing）
+            with timer.record("condyle_det.post"):
+                # 解析 YOLO 结果 (Box, Class, Confidence)
+                all_raw_features = []
 
-            best_left_feature = {}
-            best_right_feature = {}
-            max_conf_left = -1.0
-            max_conf_right = -1.0
+                best_left_feature = {}
+                best_right_feature = {}
+                max_conf_left = -1.0
+                max_conf_right = -1.0
 
-            # 获取图像宽度，用于判断左右侧
-            image_width = result.orig_shape[1]  # (Height, Width)
-            image_center_x = image_width / 2
+                # 获取图像宽度，用于判断左右侧
+                image_width = result.orig_shape[1]  # (Height, Width)
+                image_center_x = image_width / 2
 
-            if result.boxes:
-                for box in result.boxes:
-                    # 转为标准 Python 数据类型
-                    bbox = box.xyxy.cpu().numpy()[0].tolist()  # [x1, y1, x2, y2]
-                    conf = float(box.conf.cpu().numpy()[0])
-                    cls_id = int(box.cls.cpu().numpy()[0])
-                    cls_name = result.names.get(cls_id, f"Class_{cls_id}")
+                if result.boxes:
+                    for box in result.boxes:
+                        # 转为标准 Python 数据类型
+                        bbox = box.xyxy.cpu().numpy()[0].tolist()  # [x1, y1, x2, y2]
+                        conf = float(box.conf.cpu().numpy()[0])
+                        cls_id = int(box.cls.cpu().numpy()[0])
+                        cls_name = result.names.get(cls_id, f"Class_{cls_id}")
 
-                    # 计算BBox中心点的x坐标
-                    bbox_center_x = (bbox[0] + bbox[2]) / 2
+                        # 计算BBox中心点的x坐标
+                        bbox_center_x = (bbox[0] + bbox[2]) / 2
 
-                    # 从类名推导形态学分类 (morphology)
-                    # 优先使用类名映射，如果找不到则使用原始class_id
-                    morphology = CLASS_NAME_TO_MORPHOLOGY.get(cls_name.lower(), cls_id)
+                        # 从类名推导形态学分类 (morphology)
+                        # 优先使用类名映射，如果找不到则使用原始class_id
+                        morphology = CLASS_NAME_TO_MORPHOLOGY.get(cls_name.lower(), cls_id)
 
-                    feature_data = {
-                        "bbox": bbox,
-                        "class_name": cls_name,
-                        "confidence": conf,
-                        "class_id": morphology  # 使用形态学分类 (0=正常, 1=吸收, 2=疑似)
-                    }
+                        feature_data = {
+                            "bbox": bbox,
+                            "class_name": cls_name,
+                            "confidence": conf,
+                            "class_id": morphology  # 使用形态学分类 (0=正常, 1=吸收, 2=疑似)
+                        }
 
-                    all_raw_features.append(feature_data)
+                        all_raw_features.append(feature_data)
 
-                    # --- 根据BBox位置判断左右侧 (左半部分=左侧，右半部分=右侧) ---
-                    if bbox_center_x < image_center_x:
-                        # 左侧髁突
-                        if conf > max_conf_left:
-                            max_conf_left = conf
-                            best_left_feature = feature_data
-                    else:
-                        # 右侧髁突
-                        if conf > max_conf_right:
-                            max_conf_right = conf
-                            best_right_feature = feature_data
-                    # ------------------------------------
+                        # --- 根据BBox位置判断左右侧 (左半部分=左侧，右半部分=右侧) ---
+                        if bbox_center_x < image_center_x:
+                            # 左侧髁突
+                            if conf > max_conf_left:
+                                max_conf_left = conf
+                                best_left_feature = feature_data
+                        else:
+                            # 右侧髁突
+                            if conf > max_conf_right:
+                                max_conf_right = conf
+                                best_right_feature = feature_data
+                        # ------------------------------------
 
-            logger.info(f"Inference done. Detected {len(all_raw_features)} objects.")
-            logger.info(f"Image dimensions: {result.orig_shape}, center_x: {image_center_x}")
-            logger.info(f"Left feature selected: {bool(best_left_feature)} (conf: {max_conf_left if best_left_feature else 'N/A'})")
-            logger.info(f"Right feature selected: {bool(best_right_feature)} (conf: {max_conf_right if best_right_feature else 'N/A'})")
+                logger.info(f"Inference done. Detected {len(all_raw_features)} objects.")
+                logger.info(f"Image dimensions: {result.orig_shape}, center_x: {image_center_x}")
+                logger.info(f"Left feature selected: {bool(best_left_feature)} (conf: {max_conf_left if best_left_feature else 'N/A'})")
+                logger.info(f"Right feature selected: {bool(best_right_feature)} (conf: {max_conf_right if best_right_feature else 'N/A'})")
 
-            # 3. 准备分析元数据 (此处只模拟)
-            analysis = {
-                "model_type": "yolov11",
-                "detected_count": len(all_raw_features),
-                "image_shape": result.orig_shape,  # (Height, Width)
-                "is_symmetric": True,  # 默认为True，除非有其他模块计算
-                "metrics": {},
-                "conclusion": "髁突形态学分类已完成。"
-            }
+                # 准备分析元数据 (此处只模拟)
+                analysis = {
+                    "model_type": "yolov11",
+                    "detected_count": len(all_raw_features),
+                    "image_shape": result.orig_shape,  # (Height, Width)
+                    "is_symmetric": True,  # 默认为True，除非有其他模块计算
+                    "metrics": {},
+                    "conclusion": "髁突形态学分类已完成。"
+                }
 
-            # 4. 格式化输出 (调用 Utils)
-            logger.info(">>> [3/3] Formatting Report...")
+                # 格式化输出
+                logger.info(">>> [3/3] Formatting Report...")
 
-            grouped_features = {
-                "left": best_left_feature,
-                "right": best_right_feature
-            }
+                grouped_features = {
+                    "left": best_left_feature,
+                    "right": best_right_feature
+                }
             return grouped_features
 
             # standard_data = pano_report_utils.format_joint_report(

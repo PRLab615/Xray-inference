@@ -19,7 +19,24 @@
                 <select id="taskType">
                     <option value="panoramic">全景片 (Panoramic)</option>
                     <option value="cephalometric">侧位片 (Cephalometric)</option>
+                    <option value="dental_age_stage">牙期检测 (Dental Age Stage)</option>
                 </select>
+            </div>
+
+            <!-- 处理模式选择 -->
+            <div class="form-group">
+                <label>处理模式：</label>
+                <div class="radio-group" style="display: flex; gap: 20px; align-items: center; margin-top: 5px;">
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                        <input type="radio" name="syncMode" value="sync" checked> 
+                        同步 (Sync)
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                        <input type="radio" name="syncMode" value="async"> 
+                        异步 (Async)
+                    </label>
+                </div>
+                <p class="hint" style="margin-top: 5px;">同步模式直接返回结果，异步模式通过轮询获取结果</p>
             </div>
             
             <!-- 文件选择 -->
@@ -67,7 +84,24 @@
             
             <!-- 右侧: AI 分析报告区 -->
             <div class="report-container" id="reportContainer">
-                <!-- 报告内容将在这里动态生成 -->
+                <!-- 图层控制面板 -->
+                <div class="layer-control-panel" id="layerControlPanel">
+                    <div class="layer-control-header">
+                        <h3>显示设置</h3>
+                        <div class="layer-control-buttons">
+                            <button class="btn-layer-control" id="hideAllBtn">全部隐藏</button>
+                            <button class="btn-layer-control" id="showAllBtn">全部显示</button>
+                        </div>
+                    </div>
+                    <div class="layer-list" id="layerList">
+                        <!-- 图层列表将在这里动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 报告内容容器 -->
+                <div id="reportContent">
+                    <!-- 报告内容将在这里动态生成 -->
+                </div>
             </div>
         </div>
         
