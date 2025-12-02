@@ -354,19 +354,14 @@ class PanoRecalculateRequest(BaseModel):
     
     用于客户端修改检测结果后，重新生成完整报告（跳过模型推理）
     
+    根据接口定义：接收完整的全景片推理结果 JSON（example_pano_result.json 格式）
+    
     Attributes:
-        taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供
-        inferenceResults: 修改后的推理结果（包含所有模块结果）
-            - condyle_seg: 髁突分割结果
-            - condyle_det: 髁突检测结果
-            - mandible: 下颌骨分割结果
-            - implant: 种植体检测结果
-            - teeth: 牙齿分割结果
-        metadata: 图像元信息（可选）
+        taskId: 任务唯一标识（必填，UUID v4 格式），仅用于日志追踪
+        data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
     """
     taskId: str
-    inferenceResults: Dict[str, Any]
-    metadata: Optional[Dict[str, Any]] = None
+    data: Dict[str, Any]
     
     @field_validator('taskId')
     @classmethod
@@ -385,19 +380,18 @@ class CephRecalculateRequest(BaseModel):
     
     用于客户端修改关键点坐标后，重新计算测量值和生成完整报告
     
+    根据接口定义：接收完整的侧位片推理结果 JSON（example_ceph_result.json 格式）
+    
     Attributes:
-        taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供
-        landmarks: 修改后的关键点坐标字典
-            格式: {"S": {"x": 512.5, "y": 245.3}, "N": {"x": 508.0, "y": 312.1}, ...}
-        patientInfo: 患者信息（必需）
+        taskId: 任务唯一标识（必填，UUID v4 格式），仅用于日志追踪
+        data: 完整的侧位片推理结果 JSON（即 example_ceph_result.json 格式）
+        patientInfo: 患者信息（侧位片必填）
             - gender: 性别（Male/Female）
             - DentalAgeStage: 牙期（Permanent/Mixed）
-        imageSpacing: 图像间距（可选，默认 {"X": 0.1, "Y": 0.1}）
     """
     taskId: str
-    landmarks: Dict[str, Dict[str, float]]
-    patientInfo: PatientInfo
-    imageSpacing: Optional[Dict[str, float]] = None
+    data: Dict[str, Any]
+    patientInfo: PatientInfo  # 侧位片必填，直接设为必填字段
     
     @field_validator('taskId')
     @classmethod
@@ -408,38 +402,25 @@ class CephRecalculateRequest(BaseModel):
             return v
         except ValueError:
             raise ValueError('taskId must be a valid UUID v4')
-    
-    @field_validator('landmarks')
-    @classmethod
-    def validate_landmarks(cls, v: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
-        """验证关键点格式"""
-        if not v:
-            raise ValueError("landmarks cannot be empty")
-        
-        for label, coord in v.items():
-            if not isinstance(coord, dict):
-                raise ValueError(f"Landmark {label} must be a dict with 'x' and 'y' keys")
-            if 'x' not in coord or 'y' not in coord:
-                raise ValueError(f"Landmark {label} must have 'x' and 'y' coordinates")
-            if not isinstance(coord['x'], (int, float)) or not isinstance(coord['y'], (int, float)):
-                raise ValueError(f"Landmark {label} coordinates must be numbers")
-        
-        return v
 
 
 class RecalculateResponse(BaseModel):
     """
     重算响应模型（v4 新增）
     
+    响应格式与推理接口一致（见接口定义）
+    
     Attributes:
         taskId: 任务唯一标识（回显客户端提供的 taskId）
         status: 状态（SUCCESS/FAILURE）
         timestamp: 完成时间（ISO8601 格式）
-        data: 重算后的完整报告数据（nullable）
+        metadata: 客户端 metadata（可选，从请求中提取或为空）
+        data: 重算后的完整报告数据（nullable，格式与推理接口一致）
         error: 失败时的错误信息（nullable）
     """
     taskId: str
     status: str
     timestamp: str
+    metadata: Optional[Dict[str, Any]] = None
     data: Optional[Dict[str, Any]] = None
     error: Optional[ErrorDetail] = None
