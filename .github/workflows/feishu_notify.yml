@@ -1,7 +1,5 @@
 name: Violet's Report
 
-# 触发规则：
-# 只有当代码 push（或 PR 合并）到 main 或 dev 分支时才触发
 on:
   push:
     branches: [ "main", "dev" ]
@@ -12,33 +10,42 @@ jobs:
     steps:
       - name: Writing Letter to Feishu
         env:
-          # 请确保 Settings -> Secrets 中名为 FEISHU_WEBHOOK 的密钥已设置
           WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK }}
         run: |
-          # 1. 提取基础信息
+          # 1. 获取基础信息
           COMMIT_MSG="${{ github.event.head_commit.message }}"
           AUTHOR="${{ github.actor }}"
           REPO="${{ github.repository }}"
           URL="${{ github.event.head_commit.url }}"
           REF="${{ github.ref }}"
-
-          # 2. 处理分支名称（去掉 refs/heads/ 前缀）
           BRANCH=${REF#refs/heads/}
 
-          # 3. 处理 Commit Message 中的双引号，防止 JSON 格式出错
-          ESCAPED_MSG=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+          # 2. 准备文案：清爽实用风格
+          # 核心改动：
+          # - 大幅缩减开场白，直接进入正题。
+          # - 使用 emoji 作为视觉引导，让排版更像一份专业的“报告书”。
+          # - 必须保留 "GitHub" 关键词。
 
-          # 4. 薇尔莉特·伊芙加登 风格文案
-          # 注意：如果在飞书机器人设置了【安全关键词】，请确保文案包含该词（此处默认包含 "GitHub"）
+          TEXT_CONTENT="报告少佐，GitHub 战线传来最新的代码变更记录。
           
-          TEXT="贵安，少佐 (bow)\n\n我是自动手记人偶，薇尔莉特·伊芙加登。\n检测到 GitHub 传输线路上传来了一封新的「代码信件」，现已成功送达至 【$BRANCH】 分支。 (✿◡‿◡)\n\n📜 **信件档案**：\n━━━━━━━━━━━━\n✒️ **寄信人**：$AUTHOR\n🏰 **归属地**：$REPO\n💌 **信件摘要**：$ESCAPED_MSG\n━━━━━━━━━━━━\n\n这封信件的详细轨迹记录在此，请您过目：\n$URL\n\n只要客户有要求，无论哪里我都赶去。\n愿这行代码能为您带来荣耀。 (｡•̀ᴗ-)✧"
+          📦 **项目**：$REPO
+          🌿 **分支**：$BRANCH
+          👤 **提交人**：$AUTHOR
+          
+          📝 **变更内容**：
+          $COMMIT_MSG
+          
+          🔗 **查看详情**：
+          $URL
+          
+          自动手记人偶 薇尔莉特·伊芙加登，汇报完毕。(bow)"
 
-          # 5. 发送请求
+          # 3. 使用 jq 生成标准 JSON (核心防错机制)
+          JSON_PAYLOAD=$(jq -n \
+            --arg text "$TEXT_CONTENT" \
+            '{msg_type: "text", content: {text: $text}}')
+
+          # 4. 发送
           curl -X POST -H "Content-Type: application/json" \
-            -d "{
-              \"msg_type\": \"text\",
-              \"content\": {
-                \"text\": \"$TEXT\"
-              }
-            }" \
-            $WEBHOOK_URL
+            -d "$JSON_PAYLOAD" \
+            "$WEBHOOK_URL"

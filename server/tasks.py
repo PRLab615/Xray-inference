@@ -213,8 +213,8 @@ def analyze_task(self, task_id: str, task_type: str, image_path: str,
                     "data": None,
                     "error": {
                         "code": 12001,
-                        "message": "Pipeline execution failed",
-                        "displayMessage": str(e)
+                        "message": f"AI model execution failed: {str(e)}",
+                        "displayMessage": "AI 模型分析失败"
                     }
                 }
                 callback_mgr.send_callback(callback_url, payload)
