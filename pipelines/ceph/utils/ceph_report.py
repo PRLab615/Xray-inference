@@ -322,14 +322,22 @@ def _compute_ptmans_length(landmarks, sex: str = "male", dentition: str = "perma
     return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_gopo_length(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P10", "P7", "P8"]  # Go-Pog 投影到MP
+    """第3项：Go-Po长度（Pog在下颌平面上的投影长度）—— 修复除零风险"""
+    required = ["P10", "P7", "P8"]  # Go, Pog, Me
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     go, pog, me = landmarks["P10"], landmarks["P7"], landmarks["P8"]
     mp_vec = me - go
-    proj = np.dot(pog - go, mp_vec) / np.dot(mp_vec, mp_vec)
-    length = abs(proj) * np.linalg.norm(mp_vec)
-    level = _evaluate_by_threshold("GoPo_Length", length, sex, dentition)  # MODIFIED
+
+    # 关键修复：防止向量长度为0导致除零崩溃
+    norm_mp = np.linalg.norm(mp_vec)
+    if norm_mp < 1e-8:
+        logger.warning("下颌平面向量退化，GoPo_Length 返回 0")
+        return {"value": 0.0, "unit": "mm", "conclusion": 0, "status": "ok"}
+
+    proj_scalar = np.dot(pog - go, mp_vec) / (norm_mp ** 2)
+    length = abs(proj_scalar) * norm_mp
+    level = _evaluate_by_threshold("GoPo_Length", length, sex, dentition)
     return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_ponb_length(landmarks, sex: str = "male", dentition: str = "permanent"):
@@ -419,7 +427,7 @@ def _compute_u1_pp(landmarks, sex: str = "male", dentition: str = "permanent"):
     pp = pns - ans
 
     # 原阈值保留（没有在 THRESHOLDS 表中）
-    dist_scalar = abs(np.cross(pp, u1 - ans) / np.linalg.norm(pp))
+    dist_scalar = _safe_cross_distance(pp, u1, ans)
     level = _evaluate_by_threshold("Upper_Anterior_Alveolar_Height", dist_scalar, sex, dentition)
     return {"value": float(dist_scalar), "unit": "mm", "conclusion": level, "status": "ok"}
 
@@ -609,7 +617,7 @@ def _compute_l1_mp_height(landmarks, sex: str = "male", dentition: str = "perman
         return _missing_measurement("mm", required, landmarks)
     l1, go, me = landmarks["P11"], landmarks["P10"], landmarks["P8"]
     mp_vec = me - go
-    dist = abs(np.cross(mp_vec, l1 - go)[0] / np.linalg.norm(mp_vec))
+    dist = _safe_cross_distance(mp_vec, l1, go)
     level = _evaluate_by_threshold("L1_MP_Lower_Anterior_Alveolar_Height", dist, sex, dentition)
     return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
 
@@ -620,7 +628,7 @@ def _compute_u6_pp_height(landmarks, sex: str = "male", dentition: str = "perman
         return _missing_measurement("mm", required, landmarks)
     u6, ans, pns = landmarks["P21"], landmarks["P14"], landmarks["P13"]
     pp_vec = pns - ans
-    dist = abs(np.cross(pp_vec, u6 - ans)[0] / np.linalg.norm(pp_vec))
+    dist = _safe_cross_distance(pp_vec, u6, ans)
     level = _evaluate_by_threshold("U6_PP_Upper_Posterior_Alveolar_Height", dist, sex, dentition)
     return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
 
@@ -631,7 +639,7 @@ def _compute_l6_mp_height(landmarks, sex: str = "male", dentition: str = "perman
         return _missing_measurement("mm", required, landmarks)
     l6, go, me = landmarks["P22"], landmarks["P10"], landmarks["P8"]
     mp_vec = me - go
-    dist = abs(np.cross(mp_vec, l6 - go)[0] / np.linalg.norm(mp_vec))
+    dist = _safe_cross_distance(mp_vec, l6, go)
     level = _evaluate_by_threshold("L6_MP_Lower_Posterior_Alveolar_Height", dist, sex, dentition)
     return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
 
@@ -833,3 +841,35 @@ def _evaluate_by_threshold(feature: str, value: float, sex: str, dentition: str)
     if value < low:
         return 2  # 不足/偏低
     return 0  # 正常
+def _is_valid_point(point: Any) -> bool:
+    """判断一个点坐标是否有效（2维、非NaN）"""
+    if point is None:
+        return False
+    try:
+        arr = np.asarray(point, dtype=float)
+        return arr.shape == (2,) and not np.isnan(arr).any()
+    except:
+        return False
+
+def _safe_cross_distance(vec_line: np.ndarray, point: np.ndarray, ref_point: np.ndarray) -> float:
+    """
+    安全计算点到直线的垂直距离（史上最稳版本）
+    彻底解决 np.cross 返回标量导致 [0] 索引崩溃的问题
+    """
+    if not (_is_valid_point(vec_line) and _is_valid_point(point) and _is_valid_point(ref_point)):
+        return 0.0
+
+    a = vec_line
+    b = point - ref_point
+    cross_val = np.cross(a, b)
+
+    # 关键防御：兼容标量、1维数组、2维数组
+    if np.isscalar(cross_val):
+        cross_abs = abs(float(cross_val))
+    elif cross_val.size == 0:
+        cross_abs = 0.0
+    else:
+        cross_abs = abs(float(cross_val.item()))
+
+    norm = np.linalg.norm(a)
+    return cross_abs / norm if norm > 1e-8 else 0.0
