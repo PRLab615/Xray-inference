@@ -71,9 +71,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     
     将 Pydantic 的 422 错误格式转换为：
     {
-        "code": 10003,
-        "message": "Validation error: ...",
-        "displayMessage": "请求参数验证失败"
+        "code": 10001,
+        "message": "Invalid parameter: ...",
+        "displayMessage": "请求参数错误"
     }
     """
     # 提取错误信息
@@ -89,9 +89,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=400,  # 使用 400 而非 422，与接口定义一致
         content={
-            "code": 10003,
-            "message": f"Validation error: {detail_message}",
-            "displayMessage": "请求参数验证失败"
+            "code": 10001,
+            "message": f"Invalid parameter: {detail_message}",
+            "displayMessage": "请求参数错误"
         }
     )
 
@@ -220,10 +220,10 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     if _persistence.task_exists(task_id):
         logger.warning(f"Task already exists: {task_id}")
         raise HTTPException(
-            status_code=409,
+            status_code=400,
             detail=ErrorResponse(
-                code=10002,
-                message="Task ID already exists",
+                code=10001,
+                message=f"Invalid parameter 'taskId': {task_id} is already in use",
                 detail=f"taskId {task_id} is already in use"
             ).model_dump()
         )
@@ -256,8 +256,8 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
-                code=10004,
-                message="Image download failed",
+                code=11004,
+                message=f"Cannot download image from '{request.imageUrl}'",
                 detail=str(e)
             ).model_dump()
         )
@@ -326,8 +326,8 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         raise HTTPException(
             status_code=504,
             detail=ErrorResponse(
-                code=50401,
-                message="Inference timeout",
+                code=12002,
+                message="AI model execution timed out",
                 detail=f"Task execution exceeded {timeout} seconds"
             ).model_dump()
         )
@@ -345,8 +345,8 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
-                code=10006,
-                message="Inference failed",
+                code=12001,
+                message="AI model execution failed",
                 detail=str(e)
             ).model_dump()
         )
@@ -395,10 +395,10 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
     if _persistence.task_exists(request.taskId):
         logger.warning(f"Task already exists: {request.taskId}")
         raise HTTPException(
-            status_code=409,
+            status_code=400,
             detail=ErrorResponse(
-                code=10002,
-                message="Task ID already exists",
+                code=10001,
+                message=f"Invalid parameter 'taskId': {request.taskId} is already in use",
                 detail=f"taskId {request.taskId} is already in use"
             ).model_dump()
         )
@@ -416,8 +416,8 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
-                code=10004,
-                message="Image validation failed",
+                code=11004,
+                message=f"Cannot download image from '{request.imageUrl}'",
                 detail=str(e)
             ).model_dump()
         )
@@ -426,8 +426,8 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
-                code=10004,
-                message="Image download failed",
+                code=11004,
+                message=f"Cannot download image from '{request.imageUrl}'",
                 detail=str(e)
             ).model_dump()
         )
@@ -456,9 +456,9 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
-                code=10001,
-                message="Failed to save task metadata",
-                detail="Redis operation failed"
+                code=50001,
+                message="Internal server error",
+                detail="Failed to save task metadata to Redis"
             ).model_dump()
         )
     
@@ -485,8 +485,8 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
-                code=10001,
-                message="Failed to queue task",
+                code=50003,
+                message="Task queue service unavailable",
                 detail=str(e)
             ).model_dump()
         )
@@ -572,8 +572,8 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
-                code=10009,
-                message="Pano recalculation validation failed",
+                code=10001,
+                message=f"Invalid parameter: {e}",
                 detail=str(e)
             ).model_dump()
         )
@@ -582,8 +582,8 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
-                code=10007,
-                message="Pano recalculation failed",
+                code=12001,
+                message="AI model execution failed",
                 detail=str(e)
             ).model_dump()
         )
@@ -674,8 +674,8 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
-                code=10010,
-                message="Ceph recalculation validation failed",
+                code=10001,
+                message=f"Invalid parameter: {e}",
                 detail=str(e)
             ).model_dump()
         )
@@ -684,8 +684,8 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
-                code=10008,
-                message="Ceph recalculation failed",
+                code=12001,
+                message="AI model execution failed",
                 detail=str(e)
             ).model_dump()
         )
