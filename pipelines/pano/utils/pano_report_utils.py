@@ -72,6 +72,7 @@ def generate_standard_output(
     implant_res = inference_results.get("implant", {})
     teeth_res = inference_results.get("teeth", {})
     sinus_res = inference_results.get("sinus", {})
+    rootTipDensity_res = inference_results.get("rootTipDensity", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
     report = {
@@ -83,7 +84,7 @@ def generate_standard_output(
         "MissingTeeth": [],  # 真实数据：从 teeth 模块填充
         "ThirdMolarSummary": {},  # 真实数据：从 teeth 模块填充
         "ImplantAnalysis": _get_implant_default(),  # 真实数据：从 implant 模块填充
-        "RootTipDensityAnalysis": _get_root_tip_density_mock(),  # Mock: 无模型
+        "RootTipDensityAnalysis": _get_root_tip_density_default(),  # 真实数据：从 rootTipDensity 模块填充
         "ToothAnalysis": []  # 部分真实：从 teeth 模块填充（但 Properties 为 mock）
     }
 
@@ -155,6 +156,11 @@ def generate_standard_output(
             if sinus_anatomy_data:
                 report["AnatomyResults"].extend(sinus_anatomy_data)
                 logger.info(f"[generate_standard_output] Added {len(sinus_anatomy_data)} sinus AnatomyResults")
+
+    # 8. 组装根尖低密度影分析 (RootTipDensityAnalysis) - 真实数据
+    if rootTipDensity_res:
+        rootTipDensity_data = format_root_tip_density_report(rootTipDensity_res)
+        report["RootTipDensityAnalysis"] = rootTipDensity_data
 
     return report
 
@@ -749,6 +755,65 @@ def format_sinus_anatomy_results(sinus_results: dict) -> List[dict]:
     return anatomy_results
 
 
+def format_root_tip_density_report(rootTipDensity_results: dict) -> dict:
+    """
+    格式化根尖低密度影(RootTipDensityAnalysis)部分 - 真实数据
+    
+    Args:
+        rootTipDensity_results: {
+            'density_boxes': [{'box': [...], 'confidence': 0.95, 'quadrant': 1}, ...],
+            'quadrant_counts': {1: 2, 2: 0, 3: 1, 4: 0}
+        }
+    
+    Returns:
+        dict: 符合 RootTipDensityAnalysis 格式的字典
+    """
+    density_boxes = rootTipDensity_results.get("density_boxes", [])
+    quadrant_counts = rootTipDensity_results.get("quadrant_counts", {1: 0, 2: 0, 3: 0, 4: 0})
+    
+    # 计算总数
+    total_count = len(density_boxes)
+    
+    # 格式化 Items
+    items = []
+    for idx, det in enumerate(density_boxes):
+        quadrant_id = det.get("quadrant", 0)
+        quadrant_name = QUADRANT_MAP.get(quadrant_id, "未知象限")
+        
+        items.append({
+            "ID": "Low_Density_Lesion",
+            "Quadrant": quadrant_name,
+            "Confidence": round(det.get("confidence", 0.0), 2),
+            "BBox": det.get("box", []),
+            "Detail": f"{quadrant_name}检测到根尖低密度影"
+        })
+    
+    # 生成 Detail 文本
+    detail_parts = []
+    for quad_id in [1, 2, 3, 4]:
+        count = quadrant_counts.get(quad_id, 0)
+        if count > 0:
+            quad_name = QUADRANT_MAP[quad_id]
+            detail_parts.append(f"{quad_name}存在根尖低密度影，个数为{count}")
+    
+    detail = "；".join(detail_parts) if detail_parts else "未检测到根尖低密度影"
+    
+    # 格式化 QuadrantCounts
+    quadrant_counts_formatted = {
+        "Q1": quadrant_counts.get(1, 0),
+        "Q2": quadrant_counts.get(2, 0),
+        "Q3": quadrant_counts.get(3, 0),
+        "Q4": quadrant_counts.get(4, 0),
+    }
+    
+    return {
+        "TotalCount": total_count,
+        "Items": items,
+        "Detail": detail,
+        "QuadrantCounts": quadrant_counts_formatted
+    }
+
+
 def _extract_fdi_from_text(text: str) -> str:
     """从文本中提取 FDI 编号，如 "tooth-37 牙位缺牙" -> "37" """
     import re
@@ -977,11 +1042,11 @@ def _get_implant_default() -> dict:
     }
 
 
-def _get_root_tip_density_mock() -> dict:
-    """Mock: RootTipDensityAnalysis - 无模型支持"""
+def _get_root_tip_density_default() -> dict:
+    """RootTipDensityAnalysis 默认值（真实数据会覆盖）"""
     return {
         "TotalCount": 0,
         "Items": [],
-        "Detail": "未检测（需根尖密度影检测模型）",
+        "Detail": "未检测到根尖低密度影",
         "QuadrantCounts": {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
     }
