@@ -60,6 +60,7 @@ def generate_standard_output(
             - mandible: 下颌骨分割结果
             - implant: 种植体检测结果
             - teeth: 牙齿分割结果
+            - sinus: 上颌窦分析结果
     
     Returns:
         dict: 完整的全景片分析报告
@@ -70,13 +71,14 @@ def generate_standard_output(
     mandible_res = inference_results.get("mandible", {})
     implant_res = inference_results.get("implant", {})
     teeth_res = inference_results.get("teeth", {})
+    sinus_res = inference_results.get("sinus", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
     report = {
         "Metadata": _format_metadata(metadata),
         "AnatomyResults": [],  # 将从 condyle_seg 填充
         "JointAndMandible": _get_joint_mandible_default(),
-        "MaxillarySinus": _get_maxillary_sinus_mock(),  # Mock: 无模型
+        "MaxillarySinus": _get_maxillary_sinus_mock(),  # 真实数据：从 sinus 模块填充（如果有）
         "PeriodontalCondition": _get_periodontal_mock(),  # Mock: 无模型
         "MissingTeeth": [],  # 真实数据：从 teeth 模块填充
         "ThirdMolarSummary": {},  # 真实数据：从 teeth 模块填充
@@ -141,6 +143,18 @@ def generate_standard_output(
         report["MissingTeeth"] = teeth_data["MissingTeeth"]
         report["ThirdMolarSummary"] = teeth_data["ThirdMolarSummary"]
         report["ToothAnalysis"] = teeth_data["ToothAnalysis"]
+
+    # 7. 组装上颌窦分析 (MaxillarySinus) - 真实数据
+    if sinus_res:
+        sinus_data = format_sinus_report(sinus_res)
+        report["MaxillarySinus"] = sinus_data["MaxillarySinus"]
+        
+        # 可选：将上颌窦 mask 添加到 AnatomyResults（如果有 mask 信息）
+        if "masks_info" in sinus_res and sinus_res["masks_info"]:
+            sinus_anatomy_data = format_sinus_anatomy_results(sinus_res)
+            if sinus_anatomy_data:
+                report["AnatomyResults"].extend(sinus_anatomy_data)
+                logger.info(f"[generate_standard_output] Added {len(sinus_anatomy_data)} sinus AnatomyResults")
 
     return report
 
@@ -582,6 +596,157 @@ def format_teeth_report(teeth_results: dict) -> dict:
         "ThirdMolarSummary": third_molar_summary,
         "ToothAnalysis": tooth_analysis
     }
+
+
+def format_sinus_report(sinus_results: dict) -> dict:
+    """
+    格式化上颌窦(MaxillarySinus)部分 - 真实数据
+    
+    Args:
+        sinus_results: {
+            'MaxillarySinus': [
+                {
+                    "Side": "left",
+                    "Pneumatization": 0,
+                    "TypeClassification": 0,
+                    "Inflammation": False,
+                    "RootEntryToothFDI": [],
+                    "Detail": "左上颌窦气化良好。",
+                    "Confidence_Pneumatization": 0.99,
+                    "Confidence_Inflammation": 0.85
+                },
+                ...
+            ],
+            'masks_info': [...]  # 可选
+        }
+    
+    Returns:
+        dict: 包含 MaxillarySinus 的字典
+    """
+    maxillary_sinus_list = sinus_results.get("MaxillarySinus", [])
+    
+    # 如果没有数据，返回空列表
+    if not maxillary_sinus_list:
+        logger.warning("[format_sinus_report] No MaxillarySinus data found")
+        return {"MaxillarySinus": []}
+    
+    # 验证并格式化每个结果
+    formatted_list = []
+    for item in maxillary_sinus_list:
+        formatted_item = {
+            "Side": item.get("Side", "left"),
+            "Pneumatization": int(item.get("Pneumatization", 0)),
+            "TypeClassification": int(item.get("TypeClassification", 0)),
+            "Inflammation": bool(item.get("Inflammation", False)),
+            "RootEntryToothFDI": item.get("RootEntryToothFDI", []),
+            "Detail": str(item.get("Detail", "")),
+            "Confidence_Pneumatization": float(round(item.get("Confidence_Pneumatization", 0.0), 2)),
+            "Confidence_Inflammation": float(round(item.get("Confidence_Inflammation", 0.0), 2))
+        }
+        formatted_list.append(formatted_item)
+    
+    logger.info(f"[format_sinus_report] Formatted {len(formatted_list)} sinus results")
+    return {"MaxillarySinus": formatted_list}
+
+
+def format_sinus_anatomy_results(sinus_results: dict) -> List[dict]:
+    """
+    格式化 AnatomyResults（解剖结构分割掩码）- 上颌窦部分
+    
+    注意：此函数需要 pipeline 提供 mask 信息。如果 pipeline 只提供了 bbox，
+    则此函数可能无法生成完整的 AnatomyResults。
+    
+    Args:
+        sinus_results: {
+            'MaxillarySinus': [...],
+            'masks_info': [
+                {
+                    "label": "sinus_left",
+                    "bbox": [x, y, w, h],
+                    "mask": np.array,  # 可选：如果 pipeline 提供了 mask
+                    "contour": [...]   # 可选：如果 pipeline 提供了 contour
+                },
+                ...
+            ]
+        }
+    
+    Returns:
+        list: AnatomyResults 列表，包含 sinus_left 和 sinus_right
+    """
+    anatomy_results = []
+    masks_info = sinus_results.get("masks_info", [])
+    
+    if not masks_info:
+        logger.debug("[format_sinus_anatomy_results] No masks_info found, skipping AnatomyResults")
+        return []
+    
+    for mask_info in masks_info:
+        label = mask_info.get("label", "")
+        if not label.startswith("sinus_"):
+            continue
+        
+        # 提取 mask 和 contour（如果可用）
+        mask = mask_info.get("mask", None)
+        contour = mask_info.get("contour", [])
+        
+        # 如果没有 mask 和 contour，只有 bbox，则无法生成完整的 AnatomyResults
+        if mask is None and not contour:
+            logger.debug(f"[format_sinus_anatomy_results] No mask/contour for {label}, skipping")
+            continue
+        
+        # 生成 RLE 编码
+        rle = _mask_to_rle(mask) if mask is not None else ""
+        
+        # 如果没有 contour 但有 mask，尝试从 mask 提取 contour
+        if not contour and mask is not None:
+            try:
+                import cv2
+                # 确保 mask 是二值化的 uint8 格式
+                if mask.dtype != np.uint8:
+                    binary_mask = (mask > 0.5).astype(np.uint8)
+                else:
+                    binary_mask = mask
+                
+                # 提取轮廓
+                contours, _ = cv2.findContours(
+                    binary_mask,
+                    cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_SIMPLE
+                )
+                
+                if contours:
+                    largest_contour = max(contours, key=cv2.contourArea)
+                    coords = largest_contour.squeeze()
+                    if coords.ndim == 1:
+                        contour = [coords.tolist()]
+                    else:
+                        contour = coords.tolist()
+            except Exception as e:
+                logger.warning(f"[format_sinus_anatomy_results] Failed to extract contour from mask: {e}")
+                contour = []
+        
+        # 获取置信度（从对应的 MaxillarySinus 结果中获取）
+        confidence = 0.0
+        side = label.replace("sinus_", "")
+        maxillary_sinus_list = sinus_results.get("MaxillarySinus", [])
+        for item in maxillary_sinus_list:
+            if item.get("Side", "") == side:
+                # 使用炎症置信度作为整体置信度
+                confidence = item.get("Confidence_Inflammation", 0.0)
+                break
+        
+        anatomy_results.append({
+            "Label": label,
+            "Confidence": round(confidence, 2),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Coordinates": contour if contour else [],
+                "SerializedMask": rle
+            }
+        })
+    
+    logger.info(f"[format_sinus_anatomy_results] Generated {len(anatomy_results)} sinus AnatomyResults")
+    return anatomy_results
 
 
 def _extract_fdi_from_text(text: str) -> str:
