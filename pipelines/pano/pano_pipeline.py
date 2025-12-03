@@ -449,14 +449,16 @@ class PanoPipeline(BasePipeline):
             # 3. 连通域分析 (获取左右侧 ROI)
             num, labels, stats, _ = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
             
-            results_list = []
-            masks_info = []
-            
             logger.info(f"Found {num - 1} sinus components.")
+            
+            # 按侧别分组连通域，每侧只保留面积最大的连通域
+            side_components = {'left': [], 'right': []}
             
             for i in range(1, num):
                 # 过滤小面积噪点
-                if stats[i, cv2.CC_STAT_AREA] < 500: continue
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area < 500: 
+                    continue
                 
                 # 获取边界框
                 x, y, sw, sh = stats[i][:4]
@@ -464,6 +466,53 @@ class PanoPipeline(BasePipeline):
                 # 图像左侧 = 患者右侧
                 location = "Right" if x < (w / 2) else "Left"
                 side_lower = location.lower()
+                
+                side_components[side_lower].append({
+                    'index': i,
+                    'area': area,
+                    'bbox': (x, y, sw, sh),
+                    'location': location
+                })
+            
+            results_list = []
+            masks_info = []
+            
+            # 对每一侧只处理面积最大的连通域
+            for side_lower in ['right', 'left']:
+                components = side_components[side_lower]
+                if not components:
+                    continue
+                
+                # 选择面积最大的连通域
+                largest = max(components, key=lambda c: c['area'])
+                x, y, sw, sh = largest['bbox']
+                location = largest['location']
+                component_index = largest['index']
+                
+                logger.info(f"Processing {location} sinus (largest of {len(components)} components, area={largest['area']})")
+                
+                # 提取该连通域的 mask（用于前端可视化）
+                side_mask = (labels == component_index).astype(np.uint8)
+                
+                # 提取轮廓坐标
+                contour_coords = []
+                try:
+                    contours, _ = cv2.findContours(
+                        side_mask,
+                        cv2.RETR_EXTERNAL,
+                        cv2.CHAIN_APPROX_SIMPLE
+                    )
+                    if contours:
+                        # 取最大轮廓
+                        largest_contour = max(contours, key=cv2.contourArea)
+                        coords = largest_contour.squeeze()
+                        if coords.ndim == 1:
+                            contour_coords = [coords.tolist()]
+                        else:
+                            contour_coords = coords.tolist()
+                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus")
+                except Exception as e:
+                    logger.warning(f"Failed to extract contour for {location} sinus: {e}")
                 
                 # 裁剪 ROI (加 Padding)
                 pad = 30
@@ -501,9 +550,12 @@ class PanoPipeline(BasePipeline):
                     "Confidence_Inflammation": float(f"{conf:.2f}")
                 })
                 
+                # 包含 mask 和 contour 用于前端可视化
                 masks_info.append({
                     "label": f"sinus_{side_lower}",
-                    "bbox": [int(x), int(y), int(sw), int(sh)]
+                    "bbox": [int(x), int(y), int(sw), int(sh)],
+                    "mask": side_mask,  # numpy array，会在 report_utils 中转为 RLE
+                    "contour": contour_coords  # [[x, y], [x, y], ...] 格式
                 })
             
             elapsed = time.time() - start_time
