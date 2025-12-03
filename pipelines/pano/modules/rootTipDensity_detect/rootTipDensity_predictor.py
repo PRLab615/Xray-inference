@@ -9,6 +9,11 @@ import sys
 import logging
 import os
 import torch
+
+# 禁用 ultralytics 自动安装依赖（在导入 YOLO 之前设置）
+# 这可以避免 "Ultralytics requirement ['onnx'] not found, attempting AutoUpdate..." 警告
+os.environ.setdefault("YOLO_AUTOINSTALL", "False")
+
 from ultralytics import YOLO
 from PIL import Image
 import numpy as np

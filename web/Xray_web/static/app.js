@@ -2304,6 +2304,121 @@ function drawRegionalFindings(data, stage, scale) {
         stage.add(mandibleLayer);
         appState.konvaLayers.mandible = mandibleLayer;
     }
+    
+    // 5. 上颌窦图层
+    const sinusLayer = new Konva.Layer();
+    let sinusCount = 0;
+    
+    // 绘制上颌窦区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        // 获取上颌窦诊断信息
+        let sinusInfoMap = {};
+        if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+            data.MaxillarySinus.forEach(sinusData => {
+                sinusInfoMap[sinusData.Side] = sinusData;
+            });
+        }
+        
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理上颌窦
+            if (!rawLabel.includes('sinus')) return;
+            
+            // 判定左右
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            
+            if (!side) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 获取对应侧的诊断信息
+            const sinusInfo = sinusInfoMap[side] || null;
+            
+            // 选择配色：根据炎症状态决定颜色
+            // 有炎症：橙红色，无炎症：浅蓝色/正常
+            let strokeColor = '#4A90D9';  // 默认蓝色
+            let fillColor = 'rgba(74, 144, 217, 0.25)';
+            
+            if (sinusInfo) {
+                if (sinusInfo.Inflammation === true) {
+                    // 有炎症：橙红色警示
+                    strokeColor = '#E67E22';
+                    fillColor = 'rgba(230, 126, 34, 0.30)';
+                } else if (sinusInfo.Pneumatization === 2) {
+                    // 过度气化：黄色警示
+                    strokeColor = '#F1C40F';
+                    fillColor = 'rgba(241, 196, 15, 0.25)';
+                } else if (sinusInfo.Pneumatization === 0 && sinusInfo.Inflammation === false) {
+                    // 正常：绿色
+                    strokeColor = '#27AE60';
+                    fillColor = 'rgba(39, 174, 96, 0.25)';
+                }
+            }
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // 平滑并绘制
+                    let pts = smoothPolyline(pArr, 3);
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: 2.5,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        tension: 0.15,
+                        fill: fillColor,
+                        shadowColor: strokeColor,
+                        shadowBlur: 6,
+                        shadowOpacity: 0.6,
+                        listening: true,
+                        perfectDrawEnabled: false
+                    });
+                    poly.findingType = 'sinus';
+                    poly.findingData = sinusInfo;
+                    poly.sinusSide = side;
+                    
+                    // 绑定鼠标事件
+                    poly.on('mouseenter', function(e) {
+                        console.log('Sinus mouseenter triggered', side, sinusInfo);
+                        showSinusTooltip(this, sinusInfo, side, e);
+                    });
+                    poly.on('mouseleave', function() {
+                        console.log('Sinus mouseleave triggered');
+                        hideTooltip();
+                    });
+                    
+                    // 添加鼠标样式
+                    poly.on('mouseenter', function() {
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'sinus');
+                    
+                    sinusLayer.add(poly);
+                    sinusCount++;
+                });
+            }
+        });
+        
+        console.log('上颌窦区域绘制完成，已绘制:', sinusCount, '个');
+    }
+    
+    if (sinusCount > 0) {
+        stage.add(sinusLayer);
+        appState.konvaLayers.sinus = sinusLayer;
+    }
 }
 
 /**
@@ -2534,6 +2649,114 @@ function showCondyleTooltip(node, condyleInfo, side, event) {
     }
 }
 
+/**
+ * 显示上颌窦 Tooltip
+ * @param {Konva.Shape} node - Konva 节点
+ * @param {Object|null} sinusInfo - 上颌窦诊断信息
+ * @param {string} side - 侧别 ('left' 或 'right')
+ * @param {Event} event - 鼠标事件
+ */
+function showSinusTooltip(node, sinusInfo, side, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容（反转左右显示）
+    const sideName = side === 'left' ? '右' : '左';
+    let content = `<strong>${sideName}上颌窦</strong><br>`;
+    
+    if (sinusInfo) {
+        // 气化程度
+        let pneumatizationText = '正常';
+        if (sinusInfo.Pneumatization === 1) {
+            pneumatizationText = '轻度气化';
+        } else if (sinusInfo.Pneumatization === 2) {
+            pneumatizationText = '过度气化';
+        }
+        content += `气化程度: ${pneumatizationText}<br>`;
+        
+        // 炎症状态
+        const inflammationText = sinusInfo.Inflammation ? '有炎症' : '无炎症';
+        const inflammationStyle = sinusInfo.Inflammation ? 'color: #E74C3C; font-weight: bold;' : '';
+        content += `炎症状态: <span style="${inflammationStyle}">${inflammationText}</span><br>`;
+        
+        // 分类
+        if (sinusInfo.TypeClassification !== undefined && sinusInfo.TypeClassification !== 0) {
+            content += `分类: Type ${sinusInfo.TypeClassification}<br>`;
+        }
+        
+        // 牙根进入上颌窦
+        if (sinusInfo.RootEntryToothFDI && sinusInfo.RootEntryToothFDI.length > 0) {
+            content += `牙根进入: ${sinusInfo.RootEntryToothFDI.join(', ')}<br>`;
+        }
+        
+        // 详细描述
+        if (sinusInfo.Detail) {
+            content += `<span style="font-size: 11px; color: #888;">${sinusInfo.Detail}</span><br>`;
+        }
+        
+        // 置信度
+        if (sinusInfo.Confidence_Inflammation !== undefined) {
+            content += `置信度: ${(sinusInfo.Confidence_Inflammation * 100).toFixed(1)}%`;
+        }
+    } else {
+        content += '诊断信息未找到';
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置（多边形的中心点）
+    const points = node.points();
+    let sumX = 0, sumY = 0, pointCount = 0;
+    for (let i = 0; i < points.length; i += 2) {
+        sumX += points[i];
+        sumY += points[i + 1];
+        pointCount++;
+    }
+    const centerX = sumX / pointCount;
+    const centerY = sumY / pointCount;
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + centerX + 15;
+    const tooltipY = stageBox.top + centerY - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
+
 // ============================================
 // 步骤13：全景片结构化报告生成
 // ============================================
@@ -2597,6 +2820,15 @@ function buildPanoReport(data) {
     // 根尖密度影
     if (data.RootTipDensityAnalysis && data.RootTipDensityAnalysis.Items && data.RootTipDensityAnalysis.Items.length > 0) {
         summaryItems.push(`根尖密度影: ${data.RootTipDensityAnalysis.Items.length}处`);
+    }
+    
+    // 上颌窦异常
+    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+        const sinusAbnormal = data.MaxillarySinus.filter(s => s.Inflammation === true || s.Pneumatization === 2);
+        if (sinusAbnormal.length > 0) {
+            const abnormalSides = sinusAbnormal.map(s => s.Side === 'left' ? '右' : '左').join('、');
+            summaryItems.push(`上颌窦异常: ${abnormalSides}侧`);
+        }
     }
     
     if (summaryItems.length > 0) {
@@ -2693,61 +2925,102 @@ function buildPanoReport(data) {
         }
     }
     
-    // 上颌窦分析
-    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+    if (hasJointContent) {
+        container.appendChild(jointSection);
+    }
+    
+    // 2.5 上颌窦分析（独立专区）
+    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus) && data.MaxillarySinus.length > 0) {
+        const sinusSection = createReportSection('上颌窦分析');
+        
         data.MaxillarySinus.forEach(sinus => {
-            const sideName = sinus.Side === 'left' ? '左' : '右';
+            // 注意：图像左右与实际左右相反，所以left显示为"右"
+            const sideName = sinus.Side === 'left' ? '右' : '左';
+            
+            // 创建单侧上颌窦卡片
+            const sinusCard = document.createElement('div');
+            sinusCard.className = 'sinus-card';
+            
+            // 判断是否有异常（炎症或过度气化）
+            const hasAbnormal = sinus.Inflammation === true || sinus.Pneumatization === 2;
+            if (hasAbnormal) {
+                sinusCard.classList.add('abnormal');
+            }
+            
+            // 标题
+            const cardHeader = document.createElement('div');
+            cardHeader.className = 'sinus-card-header';
+            cardHeader.innerHTML = `<strong>${sideName}上颌窦</strong>`;
+            sinusCard.appendChild(cardHeader);
             
             // 气化程度
-            let pneumatizationText = '';
-            if (sinus.Pneumatization === 0) {
-                pneumatizationText = '正常';
-            } else if (sinus.Pneumatization === 1) {
+            let pneumatizationText = '正常';
+            let pneumatizationClass = 'normal';
+            if (sinus.Pneumatization === 1) {
                 pneumatizationText = '轻度气化';
+                pneumatizationClass = 'mild';
             } else if (sinus.Pneumatization === 2) {
                 pneumatizationText = '过度气化';
+                pneumatizationClass = 'severe';
             }
             
-            if (pneumatizationText) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦气化`, pneumatizationText));
-                hasJointContent = true;
+            const pneumatizationItem = document.createElement('div');
+            pneumatizationItem.className = 'sinus-item';
+            pneumatizationItem.innerHTML = `<span class="label">气化程度:</span> <span class="value ${pneumatizationClass}">${pneumatizationText}</span>`;
+            sinusCard.appendChild(pneumatizationItem);
+            
+            // 炎症状态（重要指标）
+            const inflammationItem = document.createElement('div');
+            inflammationItem.className = 'sinus-item';
+            const inflammationText = sinus.Inflammation ? '有炎症' : '无炎症';
+            const inflammationClass = sinus.Inflammation ? 'inflammation-positive' : 'inflammation-negative';
+            inflammationItem.innerHTML = `<span class="label">炎症状态:</span> <span class="value ${inflammationClass}">${inflammationText}</span>`;
+            sinusCard.appendChild(inflammationItem);
+            
+            // 分类（如果有）
+            if (sinus.TypeClassification !== undefined && sinus.TypeClassification !== 0) {
+                const classItem = document.createElement('div');
+                classItem.className = 'sinus-item';
+                classItem.innerHTML = `<span class="label">分类:</span> <span class="value">Type ${sinus.TypeClassification}</span>`;
+                sinusCard.appendChild(classItem);
             }
             
-            // 气化分类
-            if (sinus.TypeClassification) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦分类`, `Type ${sinus.TypeClassification}`));
-                hasJointContent = true;
-            }
-            
-            // 炎症
-            if (sinus.Inflammation !== undefined) {
-                const inflammationText = sinus.Inflammation ? '有炎症' : '无炎症';
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦炎症`, inflammationText));
-                hasJointContent = true;
-            }
-            
-            // 牙根进入上颌窦
+            // 牙根进入上颌窦（如果有）
             if (sinus.RootEntryToothFDI && Array.isArray(sinus.RootEntryToothFDI) && sinus.RootEntryToothFDI.length > 0) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦牙根进入`, sinus.RootEntryToothFDI.join(', ')));
-                hasJointContent = true;
+                const rootEntryItem = document.createElement('div');
+                rootEntryItem.className = 'sinus-item root-entry';
+                rootEntryItem.innerHTML = `<span class="label">牙根进入:</span> <span class="value">${sinus.RootEntryToothFDI.join(', ')} 牙位</span>`;
+                sinusCard.appendChild(rootEntryItem);
             }
             
             // 详细描述
             if (sinus.Detail) {
-                jointSection.appendChild(createKeyValue('', sinus.Detail));
-                hasJointContent = true;
+                const detailItem = document.createElement('div');
+                detailItem.className = 'sinus-detail';
+                detailItem.textContent = sinus.Detail;
+                sinusCard.appendChild(detailItem);
             }
             
             // 置信度
-            if (sinus.Confidence_Pneumatization !== undefined) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦气化置信度`, (sinus.Confidence_Pneumatization * 100).toFixed(1) + '%'));
-                hasJointContent = true;
+            const confidenceItem = document.createElement('div');
+            confidenceItem.className = 'sinus-confidence';
+            let confidenceText = '';
+            if (sinus.Confidence_Inflammation !== undefined) {
+                confidenceText += `炎症检测: ${(sinus.Confidence_Inflammation * 100).toFixed(1)}%`;
             }
+            if (sinus.Confidence_Pneumatization !== undefined) {
+                if (confidenceText) confidenceText += ' | ';
+                confidenceText += `气化分析: ${(sinus.Confidence_Pneumatization * 100).toFixed(1)}%`;
+            }
+            if (confidenceText) {
+                confidenceItem.innerHTML = `<span class="label">置信度:</span> ${confidenceText}`;
+                sinusCard.appendChild(confidenceItem);
+            }
+            
+            sinusSection.appendChild(sinusCard);
         });
-    }
-    
-    if (hasJointContent) {
-        container.appendChild(jointSection);
+        
+        container.appendChild(sinusSection);
     }
     
     // 3. 牙周与缺牙
@@ -3464,9 +3737,10 @@ const LAYER_CONFIG = {
     landmarks: { name: '关键点', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
-     implants: { name: '种植体', taskType: 'panoramic' },
+    implants: { name: '种植体', taskType: 'panoramic' },
     condyle: { name: '髁突', taskType: 'panoramic' },
     mandible: { name: '下颌升支', taskType: 'panoramic' },
+    sinus: { name: '上颌窦', taskType: 'panoramic' },
     density: { name: '根尖密度影', taskType: 'panoramic' }
 };
 
