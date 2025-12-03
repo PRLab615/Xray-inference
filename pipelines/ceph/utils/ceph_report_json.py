@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 from statistics import mean
 from typing import Any, Dict, List, Union
 
@@ -17,6 +18,7 @@ from .ceph_report import (
     FH_MP_LOW_ANGLE_THRESHOLD,
     SGO_NME_HORIZONTAL_THRESHOLD,
     SGO_NME_VERTICAL_THRESHOLD,
+    DEFAULT_SPACING_MM_PER_PIXEL,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,7 @@ MEASUREMENT_ORDER = [
     "Y_SGo_NMe_Ratio-2",            # Y轴角
     "Mandibular_Growth_Angle",
     "SGo_NMe_Ratio-3",
-    "SN_FH_Angle-1",                # 实际为 SN-MP
+    "SN_FH_Angle-1",                # SN-MP 角（注：字段名历史遗留，实际是 SN-MP）
     "MP_FH_Angle-2",
     "U1_PP_Upper_Anterior_Alveolar_Height",
     "L1_MP_Lower_Anterior_Alveolar_Height",
@@ -107,9 +109,19 @@ def generate_standard_output(
 ) -> Dict[str, Any]:
     """
     将推理结果映射为符合《接口定义.md》的 data 字段。
+    
+    Args:
+        inference_results: 推理结果，包含 landmarks, measurements, spacing
+        patient_info: 患者信息
+        
+    Returns:
+        符合规范的 data 字段
     """
     landmarks_block = inference_results.get("landmarks", {})
     measurements = inference_results.get("measurements", {})
+    
+    # 从推理结果获取实际使用的 spacing，如果没有则使用默认值
+    spacing = inference_results.get("spacing", DEFAULT_SPACING_MM_PER_PIXEL)
 
     landmark_section = _build_landmark_section(landmarks_block)
     measurement_section = _build_measurement_section_in_order(measurements)
@@ -121,8 +133,8 @@ def generate_standard_output(
 
     data_dict = {
         "ImageSpacing": {
-            "X": 0.1,
-            "Y": 0.1,
+            "X": spacing,
+            "Y": spacing,
             "Unit": "mm/pixel",
         },
         "VisibilityMetrics": {
@@ -412,12 +424,19 @@ def _build_multiselect_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
 
 
 def _format_value(value: Any) -> Union[float, None]:
-    """格式化数值，保留一位小数。"""
+    """
+    格式化数值，保留两位小数。
+    
+    使用 Decimal 避免浮点数精度问题：
+    - 保留两位小数可以更清晰地显示实际测量值（如 112.05° 而不是 112.0°）
+    - 使用 ROUND_HALF_UP 标准四舍五入（而非 Python 默认的银行家舍入）
+    """
     if value is None:
         return None
     try:
-        return round(float(value), 1)
-    except (ValueError, TypeError):
+        # 转为 Decimal 进行精确舍入（保留两位小数），再转回 float
+        return float(Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+    except (ValueError, TypeError, Exception):
         return None
 
 
