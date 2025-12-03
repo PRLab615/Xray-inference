@@ -97,6 +97,9 @@ AIRWAY_MEASUREMENTS = {"Airway_Gap"}
 BOOLEAN_LEVEL_MEASUREMENTS = {"Airway_Gap", "Adenoid_Index"}
 CERVICAL_VERTEBRAL_MEASUREMENTS = {"Cervical_Vertebral_Maturity_Stage"}
 
+# 未检测标识：Level=-1 表示该测量项未被模型检测到
+UNDETECTED_LEVEL = -1
+
 
 def generate_standard_output(
     inference_results: Dict[str, Any],
@@ -251,11 +254,18 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
     - 多选类型：{"Label": "...", "Type": "MultiSelect", "Level": [int], "Confidence": ...}
     - 气道测量：{"Label": "...", "PNS-UPW": ..., ..., "Level": bool, "Confidence": ...}
     - 颈椎成熟度：{"Label": "...", "Coordinates": [...], "SerializedMask": "...", "Level": int, "Confidence": ...}
+    
+    未检测标识：
+    - 当 payload 为空或缺少 value 时，Level=-1 表示未检测到
+    - 数值字段设为 null，Confidence=0.0
     """
     value = payload.get("value")
     unit = payload.get("unit", "")
     conclusion = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
+    
+    # 判断是否为未检测状态：payload 为空或 value 为 None
+    is_undetected = not payload or value is None
     
     # 处理特殊类型
     if name in CERVICAL_VERTEBRAL_MEASUREMENTS:
@@ -288,8 +298,10 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
         else:
             entry["Angle"] = _format_value(value)
     
-    # 确定 Level
-    if name in BOOLEAN_LEVEL_MEASUREMENTS:
+    # 确定 Level：未检测时使用 UNDETECTED_LEVEL (-1)
+    if is_undetected:
+        entry["Level"] = UNDETECTED_LEVEL
+    elif name in BOOLEAN_LEVEL_MEASUREMENTS:
         entry["Level"] = bool(conclusion) if conclusion is not None else True
     else:
         level = conclusion if conclusion in (0, 1, 2) else 0
@@ -301,17 +313,24 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
 
 
 def _build_cervical_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """构建颈椎成熟度测量项。"""
+    """
+    构建颈椎成熟度测量项。
+    
+    未检测标识：当 payload 为空或缺少 conclusion 时，Level=-1
+    """
+    # 判断是否为未检测状态
+    is_undetected = not payload or payload.get("conclusion") is None
+    
     coordinates = payload.get("coordinates", [])
-    serialized_mask = payload.get("serialized_mask", "rle:...")
-    level = payload.get("conclusion", 3)
+    serialized_mask = payload.get("serialized_mask", "")
+    level = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
     
     return {
         "Label": name,
-        "Coordinates": coordinates,
-        "SerializedMask": serialized_mask,
-        "Level": int(level) if level is not None else 0,
+        "Coordinates": coordinates if not is_undetected else [],
+        "SerializedMask": serialized_mask if not is_undetected else "",
+        "Level": int(level) if level is not None else UNDETECTED_LEVEL,
         "Confidence": round(float(confidence), 2),
     }
 
@@ -322,14 +341,23 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     
     格式：{"Label": "Airway_Gap", "PNS-UPW": ..., "SPP-SPPW": ..., 
            "U-MPW": ..., "TB-YPPW": ..., "V-LPW": ..., "Level": bool, "Confidence": ...}
+    
+    未检测标识：当 payload 为空时，所有气道值为 null，Level=null（而非 true/false）
     """
     entry: Dict[str, Any] = {"Label": name}
     
+    # 判断是否为未检测状态
+    is_undetected = not payload
+    
     # 提取各个气道距离值
     airway_keys = ["PNS-UPW", "SPP-SPPW", "U-MPW", "TB-YPPW", "V-LPW"]
+    has_any_value = False
+    
     for key in airway_keys:
         if key in payload:
             entry[key] = _format_value(payload[key])
+            if entry[key] is not None:
+                has_any_value = True
     
     # 如果没有单独字段，尝试从 value 中提取
     value = payload.get("value")
@@ -337,8 +365,17 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in airway_keys:
             if key in value:
                 entry[key] = _format_value(value[key])
+                if entry[key] is not None:
+                    has_any_value = True
     
-    entry["Level"] = True  # 气道测量的 Level 为 bool
+    # 未检测时 Level 设为 null（前端可据此判断）
+    if is_undetected or not has_any_value:
+        entry["Level"] = None
+    else:
+        # 气道测量的 Level 为 bool，根据 conclusion 或默认 True
+        conclusion = payload.get("conclusion")
+        entry["Level"] = bool(conclusion) if conclusion is not None else True
+    
     entry["Confidence"] = round(float(payload.get("confidence", 0.0)), 2)
     
     return entry
@@ -349,17 +386,22 @@ def _build_multiselect_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
     构建多选类型测量项。
     
     格式：{"Label": "...", "Type": "MultiSelect", "Level": [int], "Confidence": ...}
+    
+    未检测标识：当 payload 为空或 conclusion 为 None 时，Level=[-1]
     """
+    # 判断是否为未检测状态
+    is_undetected = not payload or payload.get("conclusion") is None
+    
     conclusion = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
     
-    # Level 为数组形式
-    if isinstance(conclusion, list):
+    # Level 为数组形式，未检测时使用 [-1]
+    if is_undetected:
+        level = [UNDETECTED_LEVEL]
+    elif isinstance(conclusion, list):
         level = [int(x) for x in conclusion]
-    elif conclusion is not None:
-        level = [int(conclusion)]
     else:
-        level = [0]
+        level = [int(conclusion)]
     
     return {
         "Label": name,
