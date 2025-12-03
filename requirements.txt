@@ -33,6 +33,7 @@ pillow>=10.0.0
 # Deep Learning
 # ultralytics: YOLOv8 用于头影测量关键点检测 (pipelines/ceph/modules/point/)
 # torch: PyTorch 深度学习框架 (ultralytics 依赖)
+# onnx: ONNX 模型格式核心库 (ultralytics 加载 ONNX 模型时需要)
 # onnxruntime: ONNX 模型推理引擎 (用于髁突分割、下颌骨分割等模块)
 torch>=2.0.0
 torchvision>=0.15.0
