@@ -2,7 +2,7 @@
 """Cephalometric pipeline implementation that conforms to BasePipeline."""
 
 from __future__ import annotations
-
+import pprint
 import json
 import os
 import sys
@@ -156,33 +156,50 @@ class CephPipeline(BasePipeline):
         point_engine = self.modules['point']
         # 内部已埋点 ceph_point.pre/inference/post/measurement
         inference_results = point_engine.run(image_path=image_path, patient_info=patient_info)
-        
+
+        #1
+        print("\n=== [1] Point 模块推理原始输出 (inference_results) ===")
+        pprint.pprint(inference_results, width=120, depth=5)
+        # 如果你只关心关键点坐标和测量值，也可以单独打印：
+        if isinstance(inference_results, dict):
+            print("\n>>> 关键点坐标 (landmarks):")
+            pprint.pprint(inference_results.get("landmarks") or inference_results.get("points"), width=120)
+            print("\n>>> 测量值 (measurements):")
+            pprint.pprint(inference_results.get("measurements"), width=120)
+        print("=" * 60)
+
+
         # 报告生成埋点
         with timer.record("report.generation"):
             result = generate_standard_output(inference_results, patient_info)
-        
+        # 2
+
+
+
         # 保存计时报告
         timer.print_report()
         timer.save_report()  # 使用配置中的路径
-        
+
+
+
         self._log_step("侧位片推理完成", f"keys={list(result.keys())}")
         return result
 
 
-if __name__ == "__main__":
-    pipeline = CephPipeline()
-    patient = DEFAULT_PATIENT_INFO
-
-    if not os.path.exists(DEFAULT_IMAGE_PATH):
-        raise FileNotFoundError(
-            f"请修改 DEFAULT_IMAGE_PATH 为实际存在的图片路径，当前值: {DEFAULT_IMAGE_PATH}"
-        )
-
-    data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
-
-    output_path = Path(__file__).with_name(DEFAULT_OUTPUT_NAME)
-    with output_path.open("w", encoding="utf-8") as fp:
-        json.dump(data, fp, ensure_ascii=False, indent=2)
-
-    print(f"Ceph inference finished. JSON saved to: {output_path}")
-
+# if __name__ == "__main__":
+#     pipeline = CephPipeline()
+#     patient = DEFAULT_PATIENT_INFO
+#
+#     if not os.path.exists(DEFAULT_IMAGE_PATH):
+#         raise FileNotFoundError(
+#             f"请修改 DEFAULT_IMAGE_PATH 为实际存在的图片路径，当前值: {DEFAULT_IMAGE_PATH}"
+#         )
+#
+#     data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
+#
+#     output_path = Path(__file__).with_name(DEFAULT_OUTPUT_NAME)
+#     with output_path.open("w", encoding="utf-8") as fp:
+#         json.dump(data, fp, ensure_ascii=False, indent=2)
+#
+#     print(f"Ceph inference finished. JSON saved to: {output_path}")
+#

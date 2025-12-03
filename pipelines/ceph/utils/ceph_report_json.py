@@ -50,6 +50,47 @@ LABEL_FULL_NAMES = {
     "Pcd": "Pcd",
 }
 
+MEASUREMENT_ORDER = [
+    "ANB_Angle",
+    "PtmANS_Length",
+    "GoPo_Length",
+    "PoNB_Length",
+    "Jaw_Development_Coordination",
+    "SGo_NMe_Ratio-1",
+    "FH_MP_Angle",
+    "UI_SN_Angle",
+    "IMPA_Angle-1",
+    "Upper_Anterior_Alveolar_Height",
+    "Airway_Gap",                    # 可选
+    "Adenoid_Index",                # 可选
+    "SNA_Angle",
+    "Upper_Jaw_Position",
+    "SNB_Angle",
+    "Pcd_Lower_Position",
+    "Distance_Witsmm",
+    "U1_SN_Angle_Repeat",
+    "U1_NA_Angle",
+    "U1_NA_Incisor_Length",
+    "IMPA_Angle-2",
+    "FMIA_Angle",
+    "L1_NB_Angle",
+    "L1_NB_Distance",
+    "U1_L1_Inter_Incisor_Angle",
+    "Y_SGo_NMe_Ratio-2",            # Y轴角
+    "Mandibular_Growth_Angle",
+    "SGo_NMe_Ratio-3",
+    "SN_FH_Angle-1",                # 实际为 SN-MP
+    "MP_FH_Angle-2",
+    "U1_PP_Upper_Anterior_Alveolar_Height",
+    "L1_MP_Lower_Anterior_Alveolar_Height",
+    "U6_PP_Upper_Posterior_Alveolar_Height",
+    "L6_MP_Lower_Posterior_Alveolar_Height",
+    "Mandibular_Growth_Type_Angle", # Björk sum
+    "S_N_Anterior_Cranial_Base_Length",
+    "Go_Me_Length",
+    "Cervical_Vertebral_Maturity_Stage",  # 可选
+]
+
 # 特殊测量项类型定义
 MULTISELECT_MEASUREMENTS = {"Jaw_Development_Coordination"}
 AIRWAY_MEASUREMENTS = {"Airway_Gap"}
@@ -68,7 +109,7 @@ def generate_standard_output(
     measurements = inference_results.get("measurements", {})
 
     landmark_section = _build_landmark_section(landmarks_block)
-    measurement_section = _build_measurement_section(measurements)
+    measurement_section = _build_measurement_section_in_order(measurements)
 
     visibility_grade = _visibility_grade(
         landmark_section["DetectedLandmarks"], landmark_section["TotalLandmarks"]
@@ -97,7 +138,7 @@ def generate_standard_output(
             "QualityScore": round(average_confidence, 2),
         },
         "PatientInformation": {
-            "Gender": patient_info.get("gender", "Male"),
+            "Gender": patient_info.get("Gender", "Male"),
             "DentalAgeStage": {
                 "CurrentStage": patient_info.get("DentalAgeStage", "Permanent"),
             },
@@ -114,9 +155,10 @@ def generate_standard_output(
     }
 
     logger.info(
-        "Generated cephalometric JSON: %s/%s landmarks",
+        "Generated cephalometric JSON: %s/%s landmarks,%s measurements",
         landmark_section["DetectedLandmarks"],
         landmark_section["TotalLandmarks"],
+        len(measurement_section),
     )
     return data_dict
 
@@ -173,6 +215,21 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _build_measurement_section_in_order(measurements: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    关键修改：严格按照 MEASUREMENT_ORDER 顺序输出所有测量项
+    缺失的项目也会占位（返回空值但保留Label），保证序号不乱
+    """
+    section: List[Dict[str, Any]] = []
+
+    for name in MEASUREMENT_ORDER:
+        payload = measurements.get(name, {})
+        entry = _build_measurement_entry(name, payload)
+        section.append(entry)
+
+    return section
+
+
 def _build_measurement_section(measurements: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     section: List[Dict[str, Any]] = []
 
@@ -222,24 +279,24 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
         entry["Ratio"] = _format_value(value)
     else:
         # 根据测量项名称推断类型
-        if "_Length" in name or "_Distance" in name:
-            entry["Length_mm"] = _format_value(value)
-        elif "_Ratio" in name:
-            entry["Ratio"] = _format_value(value)
-        elif "_Angle" in name:
+        if name.endswith("_Angle") or "Angle" in name:
             entry["Angle"] = _format_value(value)
+        elif "Length" in name or "Distance" in name or "Height" in name:
+            entry["Length_mm"] = _format_value(value)
+        elif "Ratio" in name:
+            entry["Ratio"] = _format_value(value)
         else:
-            # 默认使用 Angle
             entry["Angle"] = _format_value(value)
     
     # 确定 Level
     if name in BOOLEAN_LEVEL_MEASUREMENTS:
-        entry["Level"] = True if conclusion else False
+        entry["Level"] = bool(conclusion) if conclusion is not None else True
     else:
-        entry["Level"] = _get_measurement_level(name, conclusion, value)
-    
+        level = conclusion if conclusion in (0, 1, 2) else 0
+        entry["Level"] = int(level)
+
     entry["Confidence"] = round(float(confidence), 2)
-    
+
     return entry
 
 
