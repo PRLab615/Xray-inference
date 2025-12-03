@@ -10,31 +10,31 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 KEYPOINT_MAP = {
-    "P1": "S",
-    "P2": "N",
-    "P3": "Or",
-    "P4": "Po",
-    "P5": "A",
-    "P6": "B",
-    "P7": "Pog",
-    "P8": "Me",
-    "P9": "Gn",
-    "P10": "Go",
-    "P11": "L1",
-    "P12": "UI",
-    "P13": "PNS",
-    "P14": "ANS",
-    "P15": "Ar",
-    "P16": "Co",
-    "P17": "PTM",
-    "P18": "Pt",
-    "P19": "U1A",
-    "P20": "L1A",
-    "P21": "U6",
-    "P22": "L6",
-    "P23": "Ba",
-    "P24": "Bo",
-    "P25": "Pcd"
+    "P1": "S",      # Sella - 蝶鞍中心点
+    "P2": "N",      # Nasion - 鼻根点
+    "P3": "Or",     # Orbitale - 眶下点
+    "P4": "Po",     # Porion - 耳点
+    "P5": "A",      # Subspinale - A点（上颌骨前缘最凹点）
+    "P6": "B",      # Supramentale - B点（下颌骨前缘最凹点）
+    "P7": "Pog",    # Pogonion - 颏前点
+    "P8": "Me",     # Menton - 颏下点
+    "P9": "Gn",     # Gnathion - 颏顶点
+    "P10": "Go",    # Gonion - 下颌角点
+    "P11": "L1",    # Lower Incisor - 下切牙切缘
+    "P12": "UI",    # Upper Incisor - 上切牙切缘
+    "P13": "PNS",   # Posterior Nasal Spine - 后鼻棘
+    "P14": "ANS",   # Anterior Nasal Spine - 前鼻棘
+    "P15": "Ar",    # Articulare - 关节点
+    "P16": "Co",    # Condylion - 髁突顶点
+    "P17": "PTM",   # Pterygomaxillary - 翼上颌裂点
+    "P18": "Pt",    # Point Pt
+    "P19": "U1A",   # Upper Incisor Apex - 上切牙根尖
+    "P20": "L1A",   # Lower Incisor Apex - 下切牙根尖
+    "P21": "U6",    # Upper 6th tooth - 上颌第一磨牙
+    "P22": "L6",    # Lower 6th tooth - 下颌第一磨牙
+    "P23": "Ba",    # Basion - 颅底点
+    "P24": "Bo",    # Bolton point - Bolton点
+    "P25": "Pcd"    # Posterior Condylion - 髁突后点（关键：位于S点后方）
 }
 
 ANB_SKELETAL_II_THRESHOLD = 6.0
@@ -43,6 +43,9 @@ FH_MP_HIGH_ANGLE_THRESHOLD = 33.0
 FH_MP_LOW_ANGLE_THRESHOLD = 25.0
 SGO_NME_HORIZONTAL_THRESHOLD = 71.0
 SGO_NME_VERTICAL_THRESHOLD = 63.0
+
+# 默认像素间距：1 pixel = 0.1 mm
+DEFAULT_SPACING_MM_PER_PIXEL = 0.1
 
 # 新增
 
@@ -96,7 +99,7 @@ THRESHOLDS = {
 
     "SNB": {
         "male": {"mixed": (78.0, 3.0), "permanent": (80.0, 3.0)},
-        "female": {"mixed": (78.0, 4.0), "permanent": (79.0, 3.0)},
+        "female": {"mixed": (78.0, 4.0), "permanent": (84.0, 3.0)},  # 女性恒牙期: 84±3°
     },
 
     # 比例类（mean, std）S-Go/N-Me %
@@ -188,9 +191,23 @@ INTERINCISOR_MIN, INTERINCISOR_MAX = 112.0, 130.0
 FACE_AXIS_MIN, FACE_AXIS_MAX = 83.0, 91.0
 BJORK_SUM_MIN, BJORK_SUM_MAX = 390.0, 402.0
 
-def calculate_measurements(landmarks: Dict[str, np.ndarray], sex: str = "male", dentition: str = "permanent"   ) -> Dict[str, Dict[str, Any]]:
+def calculate_measurements(
+    landmarks: Dict[str, np.ndarray], 
+    sex: str = "male", 
+    dentition: str = "permanent",
+    spacing: float = DEFAULT_SPACING_MM_PER_PIXEL,
+) -> Dict[str, Dict[str, Any]]:
     """
     Derive cephalometric measurements from landmark coordinates.
+    
+    Args:
+        landmarks: 关键点坐标字典（像素坐标）
+        sex: 性别 ("male" / "female")
+        dentition: 牙列期 ("mixed" / "permanent")
+        spacing: 像素间距 (mm/pixel)，默认 0.1 mm/pixel
+        
+    Returns:
+        测量结果字典，长度单位为 mm
     """
     measurements: Dict[str, Dict[str, Any]] = {}
 
@@ -198,65 +215,96 @@ def calculate_measurements(landmarks: Dict[str, np.ndarray], sex: str = "male", 
     dentition = dentition.lower()
     if dentition not in ("mixed", "permanent", "all"):
         # 兜底：允许 'all' 用于 ANB male 全周期情况
+        logger.warning(f"Invalid dentition '{dentition}', fallback to 'permanent'")
         dentition = "permanent"
+    
+    # 记录使用的参数（用于排查问题）
+    logger.info(f"[计算参数] 性别: {sex}, 牙列期: {dentition}, spacing: {spacing} mm/pixel")
 
-    # 新增：使用 sex/dentition 判别阈值的测量项（尽量保留原返回结构）
+    # === 角度测量（不需要 spacing）===
     measurements["ANB_Angle"] = _compute_anb(landmarks, sex=sex, dentition=dentition)
     measurements["FH_MP_Angle"] = _compute_fh_mp(landmarks, sex=sex, dentition=dentition)
-    measurements["SGo_NMe_Ratio-1"] = _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)
-
-    # 新增：使用 sex/dentition 判别阈值的测量项（尽量保留原返回结构）
-    measurements["PtmANS_Length"] = _compute_ptmans_length(landmarks, sex=sex, dentition=dentition)
-    measurements["GoPo_Length"] = _compute_gopo_length(landmarks, sex=sex, dentition=dentition)
-    measurements["PoNB_Length"] = _compute_ponb_length(landmarks, sex=sex, dentition=dentition)
     measurements["SNA_Angle"] = _compute_sna(landmarks, sex=sex, dentition=dentition)
     measurements["SNB_Angle"] = _compute_snb(landmarks, sex=sex, dentition=dentition)
-    measurements["Upper_Jaw_Position"] = _compute_ptm_s(landmarks, sex=sex, dentition=dentition)
-    measurements["Pcd_Lower_Position"] = _compute_pcd_s(landmarks, sex=sex, dentition=dentition)
-    measurements["Distance_Witsmm"] = _compute_wits(landmarks, sex=sex, dentition=dentition)
     measurements["UI_SN_Angle"] = _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
     measurements["IMPA_Angle-1"] = _compute_impa(landmarks, sex=sex, dentition=dentition)
-    measurements["Upper_Anterior_Alveolar_Height"] = _compute_u1_pp(landmarks, sex=sex, dentition=dentition)
     measurements["U1_NA_Angle"] = _compute_u1_na_angle(landmarks, sex=sex, dentition=dentition)
-    measurements["U1_NA_Incisor_Length"] = _compute_u1_na_mm(landmarks, sex=sex, dentition=dentition)
     measurements["FMIA_Angle"] = _compute_fmia(landmarks, sex=sex, dentition=dentition)
     measurements["L1_NB_Angle"] = _compute_l1_nb_angle(landmarks, sex=sex, dentition=dentition)
-    measurements["L1_NB_Distance"] = _compute_l1_nb_mm(landmarks, sex=sex, dentition=dentition)
     measurements["U1_L1_Inter_Incisor_Angle"] = _compute_interincisor_angle(landmarks, sex=sex, dentition=dentition)
     measurements["Mandibular_Growth_Angle"] = _compute_face_axis(landmarks, sex=sex, dentition=dentition)
-    measurements["S_N_Anterior_Cranial_Base_Length"] = _compute_s_n_length(landmarks, sex=sex, dentition=dentition)
-    measurements["Go_Me_Length"] = _compute_go_me_length(landmarks, sex=sex, dentition=dentition)
     measurements["U1_SN_Angle_Repeat"] = _compute_u1_sn_repeat(landmarks, sex=sex, dentition=dentition)
     measurements["IMPA_Angle-2"] = _compute_impa_2(landmarks, sex=sex, dentition=dentition)
-    measurements["Y_SGo_NMe_Ratio-2"] = _compute_y_axis_angle(landmarks, sex=sex,dentition=dentition)  # MODIFIED: 原来错误复用 SGo_NMe
-    measurements["SGo_NMe_Ratio-3"] = _compute_sgo_nme_ratio_3(landmarks, sex=sex, dentition=dentition)
-    measurements["SN_FH_Angle-1"] = _compute_sn_mp_angle(landmarks, sex=sex,dentition=dentition)  # MODIFIED: 改为 SN-MP (S-N 与 Go-Me)
+    # 注意：字段名 "Y_SGo_NMe_Ratio-2" 命名有误（应为 Y_Axis_Angle）
+    # 实际计算的是 Y轴角（°），不是比率（%）
+    # 为保持 JSON 格式不变，暂不修改字段名，前端已做显示修正
+    # 注意：字段名 "Y_SGo_NMe_Ratio-2" 命名有误（应为 Y_Axis_Angle）
+    # 实际计算的是 Y轴角（°），不是比率（%）
+    # 为保持 JSON 格式不变，暂不修改字段名，前端已做显示修正
+    measurements["Y_SGo_NMe_Ratio-2"] = _compute_y_axis_angle(landmarks, sex=sex, dentition=dentition)
+    # 注意：字段名 "SN_FH_Angle-1" 是历史遗留命名（应为 SN_MP_Angle）
+    # 实际计算的是 SN-MP 角（正常约 35°），不是 SN-FH 角（正常约 7°）
+    # 为保持 JSON 格式不变，暂不修改字段名，前端已做显示修正
+    measurements["SN_FH_Angle-1"] = _compute_sn_mp_angle(landmarks, sex=sex, dentition=dentition)
     measurements["MP_FH_Angle-2"] = _compute_fh_mp_repeat(landmarks, sex=sex, dentition=dentition)
-    measurements["U1_PP_Upper_Anterior_Alveolar_Height"] = _compute_u1_pp_repeat(landmarks, sex=sex,dentition=dentition)
-    measurements["L1_MP_Lower_Anterior_Alveolar_Height"] = _compute_l1_mp_height(landmarks, sex=sex,dentition=dentition)
-    measurements["U6_PP_Upper_Posterior_Alveolar_Height"] = _compute_u6_pp_height(landmarks, sex=sex,dentition=dentition)
-    measurements["L6_MP_Lower_Posterior_Alveolar_Height"] = _compute_l6_mp_height(landmarks, sex=sex,dentition=dentition)
-    measurements["Mandibular_Growth_Type_Angle"] = _compute_mandibular_growth_type_angle(landmarks, sex=sex,dentition=dentition)
+    measurements["Mandibular_Growth_Type_Angle"] = _compute_mandibular_growth_type_angle(landmarks, sex=sex, dentition=dentition)
+    
+    # === 比率测量（不需要 spacing，分子分母抵消）===
+    measurements["SGo_NMe_Ratio-1"] = _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)
+    measurements["SGo_NMe_Ratio-3"] = _compute_sgo_nme_ratio_3(landmarks, sex=sex, dentition=dentition)
 
+    # === 长度测量（需要 spacing 转换为 mm）===
+    measurements["PtmANS_Length"] = _compute_ptmans_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["GoPo_Length"] = _compute_gopo_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["PoNB_Length"] = _compute_ponb_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["Upper_Jaw_Position"] = _compute_ptm_s(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["Pcd_Lower_Position"] = _compute_pcd_s(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["Distance_Witsmm"] = _compute_wits(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["U1_NA_Incisor_Length"] = _compute_u1_na_mm(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["L1_NB_Distance"] = _compute_l1_nb_mm(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["S_N_Anterior_Cranial_Base_Length"] = _compute_s_n_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["Go_Me_Length"] = _compute_go_me_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["Upper_Anterior_Alveolar_Height"] = _compute_u1_pp(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["U1_PP_Upper_Anterior_Alveolar_Height"] = _compute_u1_pp_repeat(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["L1_MP_Lower_Anterior_Alveolar_Height"] = _compute_l1_mp_height(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["U6_PP_Upper_Posterior_Alveolar_Height"] = _compute_u6_pp_height(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["L6_MP_Lower_Posterior_Alveolar_Height"] = _compute_l6_mp_height(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+
+    # === 综合评估 ===
     measurements["Jaw_Development_Coordination"] = _compute_jaw_coordination(measurements)
 
     return measurements
 
 def _compute_anb(landmarks: Dict[str, np.ndarray], sex: str = "male", dentition: str = "permanent") -> Dict[str, Any]:
-    required = ["P1", "P2", "P5", "P6"]
+    """
+    计算 SNA、SNB 和 ANB 角度
+    
+    SNA: S-N-A 角，顶点在 N，测量上颌骨相对颅底的位置
+    SNB: S-N-B 角，顶点在 N，测量下颌骨相对颅底的位置
+    ANB: SNA - SNB，测量上下颌骨的相对位置关系
+    
+    注意：使用无向夹角计算（0°~180°），避免图像坐标系导致的负值问题
+    """
+    required = ["P1", "P2", "P5", "P6"]  # S, N, A, B
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
 
-    p1, p2, p5, p6 = (landmarks[idx] for idx in required)
-    v_ns = p1 - p2
-    v_na = p5 - p2
-    v_nb = p6 - p2
-
-    sna = _calculate_angle(v_ns, v_na)
-    snb = _calculate_angle(v_ns, v_nb)
+    s, n, a, b = (landmarks[idx] for idx in required)
+    
+    # 从顶点 N 出发的两条射线向量
+    v_ns = s - n  # N → S
+    v_na = a - n  # N → A
+    v_nb = b - n  # N → B
+    
+    # 使用无向夹角计算（始终返回正值 0°~180°）
+    sna = _angle_between_vectors(v_ns, v_na)
+    snb = _angle_between_vectors(v_ns, v_nb)
+    
+    # ANB = SNA - SNB
+    # 正值表示 A 点相对更靠前（II类倾向），负值表示 B 点相对更靠前（III类倾向）
     anb = sna - snb
 
-    conclusion_level = _get_skeletal_class(anb, sex=sex, dentition=dentition)  # MODIFIED: 传入 sex/dentition
+    conclusion_level = _get_skeletal_class(anb, sex=sex, dentition=dentition)
 
     return {
         "value": float(anb),
@@ -312,16 +360,17 @@ def _compute_sgo_nme(landmarks: Dict[str, np.ndarray], sex: str = "male", dentit
     }
 
 
-def _compute_ptmans_length(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_ptmans_length(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P17", "P14"]  # PTM-ANS
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length = np.linalg.norm(landmarks["P17"] - landmarks["P14"])
+    length_px = np.linalg.norm(landmarks["P17"] - landmarks["P14"])
+    length_mm = length_px * spacing  # 像素转毫米
 
-    level = _evaluate_by_threshold("PtmANS_Length", length, sex, dentition)
-    return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
+    level = _evaluate_by_threshold("PtmANS_Length", length_mm, sex, dentition)
+    return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_gopo_length(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_gopo_length(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第3项：Go-Po长度（Pog在下颌平面上的投影长度）—— 修复除零风险"""
     required = ["P10", "P7", "P8"]  # Go, Pog, Me
     if not _has_points(landmarks, required):
@@ -336,20 +385,22 @@ def _compute_gopo_length(landmarks, sex: str = "male", dentition: str = "permane
         return {"value": 0.0, "unit": "mm", "conclusion": 0, "status": "ok"}
 
     proj_scalar = np.dot(pog - go, mp_vec) / (norm_mp ** 2)
-    length = abs(proj_scalar) * norm_mp
-    level = _evaluate_by_threshold("GoPo_Length", length, sex, dentition)
-    return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
+    length_px = abs(proj_scalar) * norm_mp
+    length_mm = length_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("GoPo_Length", length_mm, sex, dentition)
+    return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_ponb_length(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_ponb_length(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P7", "P2", "P6"]  # Pog 到 NB 的垂直距离
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     pog, n, b = landmarks["P7"], landmarks["P2"], landmarks["P6"]
     nb_vec = b - n
-    dist = abs(np.cross(nb_vec, pog - n) / np.linalg.norm(nb_vec))
+    dist_px = abs(np.cross(nb_vec, pog - n) / np.linalg.norm(nb_vec))
+    dist_mm = dist_px * spacing  # 像素转毫米
     # PoNB 可能为正负，绝对值判断是否偏离正常均值
-    level = _evaluate_by_threshold("PoNB_Length", float(dist), sex, dentition)
-    return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
+    level = _evaluate_by_threshold("PoNB_Length", float(dist_mm), sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_sna(landmarks, sex: str = "male", dentition: str = "permanent"):
     tmp = _compute_anb(landmarks, sex=sex, dentition=dentition)
@@ -367,131 +418,277 @@ def _compute_snb(landmarks, sex: str = "male", dentition: str = "permanent"):
     level = _evaluate_by_threshold("SNB", snb, sex, dentition)  # MODIFIED
     return {"value": float(snb), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_ptm_s(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_ptm_s(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P17", "P1"]
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length = np.linalg.norm(landmarks["P17"] - landmarks["P1"])
-    level = _evaluate_by_threshold("Upper_Jaw_Position", length, sex, dentition)  # MODIFIED
-    return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
+    length_px = np.linalg.norm(landmarks["P17"] - landmarks["P1"])
+    length_mm = length_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("Upper_Jaw_Position", length_mm, sex, dentition)
+    return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_pcd_s(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P25", "P1"]
+def _compute_pcd_s(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
+    """
+    Pcd-S 距离：蝶鞍点到髁突后点的距离
+    
+    解剖说明：
+    - S (Sella): 蝶鞍中心点，位于颅底中央
+    - Pcd (Posterior Condylion): 髁突后点，下颌关节的后缘
+    - Pcd 位于 S 点的后下方
+    
+    几何逻辑（反向指标）：
+    - 距离增大 (>22mm) → 髁突过于靠后 → 下颌关节后移 → 下颌整体后缩 (Level=1)
+    - 距离减小 (<16mm) → 髁突过于靠前 → 下颌关节前移 → 下颌整体前突 (Level=2)
+    - 正常范围：16-22mm (男性恒牙期 19±3mm)
+    """
+    required = ["P25", "P1"]  # Pcd, S
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length = np.linalg.norm(landmarks["P25"] - landmarks["P1"])
-    level = _evaluate_by_threshold("Pcd_Lower_Position", length, sex, dentition)  # MODIFIED
-    return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
+    length_px = np.linalg.norm(landmarks["P25"] - landmarks["P1"])
+    length_mm = length_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("Pcd_Lower_Position", length_mm, sex, dentition)
+    return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P5", "P6", "P3", "P4"]  # A,B,Or,Po → FH平面
+def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
+    """
+    Wits 值：上下颌骨的位置关系
+    将 A 点和 B 点垂直投影到参考平面（这里使用 FH 平面近似咬合平面）
+    
+    正值：A 点投影在 B 点投影的前方（II 类倾向）
+    负值：B 点投影在 A 点投影的前方（III 类倾向）
+    
+    正常值约 -1.4±2.8mm
+    """
+    required = ["P5", "P6", "P3", "P4"]  # A, B, Or, Po
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     a, b, or_pt, po = (landmarks[k] for k in required)
-    fh = po - or_pt
-    a_proj = np.dot(a - or_pt, fh) / np.dot(fh, fh)
-    b_proj = np.dot(b - or_pt, fh) / np.dot(fh, fh)
-    wits = (b_proj - a_proj) * np.linalg.norm(fh)
-    # Wits 的阈值未在 THRESHOLDS 表中给出，保持原有逻辑：
-    level = _evaluate_by_threshold("Distance_Witsmm", wits, sex, dentition)
-    return {"value": float(wits), "unit": "mm", "conclusion": level, "status": "ok"}
+    
+    # FH 平面向量（从 Po 指向 Or，向前方向）
+    fh = or_pt - po
+    fh_norm_sq = np.dot(fh, fh)
+    if fh_norm_sq < 1e-8:
+        return {"value": 0.0, "unit": "mm", "conclusion": 0, "status": "ok"}
+    
+    # A、B 点在 FH 平面上的投影参数
+    # 以 Po 为参考原点
+    a_proj = np.dot(a - po, fh) / fh_norm_sq
+    b_proj = np.dot(b - po, fh) / fh_norm_sq
+    
+    # Wits = A投影位置 - B投影位置
+    # 正值：A 更靠前（II 类）；负值：B 更靠前（III 类）
+    wits_px = (a_proj - b_proj) * np.linalg.norm(fh)
+    wits_mm = wits_px * spacing
+    
+    level = _evaluate_by_threshold("Distance_Witsmm", wits_mm, sex, dentition)
+    return {"value": float(wits_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_u1_sn(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P12", "P19", "P1", "P2"]
+    """
+    U1-SN 角：上中切牙长轴与 SN 平面的下内角
+    正常值约 107±6°
+    
+    牙轴方向：从根尖指向切端（向下向前）
+    SN 方向：从 S 指向 N（向前）
+    """
+    required = ["P12", "P19", "P1", "P2"]  # UI(切端), U1A(根尖), S, N
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     u1, u1a, s, n = (landmarks[k] for k in required)
-    axis = u1a - u1
-    sn = s - n
+    
+    # 牙轴向量：从根尖指向切端
+    axis = u1 - u1a
+    # SN 平面向量：从 S 指向 N
+    sn = n - s
+    
+    # 计算夹角
     angle = _angle_between_vectors(axis, sn)
-    # 使用阈值表（MODIFIED）
+    
+    # U1-SN 测量的是下内角，如果计算出的是上外角（锐角），需要取补角
+    # 正常 U1-SN 约 107°，是钝角
+    if angle < 90:
+        angle = 180 - angle
+    
     level = _evaluate_by_threshold("UI_SN_Angle", angle, sex, dentition)
+    
+    # 调试日志：记录 UI_SN_Angle 计算结果（用于排查标红问题）
+    logger.info(f"[UI_SN_Angle] 角度: {angle:.2f}°, Level: {level}, 性别: {sex}, 牙期: {dentition}")
+    
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
 def _compute_impa(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P11", "P20", "P8", "P10"]
+    """
+    IMPA (L1-MP)：下中切牙长轴与下颌平面(MP)的上内角
+    正常值约 93±7°
+    
+    牙轴方向：从根尖指向切端
+    MP 方向：从 Go 指向 Me
+    """
+    required = ["P11", "P20", "P8", "P10"]  # L1(切端), L1A(根尖), Me, Go
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     l1, l1a, me, go = (landmarks[k] for k in required)
-    axis = l1a - l1
+    
+    # 牙轴向量：从根尖指向切端
+    axis = l1 - l1a
+    # 下颌平面向量：从 Go 指向 Me
     mp = me - go
+    
+    # 计算夹角
     angle = _angle_between_vectors(axis, mp)
-    level = _evaluate_by_threshold("IMPA_Angle", angle, sex, dentition)  # MODIFIED
+    
+    # IMPA 测量的是上内角，正常约 93°
+    # 如果计算出的是锐角（外角），需要取补角
+    if angle < 90:
+        angle = 180 - angle
+    
+    level = _evaluate_by_threshold("IMPA_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_u1_pp(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_u1_pp(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P12", "P14", "P13"]
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     u1, ans, pns = (landmarks[k] for k in required)
     pp = pns - ans
 
-    # 原阈值保留（没有在 THRESHOLDS 表中）
-    dist_scalar = _safe_cross_distance(pp, u1, ans)
-    level = _evaluate_by_threshold("Upper_Anterior_Alveolar_Height", dist_scalar, sex, dentition)
-    return {"value": float(dist_scalar), "unit": "mm", "conclusion": level, "status": "ok"}
+    dist_px = _safe_cross_distance(pp, u1, ans)
+    dist_mm = dist_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("Upper_Anterior_Alveolar_Height", dist_mm, sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_u1_na_angle(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P12", "P19", "P2", "P5"]
+    """
+    U1-NA 角：上切牙长轴与 NA 线的夹角
+    正常值约 22±6°，是锐角
+    
+    牙轴方向：从根尖指向切端
+    NA 方向：从 N 指向 A
+    """
+    required = ["P12", "P19", "P2", "P5"]  # UI(切端), U1A(根尖), N, A
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     u1, u1a, n, a = (landmarks[k] for k in required)
-    axis = u1a - u1
+    
+    # 牙轴向量：从根尖指向切端
+    axis = u1 - u1a
+    # NA 线向量：从 N 指向 A
     na = a - n
+    
+    # 计算夹角
     angle = _angle_between_vectors(axis, na)
+    
+    # U1-NA 角正常约 22°，是锐角；如果计算出钝角，需要取补角
+    if angle > 90:
+        angle = 180 - angle
+    
     level = _evaluate_by_threshold("U1_NA_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_u1_na_mm(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_u1_na_mm(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P12", "P2", "P5"]
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     u1, n, a = landmarks["P12"], landmarks["P2"], landmarks["P5"]
     na = a - n
-    dist_scalar = abs(np.cross(na, u1 - n) / np.linalg.norm(na))
-    level = _evaluate_by_threshold("U1_NA_Incisor_Length", dist_scalar, sex, dentition)
-    return {"value": float(dist_scalar), "unit": "mm", "conclusion": level, "status": "ok"}
+    dist_px = abs(np.cross(na, u1 - n) / np.linalg.norm(na))
+    dist_mm = dist_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("U1_NA_Incisor_Length", dist_mm, sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_fmia(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P11", "P20", "P3", "P4"]
+    """
+    FMIA (L1-FH)：下中切牙长轴与 FH 平面的夹角
+    正常值约 54±6°，是锐角
+    
+    牙轴方向：从根尖指向切端
+    FH 方向：从 Po 指向 Or（向前）
+    """
+    required = ["P11", "P20", "P3", "P4"]  # L1(切端), L1A(根尖), Or, Po
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     l1, l1a, or_pt, po = (landmarks[k] for k in required)
-    axis = l1a - l1
-    fh = po - or_pt
+    
+    # 牙轴向量：从根尖指向切端
+    axis = l1 - l1a
+    # FH 平面向量：从 Po 指向 Or
+    fh = or_pt - po
+    
+    # 计算夹角
     angle = _angle_between_vectors(axis, fh)
+    
+    # FMIA 正常约 54°，是锐角；如果计算出钝角，取补角
+    if angle > 90:
+        angle = 180 - angle
+    
     level = _evaluate_by_threshold("FMIA_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
 def _compute_l1_nb_angle(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P11", "P20", "P2", "P6"]
+    """
+    L1-NB 角：下中切牙长轴与 NB 线的夹角
+    正常值约 30±6°，是锐角
+    
+    牙轴方向：从根尖指向切端
+    NB 方向：从 N 指向 B
+    """
+    required = ["P11", "P20", "P2", "P6"]  # L1(切端), L1A(根尖), N, B
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     l1, l1a, n, b = (landmarks[k] for k in required)
-    axis = l1a - l1
+    
+    # 牙轴向量：从根尖指向切端
+    axis = l1 - l1a
+    # NB 线向量：从 N 指向 B
     nb = b - n
+    
+    # 计算夹角
     angle = _angle_between_vectors(axis, nb)
+    
+    # L1-NB 角正常约 30°，是锐角；如果计算出钝角，取补角
+    if angle > 90:
+        angle = 180 - angle
+    
     level = _evaluate_by_threshold("L1_NB_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_l1_nb_mm(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_l1_nb_mm(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P11", "P2", "P6"]
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     l1, n, b = landmarks["P11"], landmarks["P2"], landmarks["P6"]
     nb = b - n
 
-    dist_scalar = abs(np.cross(nb, l1 - n) / np.linalg.norm(nb))
-    level = _evaluate_by_threshold("L1_NB_Distance", dist_scalar, sex, dentition)
-    return {"value": float(dist_scalar), "unit": "mm", "conclusion": level, "status": "ok"}
+    dist_px = abs(np.cross(nb, l1 - n) / np.linalg.norm(nb))
+    dist_mm = dist_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("L1_NB_Distance", dist_mm, sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_interincisor_angle(landmarks, sex: str = "male", dentition: str = "permanent"):
-    required = ["P12", "P19", "P11", "P20"]
+    """
+    U1-L1 角（上下切牙角）：上下中切牙长轴之间的夹角
+    正常值约 121±9°，是钝角
+    
+    上切牙轴：从根尖指向切端（向下向前）
+    下切牙轴：从根尖指向切端（向上向前）
+    """
+    required = ["P12", "P19", "P11", "P20"]  # UI, U1A, L1, L1A
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
-    u_axis = landmarks["P19"] - landmarks["P12"]
-    l_axis = landmarks["P20"] - landmarks["P11"]
+    
+    # 上切牙轴：从根尖(U1A)指向切端(UI)
+    u_axis = landmarks["P12"] - landmarks["P19"]
+    # 下切牙轴：从根尖(L1A)指向切端(L1)
+    l_axis = landmarks["P11"] - landmarks["P20"]
+    
+    # 计算夹角（两牙轴的夹角）
     angle = _angle_between_vectors(u_axis, l_axis)
+    
+    # 上下切牙角正常约 121°~127°，是钝角
+    # 如果计算出锐角，取补角
+    if angle < 90:
+        angle = 180 - angle
+    
     level = _evaluate_by_threshold("U1_L1_Inter_Incisor_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
@@ -506,21 +703,23 @@ def _compute_face_axis(landmarks, sex: str = "male", dentition: str = "permanent
     level = _evaluate_by_threshold("Mandibular_Growth_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_s_n_length(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_s_n_length(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P1", "P2"]
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length = np.linalg.norm(landmarks["P1"] - landmarks["P2"])
-    level = _evaluate_by_threshold("S_N_Anterior_Cranial_Base_Length", length, sex, dentition)
-    return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
+    length_px = np.linalg.norm(landmarks["P1"] - landmarks["P2"])
+    length_mm = length_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("S_N_Anterior_Cranial_Base_Length", length_mm, sex, dentition)
+    return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_go_me_length(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_go_me_length(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     required = ["P10", "P8"]
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length = np.linalg.norm(landmarks["P10"] - landmarks["P8"])
-    level = _evaluate_by_threshold("Go_Me_Length", length, sex, dentition)
-    return {"value": float(length), "unit": "mm", "conclusion": level, "status": "ok"}
+    length_px = np.linalg.norm(landmarks["P10"] - landmarks["P8"])
+    length_mm = length_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("Go_Me_Length", length_mm, sex, dentition)
+    return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_jaw_coordination(measurements):
     upper = measurements.get("SNA_Angle", {}).get("conclusion", 0)
@@ -530,28 +729,12 @@ def _compute_jaw_coordination(measurements):
     return {"value": [upper, lower], "unit": "multi", "conclusion": [upper, lower], "status": "ok"}
 
 def _compute_u1_sn_repeat(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第18项：U1-SN角度重复测量（与UI_SN_Angle完全相同，但独立计算）"""
-    required = ["P12", "P19", "P1", "P2"]
-    if not _has_points(landmarks, required):
-        return _missing_measurement("degrees", required, landmarks)
-    u1, u1a, s, n = (landmarks[k] for k in required)
-    axis = u1a - u1
-    sn = s - n
-    angle = _angle_between_vectors(axis, sn)
-    level = _evaluate_by_threshold("UI_SN_Angle", angle, sex, dentition)  # MODIFIED: 使用阈值表
-    return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
+    """第18项：U1-SN角度重复测量（与UI_SN_Angle完全相同，复用 _compute_u1_sn）"""
+    return _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
 
 def _compute_impa_2(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第21项：IMPA角度重复测量（与IMPA_Angle-1完全相同，但独立计算）"""
-    required = ["P11", "P20", "P8", "P10"]
-    if not _has_points(landmarks, required):
-        return _missing_measurement("degrees", required, landmarks)
-    l1, l1a, me, go = (landmarks[k] for k in required)
-    axis = l1a - l1
-    mp = me - go
-    angle = _angle_between_vectors(axis, mp)
-    level = _evaluate_by_threshold("IMPA_Angle", angle, sex, dentition)  # MODIFIED
-    return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
+    """第21项：IMPA角度重复测量（与IMPA_Angle-1完全相同，复用 _compute_impa）"""
+    return _compute_impa(landmarks, sex=sex, dentition=dentition)
 
 def _compute_sgo_nme_ratio_2(landmarks, sex: str = "male", dentition: str = "permanent"):
     """第26项：SGo/NMe比例重复测量（与SGo_NMe_Ratio-1完全相同）"""
@@ -562,23 +745,40 @@ def _compute_sgo_nme_ratio_3(landmarks, sex: str = "male", dentition: str = "per
     return _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)
 
 def _compute_sn_fh_angle(landmarks):
-
+    """
+    SN-FH 角：前颅底平面（SN）与眶耳平面（FH）的夹角
+    正常值约 7°~10°（很少超过 15°）
+    
+    SN 平面：从 S 指向 N（向前）
+    FH 平面：从 Po 指向 Or（向前）
+    
+    两个平面几乎平行，夹角很小
+    """
     required = ["P1", "P2", "P3", "P4"]  # S, N, Or, Po
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     S, N, Or, Po = (landmarks[k] for k in required)
+    
+    # SN 向量：从 S 指向 N（向前）
     sn_vec = N - S
-    fh_vec = Po - Or
+    # FH 向量：从 Po 指向 Or（向前）—— 修正方向！
+    fh_vec = Or - Po
+    
+    # 计算夹角
     angle = _angle_between_vectors(sn_vec, fh_vec)
+    
+    # 取锐角（正常情况下应该是 7-10°，不应超过 90°）
     if angle > 90:
         angle = 180 - angle
-    # 原逻辑：
+    
+    # 判断等级：正常约 7±2°
     if angle > 9.0:
-        level = 1
+        level = 1  # 偏大
     elif angle < 5.0:
-        level = 2
+        level = 2  # 偏小
     else:
-        level = 0
+        level = 0  # 正常
+    
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
 def _compute_sn_mp_angle(landmarks, sex: str = "male", dentition: str = "permanent"):
@@ -606,48 +806,56 @@ def _compute_fh_mp_repeat(landmarks, sex: str = "male", dentition: str = "perman
     """第30项：FH-MP角度重复测量（与FH_MP_Angle完全相同，但独立计算）"""
     return _compute_fh_mp(landmarks, sex=sex, dentition=dentition)  # 直接复用
 
-def _compute_u1_pp_repeat(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_u1_pp_repeat(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第31项：上前牙槽高度重复测量（与Upper_Anterior_Alveolar_Height完全相同）"""
-    return _compute_u1_pp(landmarks, sex=sex, dentition=dentition)
+    return _compute_u1_pp(landmarks, sex=sex, dentition=dentition, spacing=spacing)
 
-def _compute_l1_mp_height(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_l1_mp_height(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第33项：下前牙槽高度 L1切缘到下颌平面（Go-Me）的垂直距离"""
     required = ["P11", "P10", "P8"]  # L1, Go, Me
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     l1, go, me = landmarks["P11"], landmarks["P10"], landmarks["P8"]
     mp_vec = me - go
-    dist = _safe_cross_distance(mp_vec, l1, go)
-    level = _evaluate_by_threshold("L1_MP_Lower_Anterior_Alveolar_Height", dist, sex, dentition)
-    return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
+    dist_px = _safe_cross_distance(mp_vec, l1, go)
+    dist_mm = dist_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("L1_MP_Lower_Anterior_Alveolar_Height", dist_mm, sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_u6_pp_height(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_u6_pp_height(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第34项：上后牙槽高度 U6到腭平面（ANS-PNS）的垂直距离"""
     required = ["P21", "P14", "P13"]  # U6, ANS, PNS
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     u6, ans, pns = landmarks["P21"], landmarks["P14"], landmarks["P13"]
     pp_vec = pns - ans
-    dist = _safe_cross_distance(pp_vec, u6, ans)
-    level = _evaluate_by_threshold("U6_PP_Upper_Posterior_Alveolar_Height", dist, sex, dentition)
-    return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
+    dist_px = _safe_cross_distance(pp_vec, u6, ans)
+    dist_mm = dist_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("U6_PP_Upper_Posterior_Alveolar_Height", dist_mm, sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_l6_mp_height(landmarks, sex: str = "male", dentition: str = "permanent"):
+def _compute_l6_mp_height(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第35项：下后牙槽高度 L6到下颌平面（Go-Me）的垂直距离"""
     required = ["P22", "P10", "P8"]  # L6, Go, Me
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
     l6, go, me = landmarks["P22"], landmarks["P10"], landmarks["P8"]
     mp_vec = me - go
-    dist = _safe_cross_distance(mp_vec, l6, go)
-    level = _evaluate_by_threshold("L6_MP_Lower_Posterior_Alveolar_Height", dist, sex, dentition)
-    return {"value": float(dist), "unit": "mm", "conclusion": level, "status": "ok"}
+    dist_px = _safe_cross_distance(mp_vec, l6, go)
+    dist_mm = dist_px * spacing  # 像素转毫米
+    level = _evaluate_by_threshold("L6_MP_Lower_Posterior_Alveolar_Height", dist_mm, sex, dentition)
+    return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_mandibular_growth_type_angle(landmarks, sex: str = "male", dentition: str = "permanent"):
     """
-    Mandibular_Growth_Type_Angle（Björk Sum 正确版）
-    = 鞍角(N-S-Ar) + 关节角(S-Ar-Go) + 下颌角(Ar-Go-Me) + 下颌平面角(SN-MP)
+    Mandibular_Growth_Type_Angle（Björk Sum）
+    = 鞍角(N-S-Ar) + 关节角(S-Ar-Go) + 下颌角(Ar-Go-Me)
     正常范围：390.0–402.0°
+    
+    修复说明：
+    - Bjork Sum 的标准定义只包含 3 个角度，不包含下颌平面角（SN-MP）
+    - 之前错误地加入了 angle4，导致计算结果偏大或偏小
+    - 正确公式见: Björk A. (1969). Prediction of mandibular growth rotation.
     """
     required = ["P1", "P2", "P15", "P10", "P8"]  # S, N, Ar, Go, Me
     if not _has_points(landmarks, required):
@@ -659,23 +867,22 @@ def _compute_mandibular_growth_type_angle(landmarks, sex: str = "male", dentitio
     Go = landmarks["P10"]
     Me = landmarks["P8"]
 
-    # 1. 鞍角 Saddle angle ∠N-S-Ar
-    angle1 = _angle_between_vectors(S - N, Ar - S)
+    # 1. 鞍角 Saddle angle ∠N-S-Ar (顶点在S)
+    #    从 S→N 和 S→Ar 两条射线的夹角
+    angle1 = _angle_between_vectors(N - S, Ar - S)
 
-    # 2. 关节角 Articular angle ∠S-Ar-Go
-    angle2 = _angle_between_vectors(Ar - S, Go - Ar)
+    # 2. 关节角 Articular angle ∠S-Ar-Go (顶点在Ar)
+    #    从 Ar→S 和 Ar→Go 两条射线的夹角
+    angle2 = _angle_between_vectors(S - Ar, Go - Ar)
 
-    # 3. 下颌角 Gonial angle ∠Ar-Go-Me
-    angle3 = _angle_between_vectors(Go - Ar, Me - Go)
+    # 3. 下颌角 Gonial angle ∠Ar-Go-Me (顶点在Go)
+    #    从 Go→Ar 和 Go→Me 两条射线的夹角
+    angle3 = _angle_between_vectors(Ar - Go, Me - Go)
 
-    # 4. 下颌平面角 SN-MP ∠(S-N 与 Go-Me)
-    sn_vec = S - N
-    mp_vec = Me - Go
-    angle4 = _angle_between_vectors(sn_vec, mp_vec)
+    # Bjork Sum = 只包含这 3 个角度（已修复：移除了 angle4）
+    total = angle1 + angle2 + angle3
 
-    total = angle1 + angle2 + angle3 + angle4
-
-    # Level 判断（与PPT完全一致）
+    # Level 判断
     level = _evaluate_by_threshold("Mandibular_Growth_Type_Angle", total, sex, dentition)
 
     return {
@@ -685,7 +892,6 @@ def _compute_mandibular_growth_type_angle(landmarks, sex: str = "male", dentitio
             "Saddle_angle_N_S_Ar": float(angle1),
             "Articular_angle_S_Ar_Go": float(angle2),
             "Gonial_angle_Ar_Go_Me": float(angle3),
-            "Mandibular_plane_angle_SN_MP": float(angle4),
         },
         "conclusion": level,
         "status": "ok"
@@ -835,10 +1041,11 @@ def _evaluate_by_threshold(feature: str, value: float, sex: str, dentition: str)
     low = mean - std
     high = mean + std
 
-    # 判断逻辑
-    if value > high:
+    # 判断逻辑（增加浮点数容差，避免边界值误判）
+    epsilon = 0.01  # 容差
+    if value > high + epsilon:
         return 1  # 过度/偏高
-    if value < low:
+    if value < low - epsilon:
         return 2  # 不足/偏低
     return 0  # 正常
 def _is_valid_point(point: Any) -> bool:

@@ -1005,25 +1005,25 @@ function drawLandmarks(data, stage, scale) {
             const scaledX = landmark.X * scale;
             const scaledY = landmark.Y * scale;
             
-            // 绘制圆点
+            // 绘制圆点（医学精确点，使用较小半径）
             const circle = new Konva.Circle({
                 x: scaledX,
                 y: scaledY,
-                radius: 5,
+                radius: 2,
                 fill: 'red',
-                stroke: 'red',
-                strokeWidth: 2
+                stroke: '#ff0000',
+                strokeWidth: 1
             });
             
             // 绘制标签文本
             const text = new Konva.Text({
-                x: scaledX + 8,
-                y: scaledY - 8,
+                x: scaledX + 5,
+                y: scaledY - 6,
                 text: landmark.Label,
-                fontSize: 12,
+                fontSize: 10,
                 fill: 'white',
-                padding: 2,
-                backgroundColor: 'rgba(0,0,0,0.5)'
+                padding: 1,
+                backgroundColor: 'rgba(0,0,0,0.6)'
             });
             
             // 存储关键点数据到图形对象，用于后续 Tooltip
@@ -1094,10 +1094,8 @@ function showLandmarkTooltip(node, landmark, event) {
     // 新规范中坐标是整数，但也兼容小数格式
     const xDisplay = Number.isInteger(landmark.X) ? landmark.X : landmark.X.toFixed(1);
     const yDisplay = Number.isInteger(landmark.Y) ? landmark.Y : landmark.Y.toFixed(1);
-    content += `坐标: (${xDisplay}, ${yDisplay})<br>`;
-    if (landmark.Confidence !== undefined) {
-        content += `置信度: ${(landmark.Confidence * 100).toFixed(1)}%`;
-    }
+    content += `坐标: (${xDisplay}, ${yDisplay})`;
+    // 置信度已隐藏 - 不再显示
     
     tooltip.innerHTML = content;
     
@@ -1347,7 +1345,7 @@ function buildCephReport(data) {
         const qualityScore = data.StatisticalFields.QualityScore;
         const qualityPercent = qualityScore > 1 ? qualityScore : (qualityScore * 100);
         summarySection.appendChild(createKeyValue('质量评分', qualityPercent.toFixed(1) + '%'));
-        summarySection.appendChild(createKeyValue('平均置信度', (data.StatisticalFields.AverageConfidence * 100).toFixed(1) + '%'));
+        // 平均置信度已隐藏 - 不再显示
         
         // 已检测关键点：显示具体点列表
         const detectedCount = data.StatisticalFields.ProcessedLandmarks || 0;
@@ -1554,10 +1552,20 @@ function createMeasurementItem(measurement) {
                          measurement.Level === null ||
                          (Array.isArray(measurement.Level) && measurement.Level.length === 1 && measurement.Level[0] === -1);
     
-    // 判断是否为异常（Level !== 0 或 Level === false，但排除未检测状态）
-    const isAbnormal = !isUndetected && 
-                       ((measurement.Level !== undefined && measurement.Level !== 0 && measurement.Level !== true) || 
-                        (measurement.Level === false));
+    // 判断是否为异常（修复：正确处理数组类型的 Level）
+    let isAbnormal = false;
+    if (!isUndetected && measurement.Level !== undefined) {
+        if (Array.isArray(measurement.Level)) {
+            // 数组类型：所有元素都是 0 才算正常，否则异常
+            isAbnormal = !measurement.Level.every(level => level === 0);
+        } else if (typeof measurement.Level === 'boolean') {
+            // 布尔类型：false 为异常，true 为正常
+            isAbnormal = measurement.Level === false;
+        } else if (typeof measurement.Level === 'number') {
+            // 数字类型：0 为正常，非 0 为异常
+            isAbnormal = measurement.Level !== 0;
+        }
+    }
     
     if (isUndetected) {
         item.classList.add('undetected');
@@ -1571,35 +1579,35 @@ function createMeasurementItem(measurement) {
     // 显示测量值（需同时检查 undefined 和 null）
     let valueText = '';
     if (measurement.Angle != null) {
-        valueText = `${measurement.Angle.toFixed(1)}°`;
+        valueText = `${measurement.Angle.toFixed(2)}°`;
     } else if (measurement.U1_SN_Angle != null) {
         // UI_SN_Angle 的特殊字段名
-        valueText = `${measurement.U1_SN_Angle.toFixed(1)}°`;
+        valueText = `${measurement.U1_SN_Angle.toFixed(2)}°`;
     } else if (measurement.Length_mm != null) {
-        valueText = `${measurement.Length_mm.toFixed(1)} mm`;
+        valueText = `${measurement.Length_mm.toFixed(2)} mm`;
     } else if (measurement.Length != null) {
-        valueText = `${measurement.Length.toFixed(1)} mm`;
+        valueText = `${measurement.Length.toFixed(2)} mm`;
     } else if (measurement.Ratio != null) {
-        valueText = `${measurement.Ratio.toFixed(1)}%`;
+        valueText = `${measurement.Ratio.toFixed(2)}%`;
     } else if (measurement.Value != null) {
         valueText = measurement.Value.toFixed(2);
     } else if (measurement['PNS-UPW'] != null) {
         // 气道间隙特殊处理 - 显示全部5个测量值
         const airwayValues = [];
         if (measurement['PNS-UPW'] != null) {
-            airwayValues.push(`PNS-UPW: ${measurement['PNS-UPW'].toFixed(1)}mm`);
+            airwayValues.push(`PNS-UPW: ${measurement['PNS-UPW'].toFixed(2)}mm`);
         }
         if (measurement['SPP-SPPW'] != null) {
-            airwayValues.push(`SPP-SPPW: ${measurement['SPP-SPPW'].toFixed(1)}mm`);
+            airwayValues.push(`SPP-SPPW: ${measurement['SPP-SPPW'].toFixed(2)}mm`);
         }
         if (measurement['U-MPW'] != null) {
-            airwayValues.push(`U-MPW: ${measurement['U-MPW'].toFixed(1)}mm`);
+            airwayValues.push(`U-MPW: ${measurement['U-MPW'].toFixed(2)}mm`);
         }
         if (measurement['TB-YPPW'] != null) {
-            airwayValues.push(`TB-YPPW: ${measurement['TB-YPPW'].toFixed(1)}mm`);
+            airwayValues.push(`TB-YPPW: ${measurement['TB-YPPW'].toFixed(2)}mm`);
         }
         if (measurement['V-LPW'] != null) {
-            airwayValues.push(`V-LPW: ${measurement['V-LPW'].toFixed(1)}mm`);
+            airwayValues.push(`V-LPW: ${measurement['V-LPW'].toFixed(2)}mm`);
         }
         valueText = airwayValues.join(' | ');
     }
@@ -1616,11 +1624,7 @@ function createMeasurementItem(measurement) {
         }
     }
     
-    if (measurement.Confidence != null) {
-        // 新规范中 Confidence 是 0.00-1.00 的小数，需要乘以 100 显示为百分比
-        const confidencePercent = measurement.Confidence <= 1 ? (measurement.Confidence * 100) : measurement.Confidence;
-        content += `<div class="measurement-confidence">置信度: ${confidencePercent.toFixed(1)}%</div>`;
-    }
+    // 置信度已隐藏 - 不再显示测量数据的置信度
     
     item.innerHTML = content;
     return item;
@@ -1652,90 +1656,24 @@ function getLevelText(label, level) {
 }
 
 /**
- * 获取测量项标签（中文名称）
+ * 获取测量项标签
  * @param {string} label - 测量项标签
- * @returns {string} 中文名称
+ * @returns {string} 显示正确的字段名（修正后端命名错误）
+ * 
+ * 修改说明：
+ * - 大部分字段直接显示后端原始名称（便于排查）
+ * - 仅修正已知的命名错误字段（保持JSON格式不变，只改前端显示）
  */
 function getMeasurementLabel(label) {
-    const labelMap = {
-        // ① ANB角 - 评估上下颌骨矢状向关系
-        'ANB_Angle': 'ANB角',
-        // ② 上颌基骨长度 - 评估上颌骨发育情况
-        'PtmANS_Length': '上颌基骨长度',
-        // ③ 下颌体长度 - 评估下颌骨发育情况
-        'GoPo_Length': '下颌体长度',
-        // ④ 颏部发育量 - 评估颏部突度
-        'PoNB_Length': '颏部发育量',
-        // ⑤ 上下颌骨发育协调性 - 综合评估颌骨协调关系
-        'Jaw_Development_Coordination': '上下颌骨发育协调性',
-        // ⑥ 面部高度比例 - 评估生长型
-        'SGo_NMe_Ratio-1': '面部高度比例',
-        // ⑦ 下颌平面角 - 评估下颌平面倾斜度
-        'FH_MP_Angle': '下颌平面角',
-        // ⑧ 上切牙相对颅骨倾斜度 - 评估上切牙倾斜
-        'UI_SN_Angle': '上切牙-SN角',
-        // ⑨ 下切牙相对下颌平面倾斜度 - 评估下切牙倾斜
-        'IMPA_Angle-1': '下切牙-下颌平面角',
-        // ⑩ 上前牙槽高度 - 评估前牙区牙槽骨发育
-        'Upper_Anterior_Alveolar_Height': '上前牙槽高度',
-        // ⑪ 气道间隙 - 评估上气道通畅程度
-        'Airway_Gap': '气道间隙',
-        // ⑫ 腺样体指数 - 评估腺样体肥大情况
-        'Adenoid_Index': '腺样体指数',
-        // ⑬ SNA角 - 上颌骨相对颅骨位置
-        'SNA_Angle': 'SNA角（上颌骨位置）',
-        // ⑭ 上颌骨位置 - 评估上颌骨前后位置
-        'Upper_Jaw_Position': '上颌骨位置',
-        // ⑮ SNB角 - 下颌骨相对颅骨位置
-        'SNB_Angle': 'SNB角（下颌骨位置）',
-        // ⑯ 下颌骨位置 - 评估下颌骨前后位置
-        'Pcd_Lower_Position': '下颌骨位置',
-        // ⑰ Wits分析法评估上下颌骨关系
-        'Distance_Witsmm': 'Wits分析',
-        // ⑱ 上切牙倾斜度重复测量
-        'U1_SN_Angle_Repeat': '上切牙-SN角',
-        // ⑲ 上切牙-NA角 - 评估上切牙倾斜度的另一指标
-        'U1_NA_Angle': '上切牙-NA角',
-        // ⑳ 上切牙突度 - 评估上切牙前后位置
-        'U1_NA_Incisor_Length': '上切牙突度',
-        // ㉑ 下切牙倾斜度重复测量
-        'IMPA_Angle-2': '下切牙-下颌平面角',
-        // ㉒ 下切牙-FH平面角 - 评估下切牙倾斜的变体指标
-        'FMIA_Angle': 'FMIA角',
-        // ㉓ 下切牙-NB角 - 评估下切牙倾斜的另一指标
-        'L1_NB_Angle': '下切牙-NB角',
-        // ㉔ 下切牙突度 - 评估下切牙前后位置
-        'L1_NB_Distance': '下切牙突度',
-        // ㉕ 上下切牙角 - 评估切牙间相对倾斜
-        'U1_L1_Inter_Incisor_Angle': '上下切牙角',
-        // ㉖ 面部高度比例重复测量
-        'Y_SGo_NMe_Ratio-2': '面部高度比例',
-        // ㉗ 下颌生长方向角 - 评估下颌生长方向
-        'Mandibular_Growth_Angle': '下颌生长方向角',
-        // ㉘ 面部高度比例再次重复测量
-        'SGo_NMe_Ratio-3': '面部高度比例',
-        // ㉙ SN-FH角 - 评估颅底-法兰克福平面关系
-        'SN_FH_Angle-1': 'SN-FH角',
-        // ㉚ 下颌平面角重复测量
-        'MP_FH_Angle-2': '下颌平面角',
-        // ㉛ 上前牙槽高度重复测量
-        'U1_PP_Upper_Anterior_Alveolar_Height': '上前牙槽高度',
-        // ㉜ 下前牙槽高度 - 评估下颌前牙区牙槽骨发育
-        'L1_MP_Lower_Anterior_Alveolar_Height': '下前牙槽高度',
-        // ㉝ 上后牙槽高度 - 评估上颌后牙区牙槽骨发育
-        'U6_PP_Upper_Posterior_Alveolar_Height': '上后牙槽高度',
-        // ㉞ 下后牙槽高度 - 评估下颌后牙区牙槽骨发育
-        'L6_MP_Lower_Posterior_Alveolar_Height': '下后牙槽高度',
-        // ㉟ 下颌生长型角 - 评估下颌生长旋转方向
-        'Mandibular_Growth_Type_Angle': '下颌生长型角',
-        // ㊱ 前颅底长度 - 评估颅底发育
-        'S_N_Anterior_Cranial_Base_Length': '前颅底长度',
-        // ㊲ 下颌体长度重复测量 - 使用不同标志点
-        'Go_Me_Length': '下颌体长度',
-        // ㊳ 颈椎成熟度分期 - 评估骨龄和生长潜力
-        'Cervical_Vertebral_Maturity_Stage': '颈椎成熟度分期'
+    // 仅修正已知的命名错误，其他字段保持原样
+    const labelCorrections = {
+        // 后端字段名 → 正确的显示名称
+        'Y_SGo_NMe_Ratio-2': 'Y_Axis_Angle',  // Y轴角（°），不是比率
+        'SN_FH_Angle-1': 'SN_MP_Angle',  // SN-MP角（°），不是SN-FH角
+        // 'Pcd_Lower_Position' 保持原样，不做字段名映射
     };
-    return labelMap[label] || label;
+    
+    return labelCorrections[label] || label;
 }
 
 /**
@@ -1817,7 +1755,7 @@ function getMeasurementConclusion(label, level) {
             if (level === 2) return '垂直生长型（<63%）';
         }
         
-        // ⑦㉚㉙ 下颌平面角/SN-FH角: 0=均角; 1=高角; 2=低角
+        // ⑦㉚㉙ 下颌平面角/SN-MP角: 0=均角; 1=高角; 2=低角
         if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2' || label === 'SN_FH_Angle-1') {
             if (level === 0) return '均角';
             if (level === 1) return '高角（>33°）';
@@ -1825,17 +1763,19 @@ function getMeasurementConclusion(label, level) {
         }
         
         // ⑧⑱ 上切牙-SN角: 0=正常; 1=唇倾; 2=舌倾
+        // 注意：阈值因性别和牙期而异（男性恒牙期 107±6°，女性恒牙期 105±6°）
+        // 简化显示：不写具体数值，避免与实际阈值不符
         if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat') {
             if (level === 0) return '正常';
-            if (level === 1) return '唇倾（>113°）';
-            if (level === 2) return '舌倾（<101°）';
+            if (level === 1) return '唇倾（数值偏大）';
+            if (level === 2) return '舌倾（数值偏小）';
         }
         
         // ⑨㉑ 下切牙-下颌平面角: 0=正常; 1=唇倾; 2=舌倾
         if (label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
             if (level === 0) return '正常';
-            if (level === 1) return '唇倾（>99.6°）';
-            if (level === 2) return '舌倾（<85.6°）';
+            if (level === 1) return '唇倾';
+            if (level === 2) return '舌倾';
         }
         
         // ⑬⑮ SNA/SNB角: 0=正常; 1=前突; 2=后缩
@@ -1852,11 +1792,15 @@ function getMeasurementConclusion(label, level) {
             if (level === 2) return '靠后（<14mm）';
         }
         
-        // ⑯ 下颌骨位置: 0=正常; 1=前突; 2=靠后
+        // ⑯ 下颌骨位置 (Pcd-S): 0=正常; 1=后缩; 2=前突
+        // 注意：Pcd 是髁突后点（Posterior Condylion），位于 S 点后方
+        // 距离测量：从蝶鞍点（S）到髁突后点（Pcd）
+        // Level=1: 距离偏大 → 髁突位置过于靠后 → 下颌关节后移 → 下颌整体后缩
+        // Level=2: 距离偏小 → 髁突位置过于靠前 → 下颌关节前移 → 下颌整体前突
         if (label === 'Pcd_Lower_Position') {
             if (level === 0) return '正常';
-            if (level === 1) return '前突（<16mm）';
-            if (level === 2) return '靠后（>22mm）';
+            if (level === 1) return '下颌后缩（S-髁突间距偏大，关节位置靠后）';
+            if (level === 2) return '下颌前突（S-髁突间距偏小，关节位置靠前）';
         }
         
         // ⑲ 上切牙-NA角: 0=正常; 1=唇倾; 2=舌倾
@@ -2039,7 +1983,7 @@ function isGrowthMeasurement(label) {
         'Mandibular_Growth_Angle',
         // ㉘ 面部高度比例(再重复)
         'SGo_NMe_Ratio-3',
-        // ㉙ SN-FH角
+        // ㉙ SN-MP角 (字段名历史遗留为 SN_FH_Angle-1)
         'SN_FH_Angle-1',
         // ㉚ 下颌平面角(重复)
         'MP_FH_Angle-2',
