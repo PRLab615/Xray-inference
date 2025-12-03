@@ -197,7 +197,8 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
     if seg_left.get("exists", False):
         left_mask = seg_left.get("mask", None)
         left_contour = seg_left.get("contour", [])
-        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
+        left_contour = seg_left.get("contour", [])
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
         
         anatomy_results.append({
             "Label": "condyle_left",
@@ -205,15 +206,14 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": left_contour if left_contour else [],
-                "SerializedMask": left_rle
+                "SerializedMask": ""
             }
         })
     
     # 右侧髁突
     if seg_right.get("exists", False):
-        right_mask = seg_right.get("mask", None)
         right_contour = seg_right.get("contour", [])
-        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
         
         anatomy_results.append({
             "Label": "condyle_right",
@@ -221,7 +221,7 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": right_contour if right_contour else [],
-                "SerializedMask": right_rle
+                "SerializedMask": ""
             }
         })
     
@@ -254,9 +254,8 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
     
     # 左侧下颌分支
     if seg_left.get("exists", False):
-        left_mask = seg_left.get("mask", None)
         left_contour = seg_left.get("contour", [])
-        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
         
         anatomy_results.append({
             "Label": "mandible_left",
@@ -264,15 +263,14 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": left_contour if left_contour else [],
-                "SerializedMask": left_rle
+                "SerializedMask": ""
             }
         })
     
     # 右侧下颌分支
     if seg_right.get("exists", False):
-        right_mask = seg_right.get("mask", None)
         right_contour = seg_right.get("contour", [])
-        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
         
         anatomy_results.append({
             "Label": "mandible_right",
@@ -280,7 +278,7 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": right_contour if right_contour else [],
-                "SerializedMask": right_rle
+                "SerializedMask": ""
             }
         })
     
@@ -566,9 +564,10 @@ def format_teeth_report(teeth_results: dict) -> dict:
                         # 确保所有点都是 [x, y] 格式（浮点数）
                         coordinates = [[float(pt[0]), float(pt[1])] for pt in coordinates if len(pt) >= 2]
                 
-                # 生成RLE编码
-                if raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
-                    serialized_mask = _mask_to_rle_fast(raw_masks[mask_index])
+                # 跳过 RLE 编码生成 - RLE 数据太大会导致 Redis Protocol Error
+                # Coordinates 已经足够用于前端可视化
+                # 如果需要 RLE，可以在客户端单独请求或从 Coordinates 重建
+                serialized_mask = ""
         
         # 如果segments不可用，从mask提取轮廓（这是正确的做法）
         if not coordinates and raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
@@ -700,8 +699,8 @@ def format_sinus_anatomy_results(sinus_results: dict) -> List[dict]:
             logger.debug(f"[format_sinus_anatomy_results] No mask/contour for {label}, skipping")
             continue
         
-        # 生成 RLE 编码
-        rle = _mask_to_rle(mask) if mask is not None else ""
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+        rle = ""
         
         # 如果没有 contour 但有 mask，尝试从 mask 提取 contour
         if not contour and mask is not None:
@@ -944,8 +943,8 @@ def _extract_mask_contour_fallback(mask, original_shape):
             else:
                 coordinates = coords.tolist()
         
-        # 5. RLE 编码
-        serialized_mask = _mask_to_rle(binary_mask)
+        # 5. 跳过 RLE 编码，避免数据过大导致 Redis Protocol Error
+        serialized_mask = ""
         
         return coordinates, serialized_mask
     
