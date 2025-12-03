@@ -505,12 +505,20 @@ class PanoPipeline(BasePipeline):
                     if contours:
                         # 取最大轮廓
                         largest_contour = max(contours, key=cv2.contourArea)
-                        coords = largest_contour.squeeze()
+                        
+                        # 简化轮廓，减少点数（epsilon = 周长的 0.5%）
+                        epsilon = 0.005 * cv2.arcLength(largest_contour, True)
+                        approx_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+                        
+                        coords = approx_contour.squeeze()
                         if coords.ndim == 1:
-                            contour_coords = [coords.tolist()]
+                            # 只有一个点，转为 [[x, y]]
+                            contour_coords = [[int(coords[0]), int(coords[1])]]
                         else:
-                            contour_coords = coords.tolist()
-                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus")
+                            # 多个点，确保所有坐标都是 Python int（避免 numpy 类型导致序列化问题）
+                            contour_coords = [[int(pt[0]), int(pt[1])] for pt in coords]
+                        
+                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus (simplified from {len(largest_contour)} points)")
                 except Exception as e:
                     logger.warning(f"Failed to extract contour for {location} sinus: {e}")
                 
@@ -550,13 +558,19 @@ class PanoPipeline(BasePipeline):
                     "Confidence_Inflammation": float(f"{conf:.2f}")
                 })
                 
-                # 包含 mask 和 contour 用于前端可视化
-                masks_info.append({
-                    "label": f"sinus_{side_lower}",
-                    "bbox": [int(x), int(y), int(sw), int(sh)],
-                    "mask": side_mask,  # numpy array，会在 report_utils 中转为 RLE
-                    "contour": contour_coords  # [[x, y], [x, y], ...] 格式
-                })
+                # 包含 contour 用于前端可视化
+                # 注意：不传递 numpy array (mask)，因为无法通过 Celery/Redis 序列化
+                # contour 已足够用于前端绑定多边形
+                # 只有当 contour 有效时才添加，否则前端无法绘制
+                if contour_coords and len(contour_coords) >= 3:
+                    masks_info.append({
+                        "label": f"sinus_{side_lower}",
+                        "bbox": [int(x), int(y), int(sw), int(sh)],
+                        "contour": contour_coords  # [[x, y], [x, y], ...] 格式，可序列化
+                    })
+                    logger.info(f"Added {location} sinus to masks_info with {len(contour_coords)} points")
+                else:
+                    logger.warning(f"Skipping {location} sinus masks_info: contour is empty or too small ({len(contour_coords) if contour_coords else 0} points)")
             
             elapsed = time.time() - start_time
             logger.info(f"Sinus workflow completed in {elapsed:.2f}s")

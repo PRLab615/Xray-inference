@@ -1423,24 +1423,29 @@ function buildCephReport(data) {
         }
     }
     
-    // 4. 生长发育评估（包含 CVSM 图片）
+    // 4. 生长发育评估（包含所有生长相关测量项和 CVSM 图片）
     if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
         const growthSection = createReportSection('生长发育评估');
         const measurements = data.CephalometricMeasurements.AllMeasurements;
-        const cvsm = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
         
-        if (cvsm) {
-            if (cvsm.CVSM) {
-                const img = document.createElement('img');
-                img.src = cvsm.CVSM;
-                img.style.maxWidth = '100%';
-                img.style.marginTop = '10px';
-                img.style.borderRadius = '4px';
-                growthSection.appendChild(img);
+        // 先添加所有生长发育相关的测量项
+        measurements.forEach(m => {
+            if (isGrowthMeasurement(m.Label)) {
+                const item = createMeasurementItem(m);
+                growthSection.appendChild(item);
             }
-            
-            const cvsmItem = createMeasurementItem(cvsm);
-            growthSection.appendChild(cvsmItem);
+        });
+        
+        // 最后添加 CVSM 图片（如果有）
+        const cvsm = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
+        if (cvsm && cvsm.CVSM) {
+            const img = document.createElement('img');
+            img.src = cvsm.CVSM;
+            img.style.maxWidth = '100%';
+            img.style.marginTop = '10px';
+            img.style.borderRadius = '4px';
+            img.alt = '颈椎成熟度分期图像';
+            growthSection.appendChild(img);
         }
         
         if (growthSection.querySelectorAll('.measurement-item, img').length > 0) {
@@ -1544,32 +1549,59 @@ function createMeasurementItem(measurement) {
     const item = document.createElement('div');
     item.className = 'measurement-item';
     
-    // 判断是否为异常（Level !== 0 或 Level === false）
-    const isAbnormal = (measurement.Level !== undefined && measurement.Level !== 0 && measurement.Level !== true) || 
-                       (measurement.Level === false);
+    // 判断是否为未检测状态：Level === -1 或 Level === null 或 Level === [-1]
+    const isUndetected = measurement.Level === -1 || 
+                         measurement.Level === null ||
+                         (Array.isArray(measurement.Level) && measurement.Level.length === 1 && measurement.Level[0] === -1);
     
-    if (isAbnormal) {
+    // 判断是否为异常（Level !== 0 或 Level === false，但排除未检测状态）
+    const isAbnormal = !isUndetected && 
+                       ((measurement.Level !== undefined && measurement.Level !== 0 && measurement.Level !== true) || 
+                        (measurement.Level === false));
+    
+    if (isUndetected) {
+        item.classList.add('undetected');
+    } else if (isAbnormal) {
         item.classList.add('abnormal');
     }
     
     // 构建内容
     let content = `<div class="measurement-label">${getMeasurementLabel(measurement.Label)}</div>`;
     
-    // 显示测量值
+    // 显示测量值（需同时检查 undefined 和 null）
     let valueText = '';
-    if (measurement.Angle !== undefined) {
+    if (measurement.Angle != null) {
         valueText = `${measurement.Angle.toFixed(1)}°`;
-    } else if (measurement.Length_mm !== undefined) {
+    } else if (measurement.U1_SN_Angle != null) {
+        // UI_SN_Angle 的特殊字段名
+        valueText = `${measurement.U1_SN_Angle.toFixed(1)}°`;
+    } else if (measurement.Length_mm != null) {
         valueText = `${measurement.Length_mm.toFixed(1)} mm`;
-    } else if (measurement.Length !== undefined) {
+    } else if (measurement.Length != null) {
         valueText = `${measurement.Length.toFixed(1)} mm`;
-    } else if (measurement.Ratio !== undefined) {
+    } else if (measurement.Ratio != null) {
         valueText = `${measurement.Ratio.toFixed(1)}%`;
-    } else if (measurement.Value !== undefined) {
+    } else if (measurement.Value != null) {
         valueText = measurement.Value.toFixed(2);
-    } else if (measurement['PNS-UPW'] !== undefined) {
-        // 气道间隙特殊处理
-        valueText = `PNS-UPW: ${measurement['PNS-UPW'].toFixed(1)} mm`;
+    } else if (measurement['PNS-UPW'] != null) {
+        // 气道间隙特殊处理 - 显示全部5个测量值
+        const airwayValues = [];
+        if (measurement['PNS-UPW'] != null) {
+            airwayValues.push(`PNS-UPW: ${measurement['PNS-UPW'].toFixed(1)}mm`);
+        }
+        if (measurement['SPP-SPPW'] != null) {
+            airwayValues.push(`SPP-SPPW: ${measurement['SPP-SPPW'].toFixed(1)}mm`);
+        }
+        if (measurement['U-MPW'] != null) {
+            airwayValues.push(`U-MPW: ${measurement['U-MPW'].toFixed(1)}mm`);
+        }
+        if (measurement['TB-YPPW'] != null) {
+            airwayValues.push(`TB-YPPW: ${measurement['TB-YPPW'].toFixed(1)}mm`);
+        }
+        if (measurement['V-LPW'] != null) {
+            airwayValues.push(`V-LPW: ${measurement['V-LPW'].toFixed(1)}mm`);
+        }
+        valueText = airwayValues.join(' | ');
     }
     
     if (valueText) {
@@ -1584,15 +1616,7 @@ function createMeasurementItem(measurement) {
         }
     }
     
-    // 显示Level和置信度
-    // if (measurement.Level !== undefined) {
-    //     const levelText = getLevelText(measurement.Label, measurement.Level);
-    //     if (levelText) {
-    //         content += `<div class="measurement-level">等级: ${levelText}</div>`;
-    //     }
-    // }
-    
-    if (measurement.Confidence !== undefined) {
+    if (measurement.Confidence != null) {
         // 新规范中 Confidence 是 0.00-1.00 的小数，需要乘以 100 显示为百分比
         const confidencePercent = measurement.Confidence <= 1 ? (measurement.Confidence * 100) : measurement.Confidence;
         content += `<div class="measurement-confidence">置信度: ${confidencePercent.toFixed(1)}%</div>`;
@@ -1634,18 +1658,81 @@ function getLevelText(label, level) {
  */
 function getMeasurementLabel(label) {
     const labelMap = {
+        // ① ANB角 - 评估上下颌骨矢状向关系
         'ANB_Angle': 'ANB角',
+        // ② 上颌基骨长度 - 评估上颌骨发育情况
         'PtmANS_Length': '上颌基骨长度',
+        // ③ 下颌体长度 - 评估下颌骨发育情况
         'GoPo_Length': '下颌体长度',
+        // ④ 颏部发育量 - 评估颏部突度
         'PoNB_Length': '颏部发育量',
+        // ⑤ 上下颌骨发育协调性 - 综合评估颌骨协调关系
         'Jaw_Development_Coordination': '上下颌骨发育协调性',
+        // ⑥ 面部高度比例 - 评估生长型
         'SGo_NMe_Ratio-1': '面部高度比例',
+        // ⑦ 下颌平面角 - 评估下颌平面倾斜度
         'FH_MP_Angle': '下颌平面角',
-        'UI_SN_Angle': '上切牙相对颅骨倾斜度',
-        'IMPA_Angle-1': '下切牙相对下颌平面倾斜度',
+        // ⑧ 上切牙相对颅骨倾斜度 - 评估上切牙倾斜
+        'UI_SN_Angle': '上切牙-SN角',
+        // ⑨ 下切牙相对下颌平面倾斜度 - 评估下切牙倾斜
+        'IMPA_Angle-1': '下切牙-下颌平面角',
+        // ⑩ 上前牙槽高度 - 评估前牙区牙槽骨发育
         'Upper_Anterior_Alveolar_Height': '上前牙槽高度',
+        // ⑪ 气道间隙 - 评估上气道通畅程度
         'Airway_Gap': '气道间隙',
+        // ⑫ 腺样体指数 - 评估腺样体肥大情况
         'Adenoid_Index': '腺样体指数',
+        // ⑬ SNA角 - 上颌骨相对颅骨位置
+        'SNA_Angle': 'SNA角（上颌骨位置）',
+        // ⑭ 上颌骨位置 - 评估上颌骨前后位置
+        'Upper_Jaw_Position': '上颌骨位置',
+        // ⑮ SNB角 - 下颌骨相对颅骨位置
+        'SNB_Angle': 'SNB角（下颌骨位置）',
+        // ⑯ 下颌骨位置 - 评估下颌骨前后位置
+        'Pcd_Lower_Position': '下颌骨位置',
+        // ⑰ Wits分析法评估上下颌骨关系
+        'Distance_Witsmm': 'Wits分析',
+        // ⑱ 上切牙倾斜度重复测量
+        'U1_SN_Angle_Repeat': '上切牙-SN角',
+        // ⑲ 上切牙-NA角 - 评估上切牙倾斜度的另一指标
+        'U1_NA_Angle': '上切牙-NA角',
+        // ⑳ 上切牙突度 - 评估上切牙前后位置
+        'U1_NA_Incisor_Length': '上切牙突度',
+        // ㉑ 下切牙倾斜度重复测量
+        'IMPA_Angle-2': '下切牙-下颌平面角',
+        // ㉒ 下切牙-FH平面角 - 评估下切牙倾斜的变体指标
+        'FMIA_Angle': 'FMIA角',
+        // ㉓ 下切牙-NB角 - 评估下切牙倾斜的另一指标
+        'L1_NB_Angle': '下切牙-NB角',
+        // ㉔ 下切牙突度 - 评估下切牙前后位置
+        'L1_NB_Distance': '下切牙突度',
+        // ㉕ 上下切牙角 - 评估切牙间相对倾斜
+        'U1_L1_Inter_Incisor_Angle': '上下切牙角',
+        // ㉖ 面部高度比例重复测量
+        'Y_SGo_NMe_Ratio-2': '面部高度比例',
+        // ㉗ 下颌生长方向角 - 评估下颌生长方向
+        'Mandibular_Growth_Angle': '下颌生长方向角',
+        // ㉘ 面部高度比例再次重复测量
+        'SGo_NMe_Ratio-3': '面部高度比例',
+        // ㉙ SN-FH角 - 评估颅底-法兰克福平面关系
+        'SN_FH_Angle-1': 'SN-FH角',
+        // ㉚ 下颌平面角重复测量
+        'MP_FH_Angle-2': '下颌平面角',
+        // ㉛ 上前牙槽高度重复测量
+        'U1_PP_Upper_Anterior_Alveolar_Height': '上前牙槽高度',
+        // ㉜ 下前牙槽高度 - 评估下颌前牙区牙槽骨发育
+        'L1_MP_Lower_Anterior_Alveolar_Height': '下前牙槽高度',
+        // ㉝ 上后牙槽高度 - 评估上颌后牙区牙槽骨发育
+        'U6_PP_Upper_Posterior_Alveolar_Height': '上后牙槽高度',
+        // ㉞ 下后牙槽高度 - 评估下颌后牙区牙槽骨发育
+        'L6_MP_Lower_Posterior_Alveolar_Height': '下后牙槽高度',
+        // ㉟ 下颌生长型角 - 评估下颌生长旋转方向
+        'Mandibular_Growth_Type_Angle': '下颌生长型角',
+        // ㊱ 前颅底长度 - 评估颅底发育
+        'S_N_Anterior_Cranial_Base_Length': '前颅底长度',
+        // ㊲ 下颌体长度重复测量 - 使用不同标志点
+        'Go_Me_Length': '下颌体长度',
+        // ㊳ 颈椎成熟度分期 - 评估骨龄和生长潜力
         'Cervical_Vertebral_Maturity_Stage': '颈椎成熟度分期'
     };
     return labelMap[label] || label;
@@ -1654,14 +1741,30 @@ function getMeasurementLabel(label) {
 /**
  * 获取测量项诊断结论
  * @param {string} label - 测量项标签
- * @param {number|boolean|Array} level - 等级
+ * @param {number|boolean|Array|null} level - 等级，-1或null表示未检测
  * @returns {string} 诊断结论
  */
 function getMeasurementConclusion(label, level) {
-    if (Array.isArray(level)) {
-        return level.join(', ');
+    // 未检测状态：Level === -1 或 null
+    if (level === -1 || level === null) {
+        return '未检测';
     }
     
+    // 多选类型（如上下颌骨发育协调性）
+    if (Array.isArray(level)) {
+        // 未检测状态：Level === [-1]
+        if (level.length === 1 && level[0] === -1) {
+            return '未检测';
+        }
+        // Level: [0]=协调/正常; [1,0]=上颌过度-下颌正常 等
+        const coordLabels = { 0: '正常', 1: '前突/过度', 2: '后缩/不足' };
+        if (level.length === 1) {
+            return level[0] === 0 ? '协调' : coordLabels[level[0]] || level[0];
+        }
+        return level.map(l => coordLabels[l] || l).join(' - ');
+    }
+    
+    // 布尔类型（气道间隙、腺样体指数）
     if (typeof level === 'boolean') {
         if (label === 'Airway_Gap') {
             return level ? '正常' : '不足';
@@ -1671,53 +1774,163 @@ function getMeasurementConclusion(label, level) {
         return level ? '正常' : '异常';
     }
     
+    // 数值类型
     if (typeof level === 'number') {
+        // ㊳ 颈椎成熟度分期 (1-6)
         if (label === 'Cervical_Vertebral_Maturity_Stage') {
-            const stages = ['', 'CVMS I期', 'CVMS II期', 'CVMS III期', 'CVMS IV期', 'CVMS V期', 'CVMS VI期'];
+            const stages = ['', 'CVMS I期', 'CVMS II期', 'CVMS III期（生长高峰期）', 'CVMS IV期', 'CVMS V期', 'CVMS VI期'];
             return stages[level] || `CVMS ${level}期`;
         }
         
-        // 根据不同的测量项显示具体的Level含义
+        // ① ANB角: 0=骨性I类; 1=骨性II类; 2=骨性III类
         if (label === 'ANB_Angle') {
             if (level === 0) return '骨性I类（正常）';
             if (level === 1) return '骨性II类（ANB>6°）';
             if (level === 2) return '骨性III类（ANB<2°）';
         }
         
-        if (label === 'SGo_NMe_Ratio-1' || label === 'SGo_NMe_Ratio-2' || label === 'SGo_NMe_Ratio-3') {
-            if (level === 0) return '平均生长型';
-            if (level === 1) return '水平生长型（>71%）';
-            if (level === 2) return '垂直生长型（<63%）';
+        // ⑰ Wits分析: 0=骨性I类; 1=骨性II类; 2=骨性III类
+        if (label === 'Distance_Witsmm') {
+            if (level === 0) return '骨性I类';
+            if (level === 1) return '骨性II类（>1.5mm）';
+            if (level === 2) return '骨性III类（<-4.3mm）';
         }
         
-        if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2') {
-            if (level === 0) return '均角';
-            if (level === 1) return '高角（>33°）';
-            if (level === 2) return '低角（<25°）';
-        }
-        
+        // ②③㊲ 颌骨长度: 0=正常; 1=发育过度; 2=发育不足
         if (label === 'PtmANS_Length' || label === 'GoPo_Length' || label === 'Go_Me_Length') {
             if (level === 0) return '正常';
             if (level === 1) return '发育过度';
             if (level === 2) return '发育不足';
         }
         
+        // ④ 颏部发育量: 0=正常; 1=发育过度; 2=后缩
         if (label === 'PoNB_Length') {
             if (level === 0) return '正常';
             if (level === 1) return '发育过度（>2.5mm）';
             if (level === 2) return '后缩（<-0.5mm）';
         }
         
+        // ⑥㉖㉘ 面部高度比例: 0=平均生长型; 1=水平生长型; 2=垂直生长型
+        if (label === 'SGo_NMe_Ratio-1' || label === 'Y_SGo_NMe_Ratio-2' || label === 'SGo_NMe_Ratio-3') {
+            if (level === 0) return '平均生长型';
+            if (level === 1) return '水平生长型（>71%）';
+            if (level === 2) return '垂直生长型（<63%）';
+        }
+        
+        // ⑦㉚㉙ 下颌平面角/SN-FH角: 0=均角; 1=高角; 2=低角
+        if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2' || label === 'SN_FH_Angle-1') {
+            if (level === 0) return '均角';
+            if (level === 1) return '高角（>33°）';
+            if (level === 2) return '低角（<25°）';
+        }
+        
+        // ⑧⑱ 上切牙-SN角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（>113°）';
+            if (level === 2) return '舌倾（<101°）';
+        }
+        
+        // ⑨㉑ 下切牙-下颌平面角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（>99.6°）';
+            if (level === 2) return '舌倾（<85.6°）';
+        }
+        
+        // ⑬⑮ SNA/SNB角: 0=正常; 1=前突; 2=后缩
         if (label === 'SNA_Angle' || label === 'SNB_Angle') {
             if (level === 0) return '正常';
             if (level === 1) return '前突';
             if (level === 2) return '后缩';
         }
         
-        if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat' || label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
+        // ⑭ 上颌骨位置: 0=正常; 1=靠前; 2=靠后
+        if (label === 'Upper_Jaw_Position') {
             if (level === 0) return '正常';
-            if (level === 1) return '唇倾';
-            if (level === 2) return '舌倾';
+            if (level === 1) return '靠前（>20mm）';
+            if (level === 2) return '靠后（<14mm）';
+        }
+        
+        // ⑯ 下颌骨位置: 0=正常; 1=前突; 2=靠后
+        if (label === 'Pcd_Lower_Position') {
+            if (level === 0) return '正常';
+            if (level === 1) return '前突（<16mm）';
+            if (level === 2) return '靠后（>22mm）';
+        }
+        
+        // ⑲ 上切牙-NA角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'U1_NA_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（>30°）';
+            if (level === 2) return '舌倾（<18°）';
+        }
+        
+        // ⑳ 上切牙突度: 0=正常; 1=前突; 2=后缩
+        if (label === 'U1_NA_Incisor_Length') {
+            if (level === 0) return '正常';
+            if (level === 1) return '前突（>6mm）';
+            if (level === 2) return '后缩（<2mm）';
+        }
+        
+        // ㉒ FMIA角: 0=正常; 1=舌倾(增大); 2=唇倾(减小)
+        if (label === 'FMIA_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '舌倾（>59°）';
+            if (level === 2) return '唇倾（<45°）';
+        }
+        
+        // ㉓ 下切牙-NB角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'L1_NB_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（>38°）';
+            if (level === 2) return '舌倾（<26°）';
+        }
+        
+        // ㉔ 下切牙突度: 0=正常; 1=前突; 2=后缩
+        if (label === 'L1_NB_Distance') {
+            if (level === 0) return '正常';
+            if (level === 1) return '前突（>10mm）';
+            if (level === 2) return '后缩（<4mm）';
+        }
+        
+        // ㉕ 上下切牙角: 0=正常; 1=减小; 2=增大
+        if (label === 'U1_L1_Inter_Incisor_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '开唇露齿（>130°）';
+            if (level === 2) return '深覆合趋势（<112°）';
+        }
+        
+        // ㉗ 下颌生长方向角: 0=正常; 1=过度; 2=不足
+        if (label === 'Mandibular_Growth_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '过度（>91°）';
+            if (level === 2) return '不足（<83°）';
+        }
+        
+        // ㉟ 下颌生长型角: 0=平均生长型; 1=顺时针生长型; 2=逆时针生长型
+        if (label === 'Mandibular_Growth_Type_Angle') {
+            if (level === 0) return '平均生长型';
+            if (level === 1) return '顺时针生长型（>402°）';
+            if (level === 2) return '逆时针生长型（<390°）';
+        }
+        
+        // ㊱ 前颅底长度: 0=正常; 1=增大; 2=减小
+        if (label === 'S_N_Anterior_Cranial_Base_Length') {
+            if (level === 0) return '正常';
+            if (level === 1) return '增大（>70.6mm）';
+            if (level === 2) return '减小（<62.8mm）';
+        }
+        
+        // ⑩㉛㉜㉝㉞ 牙槽高度: 0=正常; 1=过大; 2=不足
+        if (label === 'Upper_Anterior_Alveolar_Height' || 
+            label === 'U1_PP_Upper_Anterior_Alveolar_Height' ||
+            label === 'L1_MP_Lower_Anterior_Alveolar_Height' ||
+            label === 'U6_PP_Upper_Posterior_Alveolar_Height' ||
+            label === 'L6_MP_Lower_Posterior_Alveolar_Height') {
+            if (level === 0) return '正常';
+            if (level === 1) return '过大';
+            if (level === 2) return '不足';
         }
         
         // 默认处理
@@ -1740,10 +1953,30 @@ function getMeasurementConclusion(label, level) {
  */
 function isBoneMeasurement(label) {
     const boneLabels = [
-        'ANB_Angle', 'PtmANS_Length', 'GoPo_Length', 'PoNB_Length',
-        'Jaw_Development_Coordination', 'SGo_NMe_Ratio-1', 'FH_MP_Angle',
-        'SNA_Angle', 'SNB_Angle', 'Upper_Jaw_Position', 'Pcd_Lower_Position',
-        'Distance_Witsmm', 'S_N_Anterior_Cranial_Base_Length', 'Go_Me_Length'
+        // ① ANB角
+        'ANB_Angle',
+        // ② 上颌基骨长度
+        'PtmANS_Length',
+        // ③ 下颌体长度
+        'GoPo_Length',
+        // ④ 颏部发育量
+        'PoNB_Length',
+        // ⑤ 上下颌骨发育协调性
+        'Jaw_Development_Coordination',
+        // ⑬ SNA角
+        'SNA_Angle',
+        // ⑭ 上颌骨位置
+        'Upper_Jaw_Position',
+        // ⑮ SNB角
+        'SNB_Angle',
+        // ⑯ 下颌骨位置
+        'Pcd_Lower_Position',
+        // ⑰ Wits分析
+        'Distance_Witsmm',
+        // ㊱ 前颅底长度
+        'S_N_Anterior_Cranial_Base_Length',
+        // ㊲ 下颌体长度(重复)
+        'Go_Me_Length'
     ];
     return boneLabels.includes(label);
 }
@@ -1755,14 +1988,67 @@ function isBoneMeasurement(label) {
  */
 function isToothMeasurement(label) {
     const toothLabels = [
-        'UI_SN_Angle', 'IMPA_Angle-1', 'Upper_Anterior_Alveolar_Height',
-        'U1_SN_Angle_Repeat', 'U1_NA_Angle', 'U1_NA_Incisor_Length',
-        'IMPA_Angle-2', 'FMIA_Angle', 'L1_NB_Angle', 'L1_NB_Distance',
-        'U1_L1_Inter_Incisor_Angle', 'U1_PP_Upper_Anterior_Alveolar_Height',
-        'L1_MP_Lower_Anterior_Alveolar_Height', 'U6_PP_Upper_Posterior_Alveolar_Height',
+        // ⑧ 上切牙-SN角
+        'UI_SN_Angle',
+        // ⑨ 下切牙-下颌平面角
+        'IMPA_Angle-1',
+        // ⑩ 上前牙槽高度
+        'Upper_Anterior_Alveolar_Height',
+        // ⑱ 上切牙-SN角(重复)
+        'U1_SN_Angle_Repeat',
+        // ⑲ 上切牙-NA角
+        'U1_NA_Angle',
+        // ⑳ 上切牙突度
+        'U1_NA_Incisor_Length',
+        // ㉑ 下切牙-下颌平面角(重复)
+        'IMPA_Angle-2',
+        // ㉒ FMIA角
+        'FMIA_Angle',
+        // ㉓ 下切牙-NB角
+        'L1_NB_Angle',
+        // ㉔ 下切牙突度
+        'L1_NB_Distance',
+        // ㉕ 上下切牙角
+        'U1_L1_Inter_Incisor_Angle',
+        // ㉛ 上前牙槽高度(重复)
+        'U1_PP_Upper_Anterior_Alveolar_Height',
+        // ㉜ 下前牙槽高度
+        'L1_MP_Lower_Anterior_Alveolar_Height',
+        // ㉝ 上后牙槽高度
+        'U6_PP_Upper_Posterior_Alveolar_Height',
+        // ㉞ 下后牙槽高度
         'L6_MP_Lower_Posterior_Alveolar_Height'
     ];
     return toothLabels.includes(label);
+}
+
+/**
+ * 判断是否为生长发育测量项
+ * @param {string} label - 测量项标签
+ * @returns {boolean} 是否为生长发育测量项
+ */
+function isGrowthMeasurement(label) {
+    const growthLabels = [
+        // ⑥ 面部高度比例
+        'SGo_NMe_Ratio-1',
+        // ⑦ 下颌平面角
+        'FH_MP_Angle',
+        // ㉖ 面部高度比例(重复)
+        'Y_SGo_NMe_Ratio-2',
+        // ㉗ 下颌生长方向角
+        'Mandibular_Growth_Angle',
+        // ㉘ 面部高度比例(再重复)
+        'SGo_NMe_Ratio-3',
+        // ㉙ SN-FH角
+        'SN_FH_Angle-1',
+        // ㉚ 下颌平面角(重复)
+        'MP_FH_Angle-2',
+        // ㉟ 下颌生长型角
+        'Mandibular_Growth_Type_Angle',
+        // ㊳ 颈椎成熟度分期
+        'Cervical_Vertebral_Maturity_Stage'
+    ];
+    return growthLabels.includes(label);
 }
 
 /**
