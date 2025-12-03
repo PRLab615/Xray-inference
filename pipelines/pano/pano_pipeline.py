@@ -11,15 +11,13 @@ import logging
 import cv2
 import numpy as np
 
-# 导入原有五个模块的预测器
+# 导入预测器
 from pipelines.pano.modules.condyle_seg import JointPredictor as CondyleSegPredictor
 from pipelines.pano.modules.condyle_detection import JointPredictor as CondyleDetPredictor
 from pipelines.pano.modules.mandible_seg import MandiblePredictor
 from pipelines.pano.modules.implant_detect import ImplantDetectionModule
 from pipelines.pano.modules.teeth_seg import TeethSegmentationModule, process_teeth_results
-
-# 导入重构后的上颌窦模块预测器
-# 假设您已经按照建议重构了这两个文件，分别只负责分割和分类
+from pipelines.pano.modules.rootTipDensity_detect import RootTipDensityPredictor
 from pipelines.pano.modules.sinus_seg.sinus_seg_predictor import SinusSegPredictor
 from pipelines.pano.modules.sinus_class.sinus_class_predictor import SinusClassPredictor
 
@@ -120,6 +118,11 @@ class PanoPipeline(BasePipeline):
             self.modules['sinus_class'] = SinusClassPredictor(**sinus_class_cfg)
             logger.info("  ✓ Sinus Classification module loaded")
             
+            # 8. 根尖低密度影检测模块 (rootTipDensity_detect)
+            rootTipDensity_cfg = self._get_module_config('rootTipDensity_detect')
+            self.modules['rootTipDensity_detect'] = RootTipDensityPredictor(**rootTipDensity_cfg)
+            logger.info("  ✓ RootTipDensity Detection module loaded")
+            
         except Exception as e:
             logger.error(f"Failed to initialize some modules: {e}")
             raise
@@ -177,6 +180,9 @@ class PanoPipeline(BasePipeline):
             # 2.6 上颌窦分析 (分割 + 分类)
             sinus_results = self._run_sinus_workflow(image_path)
             
+            # 2.7 根尖低密度影检测
+            rootTipDensity_results = self._run_rootTipDensity_detect(image_path)
+            
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
@@ -203,7 +209,8 @@ class PanoPipeline(BasePipeline):
             mandible=mandible_results,
             implant=implant_results,
             teeth=teeth_results,
-            sinus=sinus_results  # 加入上颌窦结果
+            sinus=sinus_results,  # 加入上颌窦结果
+            rootTipDensity=rootTipDensity_results  # 加入根尖低密度影结果
         )
         logger.info(f"Results collected successfully. Modules: {list(inference_results.keys())}")
         
@@ -391,9 +398,8 @@ class PanoPipeline(BasePipeline):
             # 执行推理（内部已埋点 teeth_seg.inference 和 teeth_seg.post）
             raw_results = self.modules['teeth_seg'].predict(image)
             
-            # 后处理：生成缺牙、智齿、乳牙等报告
-            with timer.record("teeth_seg.analysis"):
-                processed_results = process_teeth_results(raw_results)
+            # 后处理：生成缺牙、智齿、乳牙等报告（业务逻辑处理，不计时）
+            processed_results = process_teeth_results(raw_results)
             
             elapsed = time.time() - start_time
             logger.info(f"Teeth segmentation completed in {elapsed:.2f}s")
@@ -431,6 +437,7 @@ class PanoPipeline(BasePipeline):
             
             # 2. 分割 (Sinus Seg)
             # 调用分割模块，获取全图 Mask
+            # 注意：predict 方法内部已经分别计时 pre/inference/post
             logger.info("Running Sinus Segmentation...")
             seg_res = self.modules['sinus_seg'].predict(image)
             mask_full = seg_res.get('mask')  # 预期 Seg 模块返回 {'mask': np.array}
@@ -440,24 +447,72 @@ class PanoPipeline(BasePipeline):
                 return {}
             
             # 3. 连通域分析 (获取左右侧 ROI)
-            # 使用 8 连通性
-            num, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
+            num, labels, stats, _ = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
+            
+            logger.info(f"Found {num - 1} sinus components.")
+            
+            # 按侧别分组连通域，每侧只保留面积最大的连通域
+            side_components = {'left': [], 'right': []}
+            
+            for i in range(1, num):
+                # 过滤小面积噪点
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area < 500: 
+                    continue
+                
+                # 获取边界框
+                x, y, sw, sh = stats[i][:4]
+                # 判定左右侧：直接用边界框 x 坐标判断（左右窦不会重叠）
+                # 图像左侧 = 患者右侧
+                location = "Right" if x < (w / 2) else "Left"
+                side_lower = location.lower()
+                
+                side_components[side_lower].append({
+                    'index': i,
+                    'area': area,
+                    'bbox': (x, y, sw, sh),
+                    'location': location
+                })
             
             results_list = []
             masks_info = []
             
-            logger.info(f"Found {num - 1} sinus components.")
-            
-            for i in range(1, num):
-                # 过滤小面积噪点
-                if stats[i, cv2.CC_STAT_AREA] < 500: continue
+            # 对每一侧只处理面积最大的连通域
+            for side_lower in ['right', 'left']:
+                components = side_components[side_lower]
+                if not components:
+                    continue
                 
-                # 获取位置信息
-                x, y, sw, sh = stats[i][:4]
-                cx = centroids[i][0]
-                # 判定左右侧：图像左侧 = 患者右侧
-                location = "Right" if cx < (w / 2) else "Left"
-                side_lower = location.lower()
+                # 选择面积最大的连通域
+                largest = max(components, key=lambda c: c['area'])
+                x, y, sw, sh = largest['bbox']
+                location = largest['location']
+                component_index = largest['index']
+                
+                logger.info(f"Processing {location} sinus (largest of {len(components)} components, area={largest['area']})")
+                
+                # 提取该连通域的 mask（用于前端可视化）
+                side_mask = (labels == component_index).astype(np.uint8)
+                
+                # 提取轮廓坐标
+                contour_coords = []
+                try:
+                    contours, _ = cv2.findContours(
+                        side_mask,
+                        cv2.RETR_EXTERNAL,
+                        cv2.CHAIN_APPROX_SIMPLE
+                    )
+                    if contours:
+                        # 取最大轮廓
+                        largest_contour = max(contours, key=cv2.contourArea)
+                        coords = largest_contour.squeeze()
+                        if coords.ndim == 1:
+                            contour_coords = [coords.tolist()]
+                        else:
+                            contour_coords = coords.tolist()
+                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus")
+                except Exception as e:
+                    logger.warning(f"Failed to extract contour for {location} sinus: {e}")
                 
                 # 裁剪 ROI (加 Padding)
                 pad = 30
@@ -473,6 +528,7 @@ class PanoPipeline(BasePipeline):
                 if crop.size > 0:
                     logger.info(f"Classifying {location} sinus ROI...")
                     # 调用分类模块，传入 Crop 图片
+                    # 注意：predict 方法内部已经分别计时 pre/inference/post
                     cls_res = self.modules['sinus_class'].predict(crop)
                     is_inflam = cls_res.get('is_inflam', False)
                     conf = cls_res.get('confidence', 0.0)
@@ -494,9 +550,12 @@ class PanoPipeline(BasePipeline):
                     "Confidence_Inflammation": float(f"{conf:.2f}")
                 })
                 
+                # 包含 mask 和 contour 用于前端可视化
                 masks_info.append({
                     "label": f"sinus_{side_lower}",
-                    "bbox": [int(x), int(y), int(sw), int(sh)]
+                    "bbox": [int(x), int(y), int(sw), int(sh)],
+                    "mask": side_mask,  # numpy array，会在 report_utils 中转为 RLE
+                    "contour": contour_coords  # [[x, y], [x, y], ...] 格式
                 })
             
             elapsed = time.time() - start_time
@@ -506,6 +565,41 @@ class PanoPipeline(BasePipeline):
             
         except Exception as e:
             logger.error(f"Sinus workflow failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
+    def _run_rootTipDensity_detect(self, image_path: str) -> dict:
+        """
+        执行根尖低密度影检测
+        
+        Args:
+            image_path: 图像文件路径
+            
+        Returns:
+            dict: 根尖低密度影检测结果
+                包含 density_boxes 和 quadrant_counts
+        """
+        self._log_step("根尖低密度影检测", "使用 YOLOv11 进行检测")
+        
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting rootTipDensity detection for: {image_path}")
+            
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            results = self.modules['rootTipDensity_detect'].predict(image)
+            
+            elapsed = time.time() - start_time
+            logger.info(f"RootTipDensity detection completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"RootTipDensity detection failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {}
@@ -549,6 +643,7 @@ class PanoPipeline(BasePipeline):
             "implant": module_results.get("implant", {}),
             "teeth": module_results.get("teeth", {}),
             "sinus": module_results.get("sinus", {}),  # 收集上颌窦结果
+            "rootTipDensity": module_results.get("rootTipDensity", {}),  # 收集根尖低密度影结果
         }
         
         return inference_results

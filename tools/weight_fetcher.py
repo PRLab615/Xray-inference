@@ -21,7 +21,7 @@ try:
 except Exception:  # pragma: no cover - 某些环境可能没有 torch
     torch = None  # type: ignore
 
-S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://localhost:19000')
+S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://192.168.1.17:19000')
 S3_ACCESS_KEY = os.getenv('S3_ACCESS_KEY', 'root')
 S3_SECRET_KEY = os.getenv('S3_SECRET_KEY', 'Sitonholy@2023')
 S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'teeth')
@@ -33,7 +33,8 @@ class WeightFetchError(RuntimeError):
     """抛出权重下载或加载失败时的错误。"""
 
 
-def _get_s3_client():
+def get_s3_client():
+    """初始化并返回 S3 客户端"""
     return boto3.client(
         's3',
         endpoint_url=S3_ENDPOINT_URL,
@@ -65,7 +66,7 @@ def ensure_weight_file(s3_relative_path: str, *, force_download: bool = False) -
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not local_path.exists() or force_download:
-        client = _get_s3_client()
+        client = get_s3_client()
         try:
             client.download_file(S3_BUCKET_NAME, sanitized_key, str(local_path))
         except ClientError as exc:  # pragma: no cover - 依赖真实 S3 返回
@@ -102,6 +103,9 @@ __all__ = [
     "WeightFetchError",
     "ensure_weight_file",
     "load_state_dict_from_s3",
+    "get_s3_client",
+    "S3_BUCKET_NAME",
+    "LOCAL_WEIGHTS_DIR",
 ]
 
 
