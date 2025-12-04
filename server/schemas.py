@@ -9,6 +9,36 @@ from typing import Optional, Dict, Any
 import uuid
 
 
+class PixelSpacingInfo(BaseModel):
+    """
+    像素间距（比例尺）信息模型
+    
+    用于非 DICOM 图像手动传入比例尺信息
+    
+    Attributes:
+        scaleX: 水平方向比例尺（1像素 = 多少 mm）
+        scaleY: 垂直方向比例尺（1像素 = 多少 mm），可选，默认等于 scaleX
+    """
+    scaleX: float
+    scaleY: Optional[float] = None
+    
+    @field_validator('scaleX')
+    @classmethod
+    def validate_scale_x(cls, v: float) -> float:
+        """验证 scaleX 必须大于 0"""
+        if v <= 0:
+            raise ValueError("scaleX must be greater than 0")
+        return v
+    
+    @field_validator('scaleY')
+    @classmethod
+    def validate_scale_y(cls, v: Optional[float]) -> Optional[float]:
+        """验证 scaleY 如果提供必须大于 0"""
+        if v is not None and v <= 0:
+            raise ValueError("scaleY must be greater than 0")
+        return v
+
+
 class PatientInfo(BaseModel):
     """
     患者信息模型（侧位片必需）
@@ -66,17 +96,26 @@ class AnalyzeRequest(BaseModel):
     Attributes:
         taskId: 任务唯一标识（客户端提供，UUID v4 格式）
         taskType: 任务类型（panoramic/cephalometric）
-        imageUrl: 图像 URL（HTTP/HTTPS）
+        imageUrl: 图像 URL（HTTP/HTTPS），与 dicomUrl 二选一
+        dicomUrl: DICOM 文件 URL（HTTP/HTTPS），与 imageUrl 二选一
         callbackUrl: 回调 URL（HTTP/HTTPS）
         metadata: 客户端自定义元数据（可选）
-        patientInfo: 患者信息（侧位片必需）
+        patientInfo: 患者信息（侧位片必需，但如果提供 dicomUrl 则可从 DICOM 解析）
+        pixelSpacing: 像素间距/比例尺（可选，用于非 DICOM 图像）
+        
+    注意：
+        - imageUrl 和 dicomUrl 必须提供其中之一
+        - 如果提供 dicomUrl，会自动解析患者信息和比例尺
+        - 侧位片 (cephalometric) 必须有 patientInfo，可以手动提供或从 DICOM 解析
     """
     taskId: str
     taskType: str
-    imageUrl: str
+    imageUrl: Optional[str] = None
+    dicomUrl: Optional[str] = None
     callbackUrl: str
     metadata: Optional[Dict[str, Any]] = None
     patientInfo: Optional[PatientInfo] = None
+    pixelSpacing: Optional[PixelSpacingInfo] = None
     
     @field_validator('taskId')
     @classmethod
@@ -120,7 +159,7 @@ class AnalyzeRequest(BaseModel):
     
     @field_validator('imageUrl')
     @classmethod
-    def validate_image_url(cls, v: str) -> str:
+    def validate_image_url(cls, v: Optional[str]) -> Optional[str]:
         """
         验证 imageUrl 是否为有效的 HTTP/HTTPS URL
         
@@ -133,8 +172,27 @@ class AnalyzeRequest(BaseModel):
         Raises:
             ValueError: URL 不是有效的 HTTP/HTTPS 地址
         """
-        if not (v.startswith('http://') or v.startswith('https://')):
+        if v is not None and not (v.startswith('http://') or v.startswith('https://')):
             raise ValueError('imageUrl must be a valid HTTP/HTTPS URL')
+        return v
+    
+    @field_validator('dicomUrl')
+    @classmethod
+    def validate_dicom_url(cls, v: Optional[str]) -> Optional[str]:
+        """
+        验证 dicomUrl 是否为有效的 HTTP/HTTPS URL
+        
+        Args:
+            v: 待验证的 URL
+            
+        Returns:
+            str: 验证通过的 URL
+            
+        Raises:
+            ValueError: URL 不是有效的 HTTP/HTTPS 地址
+        """
+        if v is not None and not (v.startswith('http://') or v.startswith('https://')):
+            raise ValueError('dicomUrl must be a valid HTTP/HTTPS URL')
         return v
     
     @field_validator('callbackUrl')
@@ -157,24 +215,38 @@ class AnalyzeRequest(BaseModel):
         return v
     
     @model_validator(mode='after')
-    def validate_patient_info_required(self):
+    def validate_image_source_and_patient_info(self):
         """
-        验证侧位片必须提供 patientInfo
+        验证图像来源和患者信息
         
-        对于 taskType 为 'cephalometric' 的请求，必须包含 patientInfo，
-        且 gender 和 DentalAgeStage 都必须存在。
+        规则：
+        1. imageUrl 和 dicomUrl 必须提供其中之一
+        2. 侧位片必须有 patientInfo（手动提供或从 DICOM 解析）
+           - 如果提供了 dicomUrl，可以不传 patientInfo（后端从 DICOM 解析）
+           - 如果只提供 imageUrl，必须手动传 patientInfo
         
         Returns:
             self: 验证通过的模型实例
             
         Raises:
-            ValueError: 侧位片缺少必需的 patientInfo
+            ValueError: 验证失败
         """
+        # 1. 检查图像来源
+        if not self.imageUrl and not self.dicomUrl:
+            raise ValueError("Either 'imageUrl' or 'dicomUrl' must be provided")
+        
+        # 2. 检查侧位片的 patientInfo
         if self.taskType == 'cephalometric':
-            if not self.patientInfo:
-                raise ValueError("patientInfo is required when taskType is 'cephalometric'")
-            if not self.patientInfo.gender or not self.patientInfo.DentalAgeStage:
-                raise ValueError("gender and DentalAgeStage are required in patientInfo for cephalometric tasks")
+            # 如果提供了 dicomUrl，可以不传 patientInfo（后端会从 DICOM 解析）
+            if self.dicomUrl:
+                # dicomUrl 模式：patientInfo 可选，后端会从 DICOM 解析
+                pass
+            else:
+                # imageUrl 模式：patientInfo 必需
+                if not self.patientInfo:
+                    raise ValueError("patientInfo is required when taskType is 'cephalometric' and using imageUrl (not dicomUrl)")
+                if not self.patientInfo.gender or not self.patientInfo.DentalAgeStage:
+                    raise ValueError("gender and DentalAgeStage are required in patientInfo for cephalometric tasks")
         return self
 
 
@@ -267,15 +339,24 @@ class SyncAnalyzeRequest(BaseModel):
     Attributes:
         taskId: 任务唯一标识（必填，UUID v4 格式），由客户端提供，推理任务中必须唯一
         taskType: 任务类型（panoramic/cephalometric/dental_age_stage）
-        imageUrl: 图像 URL（HTTP/HTTPS）
+        imageUrl: 图像 URL（HTTP/HTTPS），与 dicomUrl 二选一
+        dicomUrl: DICOM 文件 URL（HTTP/HTTPS），与 imageUrl 二选一
         metadata: 客户端自定义元数据（可选）
-        patientInfo: 患者信息（侧位片必需）
+        patientInfo: 患者信息（侧位片必需，但如果提供 dicomUrl 则可从 DICOM 解析）
+        pixelSpacing: 像素间距/比例尺（可选，用于非 DICOM 图像）
+        
+    注意：
+        - imageUrl 和 dicomUrl 必须提供其中之一
+        - 如果提供 dicomUrl，会自动解析患者信息和比例尺
+        - 侧位片 (cephalometric) 必须有 patientInfo，可以手动提供或从 DICOM 解析
     """
     taskId: str
     taskType: str
-    imageUrl: str
+    imageUrl: Optional[str] = None
+    dicomUrl: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
     patientInfo: Optional[PatientInfo] = None
+    pixelSpacing: Optional[PixelSpacingInfo] = None
     
     @field_validator('taskId')
     @classmethod
@@ -297,32 +378,46 @@ class SyncAnalyzeRequest(BaseModel):
     
     @field_validator('imageUrl')
     @classmethod
-    def validate_image_url(cls, v: str) -> str:
+    def validate_image_url(cls, v: Optional[str]) -> Optional[str]:
         """验证 imageUrl 是否为有效的 HTTP/HTTPS URL"""
-        if not (v.startswith('http://') or v.startswith('https://')):
+        if v is not None and not (v.startswith('http://') or v.startswith('https://')):
             raise ValueError('imageUrl must be a valid HTTP/HTTPS URL')
         return v
     
-    @field_validator('taskId')
+    @field_validator('dicomUrl')
     @classmethod
-    def validate_task_id(cls, v: Optional[str]) -> Optional[str]:
-        """验证 taskId 是否为有效的 UUID v4 格式（如果提供）"""
-        if v is None:
-            return v
-        try:
-            uuid.UUID(v, version=4)
-            return v
-        except ValueError:
-            raise ValueError('taskId must be a valid UUID v4')
+    def validate_dicom_url(cls, v: Optional[str]) -> Optional[str]:
+        """验证 dicomUrl 是否为有效的 HTTP/HTTPS URL"""
+        if v is not None and not (v.startswith('http://') or v.startswith('https://')):
+            raise ValueError('dicomUrl must be a valid HTTP/HTTPS URL')
+        return v
     
     @model_validator(mode='after')
-    def validate_patient_info_required(self):
-        """验证侧位片必须提供 patientInfo"""
+    def validate_image_source_and_patient_info(self):
+        """
+        验证图像来源和患者信息
+        
+        规则：
+        1. imageUrl 和 dicomUrl 必须提供其中之一
+        2. 侧位片必须有 patientInfo（手动提供或从 DICOM 解析）
+           - 如果提供了 dicomUrl，可以不传 patientInfo（后端从 DICOM 解析）
+           - 如果只提供 imageUrl，必须手动传 patientInfo
+        """
+        # 1. 检查图像来源
+        if not self.imageUrl and not self.dicomUrl:
+            raise ValueError("Either 'imageUrl' or 'dicomUrl' must be provided")
+        
+        # 2. 检查侧位片的 patientInfo
         if self.taskType == 'cephalometric':
-            if not self.patientInfo:
-                raise ValueError("patientInfo is required when taskType is 'cephalometric'")
-            if not self.patientInfo.gender or not self.patientInfo.DentalAgeStage:
-                raise ValueError("gender and DentalAgeStage are required in patientInfo for cephalometric tasks")
+            if self.dicomUrl:
+                # dicomUrl 模式：patientInfo 可选，后端会从 DICOM 解析
+                pass
+            else:
+                # imageUrl 模式：patientInfo 必需
+                if not self.patientInfo:
+                    raise ValueError("patientInfo is required when taskType is 'cephalometric' and using imageUrl (not dicomUrl)")
+                if not self.patientInfo.gender or not self.patientInfo.DentalAgeStage:
+                    raise ValueError("gender and DentalAgeStage are required in patientInfo for cephalometric tasks")
         return self
 
 

@@ -113,6 +113,10 @@ def generate_standard_output(
         
     Returns:
         符合规范的 data 字段
+        
+    注意：
+        spacing 已由 point_model.run() 处理并放入 inference_results["spacing"]
+        优先级为：DICOM/请求参数 > patient_info["PixelSpacing"] > 默认值
     """
     landmarks_block = inference_results.get("landmarks", {})
     measurements = inference_results.get("measurements", {})

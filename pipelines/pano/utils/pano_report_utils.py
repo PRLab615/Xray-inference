@@ -69,7 +69,8 @@ ATTRIBUTE_DESCRIPTION_MAP = {
 
 def generate_standard_output(
         metadata: Dict[str, Any],
-        inference_results: Dict[str, Any]
+        inference_results: Dict[str, Any],
+        pixel_spacing: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
     主组装函数：接收所有模块结果，生成最终 JSON
@@ -108,8 +109,26 @@ def generate_standard_output(
     rootTipDensity_res = inference_results.get("rootTipDensity", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
+    # 处理 ImageSpacing（像素间距/比例尺）
+    # 默认值 0.1 mm/pixel，如果外部传入 pixel_spacing 则使用传入值
+    default_spacing = 0.1
+    if pixel_spacing and pixel_spacing.get("scale_x"):
+        spacing_x = pixel_spacing["scale_x"]
+        spacing_y = pixel_spacing.get("scale_y", spacing_x)
+        spacing_source = pixel_spacing.get("source", "external")
+        logger.info(f"Using pixel spacing from {spacing_source}: X={spacing_x}, Y={spacing_y} mm/pixel")
+    else:
+        spacing_x = default_spacing
+        spacing_y = default_spacing
+        logger.info(f"Using default pixel spacing: {default_spacing} mm/pixel")
+    
     report = {
         "Metadata": _format_metadata(metadata),
+        "ImageSpacing": {  # 图像像素间距信息 - 用于空间测量计算
+            "X": spacing_x,
+            "Y": spacing_y,
+            "Unit": "mm/pixel"
+        },
         "AnatomyResults": [],  # 将从 condyle_seg 填充
         "JointAndMandible": _get_joint_mandible_default(),
         "MaxillarySinus": _get_maxillary_sinus_mock(),  # 真实数据：从 sinus 模块填充（如果有）

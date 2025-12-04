@@ -195,12 +195,22 @@ class PanoPipeline(BasePipeline):
             logger.error(f"Failed to initialize some modules: {e}")
             raise
 
-    def run(self, image_path: str) -> dict:
+    def run(
+        self, 
+        image_path: str,
+        pixel_spacing: dict = None,
+        **kwargs,
+    ) -> dict:
         """
         执行全景片推理流程
 
         Args:
             image_path: 图像文件路径
+            pixel_spacing: 像素间距/比例尺信息（可选）
+                - scale_x: 水平方向 1像素 = 多少mm
+                - scale_y: 垂直方向 1像素 = 多少mm
+                - source: 数据来源（"dicom" 或 "request"）
+            **kwargs: 其他参数（兼容性保留）
 
         Returns:
             dict: 完整的 data 字段，符合《规范：全景片 JSON》
@@ -213,13 +223,15 @@ class PanoPipeline(BasePipeline):
             1. 验证图像文件存在
             2. 依次调用各个子模块
             3. 收集所有推理结果
-            4. 调用 report_utils 生成规范 JSON
+            4. 调用 report_utils 生成规范 JSON（包含 ImageSpacing）
             5. 返回完整的 data 字段
 
         Note:
             - 各子模块内部负责图像加载
             - 与 CephPipeline 保持一致的设计模式
         """
+        # 从 kwargs 获取 pixel_spacing（兼容旧调用方式）
+        pixel_spacing = pixel_spacing or kwargs.get("pixel_spacing")
         # 重置计时器
         timer.reset()
 
@@ -257,8 +269,13 @@ class PanoPipeline(BasePipeline):
             # 2.9 牙齿属性检测4-智齿已萌出
             erupted_wisdomteeth_results = self._run_erupted_wisdomteeth(image_path)
 
-            # 2.10 上颌窦分析 (分割 + 分类)
-            sinus_results = self._run_sinus_workflow(image_path)
+            # 2.10 上颌窦分析 (分割 + 分类 + 气化判断)
+            # 需要传入牙齿分割结果和比例尺，用于计算上颌窦气化类型
+            sinus_results = self._run_sinus_workflow(
+                image_path, 
+                teeth_results=teeth_results,
+                pixel_spacing=pixel_spacing
+            )
 
             # 2.11 根尖低密度影检测
             rootTipDensity_results = self._run_rootTipDensity_detect(image_path)
@@ -330,9 +347,13 @@ class PanoPipeline(BasePipeline):
             "AnalysisTime": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 
-        # 报告生成
+        # 报告生成（传入 pixel_spacing 以生成 ImageSpacing 字段）
         with timer.record("report.generation"):
-            data_dict = pano_report_utils.generate_standard_output(metadata, inference_results)
+            data_dict = pano_report_utils.generate_standard_output(
+                metadata, 
+                inference_results,
+                pixel_spacing=pixel_spacing
+            )
 
         # 保存计时报告
         timer.print_report()
@@ -629,20 +650,43 @@ class PanoPipeline(BasePipeline):
             logger.error(traceback.format_exc())
             return {}
 
-    def _run_sinus_workflow(self, image_path: str) -> dict:
+    def _run_sinus_workflow(
+        self, 
+        image_path: str, 
+        teeth_results: dict = None,
+        pixel_spacing: dict = None
+    ) -> dict:
         """
         执行上颌窦分析工作流：
         1. 分割 (Sinus Seg): 获取 mask
         2. 逻辑处理: 连通域分析、左右侧判定、ROI 裁剪
         3. 分类 (Sinus Class): 对 ROI 进行炎症判断
+        4. 气化判断: 计算上颌窦底与上颌后牙根尖距离
+
+        上颌窦气化类型标准:
+            - Ⅰ型: 正常气化或未气化，上颌窦底与上颌后牙根尖距离 > 3mm
+            - Ⅱ型: 显著气化，上颌窦底与上颌后牙根尖距离在 0~3mm 范围内
+            - Ⅲ型: 过度气化，上颌窦底与上颌后牙根尖距离 < 0mm（牙根进入上颌窦）
 
         Args:
             image_path: 图像路径
+            teeth_results: 牙齿分割结果（用于气化判断）
+            pixel_spacing: 像素间距/比例尺（用于距离计算）
+                - scale_x: 水平方向 1像素 = 多少mm
+                - scale_y: 垂直方向 1像素 = 多少mm
 
         Returns:
             dict: 包含结果列表和 mask 信息
         """
-        self._log_step("上颌窦分析", "分割(sinus_seg) + 分类(sinus_class)")
+        self._log_step("上颌窦分析", "分割(sinus_seg) + 分类(sinus_class) + 气化判断")
+
+        # 上颌后牙 FDI 定义（用于气化判断）
+        # 右侧上颌后牙：14-18（图像左侧 = 患者右侧）
+        # 左侧上颌后牙：24-28（图像右侧 = 患者左侧）
+        UPPER_POSTERIOR_TEETH = {
+            "right": ["14", "15", "16", "17", "18"],  # 患者右侧
+            "left": ["24", "25", "26", "27", "28"]    # 患者左侧
+        }
 
         try:
             import time
@@ -655,11 +699,9 @@ class PanoPipeline(BasePipeline):
             h, w = image.shape[:2]
 
             # 2. 分割 (Sinus Seg)
-            # 调用分割模块，获取全图 Mask
-            # 注意：predict 方法内部已经分别计时 pre/inference/post
             logger.info("Running Sinus Segmentation...")
             seg_res = self.modules['sinus_seg'].predict(image)
-            mask_full = seg_res.get('mask')  # 预期 Seg 模块返回 {'mask': np.array}
+            mask_full = seg_res.get('mask')
 
             if mask_full is None:
                 logger.warning("Sinus segmentation returned no mask.")
@@ -667,21 +709,17 @@ class PanoPipeline(BasePipeline):
 
             # 3. 连通域分析 (获取左右侧 ROI)
             num, labels, stats, _ = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
-            
             logger.info(f"Found {num - 1} sinus components.")
 
             # 按侧别分组连通域，每侧只保留面积最大的连通域
             side_components = {'left': [], 'right': []}
 
             for i in range(1, num):
-                # 过滤小面积噪点
                 area = stats[i, cv2.CC_STAT_AREA]
                 if area < 500:
                     continue
 
-                # 获取边界框
                 x, y, sw, sh = stats[i][:4]
-                # 判定左右侧：直接用边界框 x 坐标判断（左右窦不会重叠）
                 # 图像左侧 = 患者右侧
                 location = "Right" if x < (w / 2) else "Left"
                 side_lower = location.lower()
@@ -692,6 +730,18 @@ class PanoPipeline(BasePipeline):
                     'bbox': (x, y, sw, sh),
                     'location': location
                 })
+
+            # 4. 准备牙齿根尖位置数据（用于气化判断）
+            tooth_apex_positions = self._extract_tooth_apex_positions(
+                teeth_results, UPPER_POSTERIOR_TEETH, h, w
+            )
+            logger.info(f"Extracted apex positions for {len(tooth_apex_positions)} upper posterior teeth")
+
+            # 获取比例尺（默认 0.1 mm/pixel）
+            scale_y = 0.1  # 垂直方向比例尺
+            if pixel_spacing:
+                scale_y = pixel_spacing.get("scale_y", pixel_spacing.get("scale_x", 0.1))
+            logger.info(f"Using pixel spacing scale_y={scale_y} mm/pixel for pneumatization calculation")
 
             results_list = []
             masks_info = []
@@ -710,8 +760,21 @@ class PanoPipeline(BasePipeline):
 
                 logger.info(f"Processing {location} sinus (largest of {len(components)} components, area={largest['area']})")
 
-                # 提取该连通域的 mask（用于前端可视化）
+                # 提取该连通域的 mask
                 side_mask = (labels == component_index).astype(np.uint8)
+
+                # 5. 计算上颌窦底位置（该侧 mask 的最低点 y 坐标）
+                sinus_bottom_y = self._find_sinus_bottom(side_mask)
+                logger.info(f"{location} sinus bottom Y position: {sinus_bottom_y}")
+
+                # 6. 气化判断：计算与该侧上颌后牙根尖的距离
+                pneumatization_type, root_entry_teeth, min_distance_mm = self._calculate_pneumatization(
+                    side_lower, sinus_bottom_y, tooth_apex_positions, 
+                    UPPER_POSTERIOR_TEETH, scale_y
+                )
+                
+                logger.info(f"{location} sinus pneumatization: Type={pneumatization_type}, "
+                           f"MinDistance={min_distance_mm:.2f}mm, RootEntryTeeth={root_entry_teeth}")
 
                 # 提取轮廓坐标
                 contour_coords = []
@@ -722,22 +785,17 @@ class PanoPipeline(BasePipeline):
                         cv2.CHAIN_APPROX_SIMPLE
                     )
                     if contours:
-                        # 取最大轮廓
                         largest_contour = max(contours, key=cv2.contourArea)
-
-                        # 简化轮廓，减少点数（epsilon = 周长的 0.5%）
                         epsilon = 0.005 * cv2.arcLength(largest_contour, True)
                         approx_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
 
                         coords = approx_contour.squeeze()
                         if coords.ndim == 1:
-                            # 只有一个点，转为 [[x, y]]
                             contour_coords = [[int(coords[0]), int(coords[1])]]
                         else:
-                            # 多个点，确保所有坐标都是 Python int（避免 numpy 类型导致序列化问题）
                             contour_coords = [[int(pt[0]), int(pt[1])] for pt in coords]
 
-                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus (simplified from {len(largest_contour)} points)")
+                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus")
                 except Exception as e:
                     logger.warning(f"Failed to extract contour for {location} sinus: {e}")
 
@@ -745,51 +803,48 @@ class PanoPipeline(BasePipeline):
                 pad = 30
                 x1, y1 = max(0, x - pad), max(0, y - pad)
                 x2, y2 = min(w, x + sw + pad), min(h, y + sh + pad)
-
                 crop = image[y1:y2, x1:x2]
 
-                # 4. 分类 (Sinus Class)
+                # 7. 分类 (Sinus Class) - 炎症判断
                 is_inflam = False
                 conf = 0.0
 
                 if crop.size > 0:
                     logger.info(f"Classifying {location} sinus ROI...")
-                    # 调用分类模块，传入 Crop 图片
-                    # 注意：predict 方法内部已经分别计时 pre/inference/post
                     cls_res = self.modules['sinus_class'].predict(crop)
                     is_inflam = cls_res.get('is_inflam', False)
                     conf = cls_res.get('confidence', 0.0)
                 else:
                     logger.warning(f"Invalid crop for {location} sinus.")
 
-                # 5. 构造结果
+                # 8. 构造详细描述
                 cn_side = "左" if side_lower == 'left' else "右"
-                detail = f"{cn_side}上颌窦" + ("可见炎症影像，建议复查。" if is_inflam else "气化良好。")
+                detail = self._generate_sinus_detail(
+                    cn_side, pneumatization_type, is_inflam, 
+                    root_entry_teeth, min_distance_mm
+                )
 
                 results_list.append({
                     "Side": side_lower,
-                    "Pneumatization": 0,  # 暂时不开启气化判断
-                    "TypeClassification": 0,
+                    "Pneumatization": pneumatization_type,  # 1=I型, 2=II型, 3=III型
+                    "TypeClassification": pneumatization_type,
                     "Inflammation": is_inflam,
-                    "RootEntryToothFDI": [],
+                    "RootEntryToothFDI": root_entry_teeth,  # 进入上颌窦的牙齿序列号
                     "Detail": detail,
-                    "Confidence_Pneumatization": 0.99,
+                    "Confidence_Pneumatization": 0.85 if tooth_apex_positions else 0.5,
                     "Confidence_Inflammation": float(f"{conf:.2f}")
                 })
                 
                 # 包含 contour 用于前端可视化
-                # 注意：不传递 numpy array (mask)，因为无法通过 Celery/Redis 序列化
-                # contour 已足够用于前端绑定多边形
-                # 只有当 contour 有效时才添加，否则前端无法绘制
                 if contour_coords and len(contour_coords) >= 3:
                     masks_info.append({
                         "label": f"sinus_{side_lower}",
                         "bbox": [int(x), int(y), int(sw), int(sh)],
-                        "contour": contour_coords  # [[x, y], [x, y], ...] 格式，可序列化
+                        "contour": contour_coords
                     })
                     logger.info(f"Added {location} sinus to masks_info with {len(contour_coords)} points")
                 else:
-                    logger.warning(f"Skipping {location} sinus masks_info: contour is empty or too small ({len(contour_coords) if contour_coords else 0} points)")
+                    logger.warning(f"Skipping {location} sinus masks_info: contour too small")
             
             elapsed = time.time() - start_time
             logger.info(f"Sinus workflow completed in {elapsed:.2f}s")
@@ -801,6 +856,272 @@ class PanoPipeline(BasePipeline):
             import traceback
             logger.error(traceback.format_exc())
             return {}
+
+    def _extract_tooth_apex_positions(
+        self, 
+        teeth_results: dict, 
+        upper_posterior_teeth: dict,
+        image_h: int,
+        image_w: int
+    ) -> dict:
+        """
+        从牙齿分割结果中提取上颌后牙的根尖位置
+
+        Args:
+            teeth_results: 牙齿分割结果
+            upper_posterior_teeth: 上颌后牙 FDI 定义（按侧别）
+            image_h: 图像高度
+            image_w: 图像宽度
+
+        Returns:
+            dict: FDI -> {'apex_y': y坐标, 'side': 'left'/'right'}
+                  apex_y 是根尖的 y 坐标（y 值越大，位置越靠下/靠近上颌窦底）
+        """
+        apex_positions = {}
+
+        if not teeth_results:
+            logger.warning("[_extract_tooth_apex_positions] No teeth_results provided")
+            return apex_positions
+
+        detected_teeth = teeth_results.get("detected_teeth", [])
+        raw_masks = teeth_results.get("raw_masks", None)
+        original_shape = teeth_results.get("original_shape", None)
+
+        if raw_masks is None or len(detected_teeth) == 0:
+            logger.warning("[_extract_tooth_apex_positions] No valid teeth masks")
+            return apex_positions
+
+        # 获取 mask 尺寸并计算缩放因子
+        if isinstance(raw_masks, np.ndarray) and raw_masks.ndim == 3:
+            mask_h, mask_w = raw_masks.shape[1], raw_masks.shape[2]
+        elif isinstance(raw_masks, list) and len(raw_masks) > 0:
+            first_mask = raw_masks[0]
+            if isinstance(first_mask, np.ndarray):
+                mask_h, mask_w = first_mask.shape[:2]
+            else:
+                return apex_positions
+        else:
+            return apex_positions
+
+        # 计算缩放因子
+        scale_x, scale_y = 1.0, 1.0
+        if original_shape and len(original_shape) >= 2:
+            orig_h, orig_w = original_shape[0], original_shape[1]
+            scale_x = orig_w / mask_w
+            scale_y = orig_h / mask_h
+            logger.debug(f"[_extract_tooth_apex_positions] Scale factors: x={scale_x:.3f}, y={scale_y:.3f}")
+
+        # 所有上颌后牙 FDI
+        all_upper_posterior_fdi = set()
+        for side, fdi_list in upper_posterior_teeth.items():
+            for fdi in fdi_list:
+                all_upper_posterior_fdi.add(fdi)
+
+        # 遍历检测到的牙齿
+        for tooth in detected_teeth:
+            fdi = tooth.get("fdi")
+            if not fdi or fdi not in all_upper_posterior_fdi:
+                continue
+
+            mask_idx = tooth.get("mask_index", -1)
+            if mask_idx < 0:
+                continue
+
+            # 获取对应的 mask
+            if isinstance(raw_masks, np.ndarray) and raw_masks.ndim == 3:
+                if mask_idx >= raw_masks.shape[0]:
+                    continue
+                mask = raw_masks[mask_idx]
+            elif isinstance(raw_masks, list):
+                if mask_idx >= len(raw_masks):
+                    continue
+                mask = raw_masks[mask_idx]
+            else:
+                continue
+
+            if not isinstance(mask, np.ndarray):
+                continue
+
+            try:
+                ys, xs = np.where(mask > 0.5)
+                if ys.size == 0:
+                    continue
+
+                # 根尖位置 = mask 的最大 y 值（y 越大越靠下）
+                # 对于上颌牙，根尖朝上（但在图像坐标系中 y 增大是向下的）
+                # 所以上颌牙的根尖是 mask 中 y 最大的位置
+                apex_y_mask = int(ys.max())
+                
+                # 缩放到原图坐标
+                apex_y = apex_y_mask * scale_y
+
+                # 判断该牙属于哪一侧
+                side = None
+                for s, fdi_list in upper_posterior_teeth.items():
+                    if fdi in fdi_list:
+                        side = s
+                        break
+
+                apex_positions[fdi] = {
+                    'apex_y': apex_y,
+                    'side': side
+                }
+                logger.debug(f"[_extract_tooth_apex_positions] Tooth {fdi}: apex_y={apex_y:.1f}, side={side}")
+
+            except Exception as exc:
+                logger.warning(f"[_extract_tooth_apex_positions] Failed to extract apex for tooth {fdi}: {exc}")
+
+        return apex_positions
+
+    def _find_sinus_bottom(self, sinus_mask: np.ndarray) -> int:
+        """
+        找到上颌窦 mask 的底部 y 坐标
+
+        Args:
+            sinus_mask: 上颌窦的二值 mask
+
+        Returns:
+            int: 上颌窦底部的 y 坐标（y 越大越靠下）
+        """
+        ys, _ = np.where(sinus_mask > 0)
+        if ys.size == 0:
+            return 0
+        return int(ys.max())
+
+    def _calculate_pneumatization(
+        self,
+        side: str,
+        sinus_bottom_y: int,
+        tooth_apex_positions: dict,
+        upper_posterior_teeth: dict,
+        scale_y: float
+    ) -> tuple:
+        """
+        计算上颌窦气化类型
+
+        根据标准：
+            - Ⅰ型: 上颌窦底与上颌后牙根尖距离 > 3mm（正常/未气化）
+            - Ⅱ型: 上颌窦底与上颌后牙根尖距离在 0~3mm（显著气化）
+            - Ⅲ型: 上颌窦底与上颌后牙根尖距离 < 0mm（过度气化，牙根进入窦内）
+
+        Args:
+            side: 'left' 或 'right'
+            sinus_bottom_y: 上颌窦底部 y 坐标（像素）
+            tooth_apex_positions: 牙齿根尖位置字典
+            upper_posterior_teeth: 上颌后牙 FDI 定义
+            scale_y: 垂直方向比例尺（mm/pixel）
+
+        Returns:
+            tuple: (气化类型, 进入上颌窦的牙齿列表, 最小距离mm)
+                - 气化类型: 1=I型, 2=II型, 3=III型, 0=无法判断
+                - 进入上颌窦的牙齿列表: 距离 < 0mm 的牙齿 FDI
+                - 最小距离: 所有牙齿中的最小距离（mm）
+        """
+        if not tooth_apex_positions or sinus_bottom_y == 0:
+            logger.warning(f"[_calculate_pneumatization] Cannot calculate: no teeth data or sinus not found")
+            return 0, [], float('inf')
+
+        # 获取该侧的上颌后牙 FDI
+        side_teeth_fdi = upper_posterior_teeth.get(side, [])
+        
+        min_distance_mm = float('inf')
+        root_entry_teeth = []  # 进入上颌窦的牙齿
+
+        for fdi in side_teeth_fdi:
+            if fdi not in tooth_apex_positions:
+                continue
+
+            apex_info = tooth_apex_positions[fdi]
+            # 只处理同侧的牙齿
+            if apex_info.get('side') != side:
+                continue
+
+            apex_y = apex_info['apex_y']
+            
+            # 计算距离（像素）
+            # 距离 = 上颌窦底 y - 牙根尖 y
+            # 如果距离 > 0，说明牙根尖在窦底之上（没进入）
+            # 如果距离 < 0，说明牙根尖在窦底之下（进入了）
+            distance_pixels = sinus_bottom_y - apex_y
+            
+            # 转换为 mm
+            distance_mm = distance_pixels * scale_y
+            
+            logger.debug(f"[_calculate_pneumatization] Tooth {fdi}: "
+                        f"apex_y={apex_y:.1f}, sinus_bottom={sinus_bottom_y}, "
+                        f"distance={distance_mm:.2f}mm")
+
+            if distance_mm < min_distance_mm:
+                min_distance_mm = distance_mm
+
+            # 如果距离 < 0，牙根进入上颌窦
+            if distance_mm < 0:
+                root_entry_teeth.append(fdi)
+
+        # 根据最小距离判断气化类型
+        if min_distance_mm == float('inf'):
+            # 没有有效数据
+            pneumatization_type = 0
+        elif min_distance_mm < 0:
+            # III型：过度气化（距离 < 0mm）
+            pneumatization_type = 3
+        elif min_distance_mm <= 3:
+            # II型：显著气化（0 <= 距离 <= 3mm）
+            pneumatization_type = 2
+        else:
+            # I型：正常气化（距离 > 3mm）
+            pneumatization_type = 1
+
+        return pneumatization_type, root_entry_teeth, min_distance_mm
+
+    def _generate_sinus_detail(
+        self,
+        cn_side: str,
+        pneumatization_type: int,
+        is_inflam: bool,
+        root_entry_teeth: list,
+        min_distance_mm: float
+    ) -> str:
+        """
+        生成上颌窦详细描述
+
+        Args:
+            cn_side: "左" 或 "右"
+            pneumatization_type: 气化类型 (0/1/2/3)
+            is_inflam: 是否有炎症
+            root_entry_teeth: 进入上颌窦的牙齿列表
+            min_distance_mm: 最小距离 (mm)
+
+        Returns:
+            str: 详细描述文本
+        """
+        parts = [f"{cn_side}上颌窦"]
+
+        # 气化类型描述
+        if pneumatization_type == 1:
+            parts.append("气化正常（I型）")
+        elif pneumatization_type == 2:
+            if min_distance_mm != float('inf'):
+                parts.append(f"显著气化（II型，窦底与根尖距离约{min_distance_mm:.1f}mm）")
+            else:
+                parts.append("显著气化（II型）")
+        elif pneumatization_type == 3:
+            parts.append("过度气化（III型）")
+            if root_entry_teeth:
+                teeth_str = "、".join(root_entry_teeth)
+                parts.append(f"，牙位{teeth_str}根尖进入上颌窦")
+        else:
+            parts.append("气化状态待评估")
+
+        # 炎症描述
+        if is_inflam:
+            parts.append("。可见炎症影像，局部存在充满窦腔的模糊影像，疑似积液或囊肿，建议耳鼻喉科会诊")
+        else:
+            if pneumatization_type in [1, 2]:
+                parts.append("，窦腔清晰")
+            parts.append("。")
+
+        return "".join(parts)
 
     def _run_rootTipDensity_detect(self, image_path: str) -> dict:
         """

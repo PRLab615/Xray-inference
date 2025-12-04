@@ -99,10 +99,73 @@ def extract_metadata(ds: "pydicom.FileDataset") -> Dict[str, Any]:
     meta["StudyInstanceUID"] = _get(ds, "StudyInstanceUID", "")
     meta["SOPInstanceUID"] = _get(ds, "SOPInstanceUID", "")
 
-    # 图像几何/像素信息，依次是高度，宽度，像素间距，图像方向，图像位置
+    # 图像几何/像素信息，依次是高度，宽度
     meta["Rows"] = getattr(ds, "Rows", None)
     meta["Columns"] = getattr(ds, "Columns", None)
-    meta["PixelSpacing"] = _get(ds, "PixelSpacing", None)
+
+    # --- 【关键】比例尺提取逻辑 ---
+    # PixelSpacing (0028,0030): 经过校准后的像素间距 [行间距, 列间距] (mm)
+    # ImagerPixelSpacing (0018,1164): 探测器面板上的物理像素间距（备选）
+    # EstimatedRadiographicMagnificationFactor (0018,1114): 放大率因子
+    pixel_spacing = getattr(ds, "PixelSpacing", None)
+    imager_pixel_spacing = getattr(ds, "ImagerPixelSpacing", None)
+    magnification_factor = getattr(ds, "EstimatedRadiographicMagnificationFactor", None)
+
+    # 优先使用 PixelSpacing，其次使用 ImagerPixelSpacing
+    effective_spacing = pixel_spacing if pixel_spacing else imager_pixel_spacing
+    spacing_source = "PixelSpacing" if pixel_spacing else ("ImagerPixelSpacing" if imager_pixel_spacing else None)
+
+    if effective_spacing and len(effective_spacing) >= 2:
+        try:
+            # 将 Decimal 或字符串转为 float
+            spacing_y = float(effective_spacing[0])  # 垂直方向 1 pixel 代表多少 mm
+            spacing_x = float(effective_spacing[1])  # 水平方向 1 pixel 代表多少 mm
+
+            meta["PixelSpacing"] = [spacing_y, spacing_x]
+            meta["PixelSpacingSource"] = spacing_source
+
+            # 处理放大率校正（如果存在）
+            # 真实大小 = 测量像素数 × PixelSpacing / 放大率
+            if magnification_factor:
+                try:
+                    mag = float(magnification_factor)
+                    if mag > 0:
+                        meta["MagnificationFactor"] = mag
+                        # 校正后的比例尺
+                        meta["Pixel2MM_Scale"] = spacing_x / mag
+                        meta["Pixel2MM_Scale_Y"] = spacing_y / mag
+                        meta["Pixel2MM_Corrected"] = True
+                    else:
+                        meta["MagnificationFactor"] = None
+                        meta["Pixel2MM_Scale"] = spacing_x
+                        meta["Pixel2MM_Scale_Y"] = spacing_y
+                        meta["Pixel2MM_Corrected"] = False
+                except (ValueError, TypeError):
+                    meta["MagnificationFactor"] = None
+                    meta["Pixel2MM_Scale"] = spacing_x
+                    meta["Pixel2MM_Scale_Y"] = spacing_y
+                    meta["Pixel2MM_Corrected"] = False
+            else:
+                meta["MagnificationFactor"] = None
+                meta["Pixel2MM_Scale"] = spacing_x  # 水平方向：1像素 = 多少mm
+                meta["Pixel2MM_Scale_Y"] = spacing_y  # 垂直方向：1像素 = 多少mm
+                meta["Pixel2MM_Corrected"] = False
+        except (ValueError, TypeError, IndexError):
+            meta["PixelSpacing"] = None
+            meta["PixelSpacingSource"] = None
+            meta["MagnificationFactor"] = None
+            meta["Pixel2MM_Scale"] = None
+            meta["Pixel2MM_Scale_Y"] = None
+            meta["Pixel2MM_Corrected"] = False
+    else:
+        meta["PixelSpacing"] = None
+        meta["PixelSpacingSource"] = None
+        meta["MagnificationFactor"] = None
+        meta["Pixel2MM_Scale"] = None  # 无法获取比例尺
+        meta["Pixel2MM_Scale_Y"] = None
+        meta["Pixel2MM_Corrected"] = False
+
+    # 图像方向和位置
     meta["ImageOrientationPatient"] = _get(ds, "ImageOrientationPatient", None)
     meta["ImagePositionPatient"] = _get(ds, "ImagePositionPatient", None)
 
@@ -117,6 +180,203 @@ def extract_metadata(ds: "pydicom.FileDataset") -> Dict[str, Any]:
     meta["RescaleIntercept"] = getattr(ds, "RescaleIntercept", None)
 
     return meta
+
+
+# ------------------------- DICOM 到 PatientInfo 转换 -------------------------
+
+def extract_patient_info_for_ceph(ds: "pydicom.FileDataset") -> Dict[str, Any]:
+    """
+    从 DICOM 数据集中提取患者信息，转换为侧位片推理所需的格式
+    
+    提取规则：
+    - gender: 从 PatientSex (0010,0040) 提取，M -> Male, F -> Female
+    - DentalAgeStage: 默认为 Permanent（DICOM 中通常没有牙期字段）
+    
+    返回格式与 server/schemas.py 中的 PatientInfo 兼容：
+    {
+        "gender": "Male" | "Female",
+        "DentalAgeStage": "Permanent" | "Mixed"
+    }
+    
+    Args:
+        ds: pydicom.FileDataset 对象
+        
+    Returns:
+        dict: 患者信息字典，可直接用于侧位片推理
+        
+    注意：
+        - 如果 DICOM 中没有 PatientSex 或值无法识别，返回 None
+        - DentalAgeStage 默认为 Permanent，因为 DICOM 标准中没有对应字段
+    """
+    result: Dict[str, Any] = {}
+    
+    # 提取性别
+    patient_sex = getattr(ds, "PatientSex", None)
+    if patient_sex:
+        sex_str = str(patient_sex).upper().strip()
+        if sex_str == "M":
+            result["gender"] = "Male"
+        elif sex_str == "F":
+            result["gender"] = "Female"
+        else:
+            # 未知性别，尝试其他常见格式
+            if sex_str in ["MALE", "男"]:
+                result["gender"] = "Male"
+            elif sex_str in ["FEMALE", "女"]:
+                result["gender"] = "Female"
+            else:
+                result["gender"] = None  # 无法识别
+    else:
+        result["gender"] = None
+    
+    # DentalAgeStage：DICOM 标准中没有对应字段，默认为 Permanent
+    # 如果需要 Mixed（混合牙列期），需要客户端手动指定
+    result["DentalAgeStage"] = "Permanent"
+    
+    return result
+
+
+def extract_dicom_info_for_inference(
+    dicom_path: str | Path,
+    out_dir: Optional[str | Path] = None,
+    quality: int = 95,
+) -> Dict[str, Any]:
+    """
+    从 DICOM 文件中提取推理所需的所有信息
+    
+    一站式函数，返回：
+    1. 转换后的 JPG 图像路径
+    2. 患者信息（用于侧位片）
+    3. 比例尺信息（像素到毫米的转换）
+    4. 完整的 DICOM 元数据
+    
+    Args:
+        dicom_path: DICOM 文件路径
+        out_dir: 输出目录（可选），不传则与 DICOM 同目录
+        quality: JPG 质量（默认 95）
+        
+    Returns:
+        dict: 包含以下字段的字典
+            - image_path: 转换后的 JPG 图像路径
+            - patient_info: 患者信息（gender, DentalAgeStage）
+            - pixel_spacing: 比例尺信息（scale_x, scale_y, available, corrected）
+            - dicom_metadata: 完整的 DICOM 元数据
+            
+    示例：
+        info = extract_dicom_info_for_inference("scan.dcm")
+        if info["patient_info"]["gender"]:
+            # 使用提取的患者信息
+            patient_info = info["patient_info"]
+        if info["pixel_spacing"]["available"]:
+            # 使用提取的比例尺
+            scale = info["pixel_spacing"]["scale_x"]
+    """
+    # 1. 转换 DICOM 到 JPG，同时获取元数据
+    meta, jpg_path = dicom_to_jpeg(dicom_path, out_dir=out_dir, quality=quality)
+    
+    # 2. 重新加载 DICOM 提取患者信息（使用原始 ds 对象）
+    ds = load_dicom(dicom_path)
+    patient_info = extract_patient_info_for_ceph(ds)
+    
+    # 3. 提取比例尺信息
+    scale_info = get_scale_info(meta)
+    
+    return {
+        "image_path": jpg_path,
+        "patient_info": patient_info,
+        "pixel_spacing": {
+            "available": scale_info["available"],
+            "scale_x": scale_info["scale_x"],
+            "scale_y": scale_info["scale_y"],
+            "corrected": scale_info["corrected"],
+            "magnification": scale_info["magnification"],
+            "source": scale_info["source"],
+        },
+        "dicom_metadata": meta,
+    }
+
+
+# ------------------------- 比例尺计算辅助函数 -------------------------
+
+def pixels_to_mm(
+    pixel_distance: float,
+    pixel_spacing: float,
+    magnification_factor: Optional[float] = None,
+) -> float:
+    """
+    将像素距离转换为实际物理距离（毫米）。
+
+    参数：
+    - pixel_distance: 像素距离（像素数）
+    - pixel_spacing: 像素间距（mm/pixel），来自 DICOM PixelSpacing
+    - magnification_factor: 放大率因子（可选），若有则自动校正
+
+    返回：
+    - 实际物理距离（毫米）
+
+    示例：
+        # 假设 PixelSpacing = 0.148 mm/pixel
+        real_length = pixels_to_mm(100, 0.148)  # 返回 14.8 mm
+    """
+    if magnification_factor and magnification_factor > 0:
+        return pixel_distance * pixel_spacing / magnification_factor
+    return pixel_distance * pixel_spacing
+
+
+def mm_to_pixels(
+    mm_distance: float,
+    pixel_spacing: float,
+    magnification_factor: Optional[float] = None,
+) -> float:
+    """
+    将实际物理距离（毫米）转换为像素距离。
+
+    参数：
+    - mm_distance: 实际物理距离（毫米）
+    - pixel_spacing: 像素间距（mm/pixel），来自 DICOM PixelSpacing
+    - magnification_factor: 放大率因子（可选），若有则自动校正
+
+    返回：
+    - 像素距离
+
+    示例：
+        # 假设 PixelSpacing = 0.148 mm/pixel
+        pixel_length = mm_to_pixels(14.8, 0.148)  # 返回 100 像素
+    """
+    if pixel_spacing <= 0:
+        raise ValueError("pixel_spacing 必须大于 0")
+    if magnification_factor and magnification_factor > 0:
+        return mm_distance * magnification_factor / pixel_spacing
+    return mm_distance / pixel_spacing
+
+
+def get_scale_info(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    从元数据字典中提取比例尺相关信息的便捷函数。
+
+    参数：
+    - meta: extract_metadata 返回的元数据字典
+
+    返回：
+    - 包含比例尺信息的字典：
+        - available: 比例尺是否可用
+        - scale_x: 水平方向 1像素 = 多少mm
+        - scale_y: 垂直方向 1像素 = 多少mm
+        - corrected: 是否经过放大率校正
+        - magnification: 放大率（如果有）
+        - source: 数据来源（PixelSpacing 或 ImagerPixelSpacing）
+    """
+    scale_x = meta.get("Pixel2MM_Scale")
+    scale_y = meta.get("Pixel2MM_Scale_Y")
+
+    return {
+        "available": scale_x is not None,
+        "scale_x": scale_x,
+        "scale_y": scale_y,
+        "corrected": meta.get("Pixel2MM_Corrected", False),
+        "magnification": meta.get("MagnificationFactor"),
+        "source": meta.get("PixelSpacingSource"),
+    }
 
 
 # ------------------------- 图像转换 -------------------------
@@ -246,10 +506,38 @@ def convert_dicom(
 
 
 # ------------------------- 命令行用法 -------------------------
-if __name__ == "__main__":  
-    dicom_path = r"D:\git-615\Teeth\Xray-inference\tools\CTX.dcm"
-    out_dir = r"D:\git-615\Teeth\Xray-inference\tools\converted"
+if __name__ == "__main__":
+    dicom_path = r"D:\硕士文档\项目\口腔\DICOM\I1.dcm"
+    out_dir = r"D:\硕士文档\项目\口腔\DICOM\converted"
     quality = 95
-    meta, jpg_path = convert_dicom(dicom_path, out_dir,quality)
-    print(meta)
-    print(jpg_path)
+    meta, jpg_path = convert_dicom(dicom_path, out_dir, quality)
+
+    print("=" * 50)
+    print("DICOM 元数据：")
+    print("=" * 50)
+    for key, value in meta.items():
+        print(f"  {key}: {value}")
+
+    print("\n" + "=" * 50)
+    print("比例尺信息：")
+    print("=" * 50)
+    scale_info = get_scale_info(meta)
+    if scale_info["available"]:
+        print(f"  比例尺可用: 是")
+        print(f"  水平方向: 1像素 = {scale_info['scale_x']:.4f} mm")
+        print(f"  垂直方向: 1像素 = {scale_info['scale_y']:.4f} mm")
+        print(f"  数据来源: {scale_info['source']}")
+        print(f"  放大率校正: {'是' if scale_info['corrected'] else '否'}")
+        if scale_info['magnification']:
+            print(f"  放大率因子: {scale_info['magnification']}")
+
+        # 示例：假设测量了一颗牙齿的像素长度为 100 像素
+        example_pixels = 100
+        real_mm = pixels_to_mm(example_pixels, scale_info['scale_x'])
+        print(f"\n  示例计算: {example_pixels} 像素 = {real_mm:.2f} mm")
+    else:
+        print(f"  比例尺可用: 否（该 DICOM 文件未包含 PixelSpacing 信息）")
+
+    print("\n" + "=" * 50)
+    print(f"输出 JPG: {jpg_path}")
+    print("=" * 50)

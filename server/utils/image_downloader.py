@@ -45,6 +45,67 @@ class ImageDownloader:
             f"allowed_formats={self.allowed_extensions}"
         )
     
+    def download_dicom(self, dicom_url: str, save_path: str) -> bool:
+        """
+        从 URL 下载 DICOM 文件并保存到指定路径
+        
+        与 download_image 的区别：
+            - 允许 application/dicom 和 application/octet-stream Content-Type
+            - 其他逻辑相同
+        
+        Args:
+            dicom_url: DICOM 文件 URL（HTTP/HTTPS）
+            save_path: 保存路径（本地文件路径，建议以 .dcm 结尾）
+            
+        Returns:
+            bool: 是否成功
+            
+        Raises:
+            ValueError: 文件过大
+            requests.exceptions.Timeout: 下载超时
+            requests.exceptions.RequestException: 网络错误
+        """
+        logger.info(f"Starting DICOM download: {dicom_url}")
+        
+        # 直接下载（DICOM 的 Content-Type 验证在 _validate_content_type 中处理）
+        response = self.session.get(
+            dicom_url,
+            timeout=self.timeout,
+            stream=True
+        )
+        response.raise_for_status()
+        
+        # 验证 Content-Type（允许 DICOM）
+        content_type = response.headers.get('Content-Type', '')
+        if content_type:
+            self._validate_content_type(content_type, allow_dicom=True)
+        
+        # 保存到本地
+        save_dir = Path(save_path).parent
+        save_dir.mkdir(parents=True, exist_ok=True)
+        
+        downloaded_size = 0
+        max_size_bytes = self.max_size_mb * 1024 * 1024
+        
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded_size += len(chunk)
+                    
+                    if downloaded_size > max_size_bytes:
+                        f.close()
+                        Path(save_path).unlink(missing_ok=True)
+                        raise ValueError(
+                            f"File size exceeds {self.max_size_mb}MB limit during download"
+                        )
+        
+        logger.info(
+            f"DICOM downloaded successfully: {dicom_url} -> {save_path} "
+            f"({downloaded_size / 1024:.2f} KB)"
+        )
+        return True
+    
     def download_image(self, image_url: str, save_path: str) -> bool:
         """
         从 URL 下载图像文件并保存到指定路径
@@ -140,20 +201,30 @@ class ImageDownloader:
         )
         return True
     
-    def _validate_content_type(self, content_type: str) -> None:
+    def _validate_content_type(self, content_type: str, allow_dicom: bool = True) -> None:
         """
-        验证 HTTP Content-Type 是否为图像类型
+        验证 HTTP Content-Type 是否为图像类型或 DICOM 类型
         
         Args:
             content_type: Content-Type 头
+            allow_dicom: 是否允许 DICOM 类型（默认 True）
             
         Raises:
-            ValueError: Content-Type 不是图像类型
+            ValueError: Content-Type 不是允许的类型
         """
-        if not content_type.startswith('image/'):
+        # 允许的 DICOM Content-Type（不同服务器可能返回不同的值）
+        dicom_types = [
+            'application/dicom',
+            'application/octet-stream',  # 某些服务器对 .dcm 文件返回通用二进制类型
+        ]
+        
+        is_image = content_type.startswith('image/')
+        is_dicom = allow_dicom and any(content_type.startswith(dt) for dt in dicom_types)
+        
+        if not is_image and not is_dicom:
             raise ValueError(
                 f"Unsupported Content-Type: {content_type}. "
-                f"Only image/* types are allowed."
+                f"Allowed types: image/*, application/dicom, application/octet-stream"
             )
         logger.debug(f"Content-Type validated: {content_type}")
     

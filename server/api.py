@@ -220,10 +220,11 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     伪同步推理接口（v4 架构）
     
     工作流程:
-        1. 下载图像
-        2. 提交任务到 Celery 队列（P2 执行推理）
-        3. P1 等待结果（使用 run_in_executor 避免阻塞事件循环）
-        4. 返回完整结果
+        1. 下载图像（支持 imageUrl 或 dicomUrl）
+        2. 如果是 DICOM，转换为 JPG 并提取患者信息和比例尺
+        3. 提交任务到 Celery 队列（P2 执行推理）
+        4. P1 等待结果（使用 run_in_executor 避免阻塞事件循环）
+        5. 返回完整结果
     
     优势:
         - 客户端体验：同步（一次请求，一次响应）
@@ -240,10 +241,12 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     Args:
         request: 同步分析请求（JSON body，Pydantic 自动验证）
             - taskType: 任务类型（panoramic/cephalometric）
-            - imageUrl: 图像 URL（HTTP/HTTPS）
-            - taskId: 任务 ID（可选，服务端自动生成）
+            - imageUrl: 图像 URL（HTTP/HTTPS），与 dicomUrl 二选一
+            - dicomUrl: DICOM 文件 URL（HTTP/HTTPS），与 imageUrl 二选一
+            - taskId: 任务 ID（必填）
             - metadata: 客户端自定义元数据（可选）
-            - patientInfo: 患者信息（cephalometric 必需）
+            - patientInfo: 患者信息（cephalometric 必需，但 dicomUrl 模式可从 DICOM 解析）
+            - pixelSpacing: 比例尺信息（可选，用于非 DICOM 图像）
         
     Returns:
         SyncAnalyzeResponse: 包含 taskId, status, timestamp, data/error 的响应
@@ -254,6 +257,7 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         HTTPException(500): 服务器内部错误
     """
     from server.tasks import analyze_task
+    from tools.dicom_utils import extract_dicom_info_for_inference
     import celery.exceptions
     import asyncio
     
@@ -271,7 +275,6 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         )
     
     # 在 Redis 中设置临时标记，表示任务正在处理（防止并发重复提交）
-    # 同步接口不持久化结果，但需要标记 taskId 已被使用
     try:
         _persistence.save_task(task_id, {
             "taskId": task_id,
@@ -281,71 +284,133 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         })
     except Exception as e:
         logger.error(f"Failed to mark task as processing: {task_id}, {e}")
-        # 如果 Redis 操作失败，仍然继续处理，但记录警告
     
     logger.info(f"[Pseudo-Sync] Request received: taskId={task_id}, taskType={request.taskType}")
     
-    # 2. 下载图像
-    file_ext = '.jpg'
-    image_filename = f"{task_id}{file_ext}"
-    image_path = os.path.join(_upload_dir, image_filename)
+    # 2. 下载图像（支持 imageUrl 或 dicomUrl）
+    image_path = None
+    dicom_path = None
+    patient_info = request.patientInfo.model_dump() if request.patientInfo else None
+    pixel_spacing = None
+    temp_files = []  # 记录需要清理的临时文件
     
     try:
-        _image_downloader.download_image(request.imageUrl, image_path)
-        logger.info(f"Image downloaded: {image_path}")
+        if request.dicomUrl:
+            # DICOM 模式：下载 DICOM -> 转换 JPG -> 提取患者信息和比例尺
+            dicom_filename = f"{task_id}.dcm"
+            dicom_path = os.path.join(_upload_dir, dicom_filename)
+            temp_files.append(dicom_path)
+            
+            _image_downloader.download_dicom(request.dicomUrl, dicom_path)
+            logger.info(f"DICOM downloaded: {dicom_path}")
+            
+            # 转换 DICOM 并提取信息
+            dicom_info = extract_dicom_info_for_inference(dicom_path, out_dir=_upload_dir)
+            image_path = dicom_info["image_path"]
+            temp_files.append(image_path)
+            
+            # 从 DICOM 提取患者信息（如果请求中没有提供）
+            if not patient_info and dicom_info["patient_info"]["gender"]:
+                patient_info = dicom_info["patient_info"]
+                logger.info(f"Patient info extracted from DICOM: {patient_info}")
+            
+            # 从 DICOM 提取比例尺
+            if dicom_info["pixel_spacing"]["available"]:
+                pixel_spacing = {
+                    "scale_x": dicom_info["pixel_spacing"]["scale_x"],
+                    "scale_y": dicom_info["pixel_spacing"]["scale_y"],
+                    "source": "dicom",
+                }
+                logger.info(f"Pixel spacing extracted from DICOM: {pixel_spacing}")
+        else:
+            # 普通图像模式
+            file_ext = '.jpg'
+            image_filename = f"{task_id}{file_ext}"
+            image_path = os.path.join(_upload_dir, image_filename)
+            temp_files.append(image_path)
+            
+            _image_downloader.download_image(request.imageUrl, image_path)
+            logger.info(f"Image downloaded: {image_path}")
+            
+            # 使用请求中的比例尺
+            if request.pixelSpacing:
+                pixel_spacing = {
+                    "scale_x": request.pixelSpacing.scaleX,
+                    "scale_y": request.pixelSpacing.scaleY or request.pixelSpacing.scaleX,
+                    "source": "request",
+                }
+                logger.info(f"Pixel spacing from request: {pixel_spacing}")
     except Exception as e:
-        logger.error(f"Image download failed: {e}")
+        logger.error(f"Image/DICOM download failed: {e}")
+        # 清理临时文件
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=11004,
-                message=f"Cannot download image from '{request.imageUrl}'",
+                message=f"Cannot download image/DICOM from '{request.dicomUrl or request.imageUrl}'",
                 detail=str(e)
             ).model_dump()
         )
     
-    # 3. 构造任务参数（伪同步：callback_url=None）
+    # 3. 验证侧位片必须有患者信息
+    if request.taskType == 'cephalometric' and not patient_info:
+        # 清理临时文件
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message="patientInfo is required for cephalometric tasks",
+                detail="Cannot extract valid patient info from DICOM. Please provide patientInfo manually."
+            ).model_dump()
+        )
+    
+    # 4. 构造任务参数（伪同步：callback_url=None）
     task_params = {
         "task_id": task_id,
         "task_type": request.taskType,
         "image_path": image_path,
-        "patient_info": request.patientInfo.model_dump() if request.patientInfo else None,
-        "callback_url": None,  # 伪同步：不需要回调
+        "patient_info": patient_info,
+        "pixel_spacing": pixel_spacing,  # 新增：比例尺信息
+        "callback_url": None,
         "metadata": request.metadata or {},
     }
     
-    # 4. 提交到 Celery 队列
+    # 5. 提交到 Celery 队列
     logger.info(f"[Pseudo-Sync] Submitting task to Celery: {task_id}")
     celery_result = analyze_task.apply_async(kwargs=task_params)
     
-    # 5. 【关键】等待 P2 完成（使用轮询方式，避免高并发下 Redis pub/sub 连接冲突）
+    # 6. 等待 P2 完成
     try:
-        # 设置超时（可配置，默认 30 秒）
-        timeout = 30  # 可从 config.yaml 读取
+        timeout = 30
         logger.info(f"[Pseudo-Sync] Waiting for result via polling (timeout={timeout}s): {task_id}")
         
-        # 使用 run_in_executor 将阻塞的轮询转为 awaitable
-        # 这样等待时不会阻塞事件循环，P1 可以处理其他请求
         loop = asyncio.get_event_loop()
         data_dict = await loop.run_in_executor(
-            None,  # 使用默认的 ThreadPoolExecutor
+            None,
             lambda: _wait_for_celery_result_polling(celery_result, timeout)
         )
         
         logger.info(f"[Pseudo-Sync] Task completed: {task_id}")
         
-        # 6. 清理临时文件
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up temp file: {image_path}")
+        # 7. 清理临时文件
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+                logger.info(f"Cleaned up temp file: {f}")
         
-        # 7. 清理 Redis 中的临时标记（同步接口不持久化结果）
+        # 8. 清理 Redis 中的临时标记
         try:
             _persistence.delete_task(task_id)
         except Exception as e:
             logger.warning(f"Failed to clean up task marker: {task_id}, {e}")
         
-        # 8. 返回结果
+        # 9. 返回结果
         return SyncAnalyzeResponse(
             taskId=task_id,
             status="SUCCESS",
@@ -357,10 +422,9 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     
     except celery.exceptions.TimeoutError:
         logger.error(f"[Pseudo-Sync] Task timeout: {task_id}")
-        # 清理临时文件
-        if os.path.exists(image_path):
-            os.remove(image_path)
-        # 清理 Redis 中的临时标记
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         try:
             _persistence.delete_task(task_id)
         except Exception as e:
@@ -376,10 +440,9 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     
     except Exception as e:
         logger.error(f"[Pseudo-Sync] Task execution failed: {task_id}, {e}", exc_info=True)
-        # 清理临时文件
-        if os.path.exists(image_path):
-            os.remove(image_path)
-        # 清理 Redis 中的临时标记
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         try:
             _persistence.delete_task(task_id)
         except Exception as e2:
@@ -407,10 +470,12 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         request: 分析请求（JSON body，Pydantic 自动验证）
             - taskId: 任务唯一标识（UUID v4 格式）
             - taskType: 任务类型（panoramic/cephalometric）
-            - imageUrl: 图像 URL（HTTP/HTTPS）
+            - imageUrl: 图像 URL（HTTP/HTTPS），与 dicomUrl 二选一
+            - dicomUrl: DICOM 文件 URL（HTTP/HTTPS），与 imageUrl 二选一
             - callbackUrl: 回调 URL（HTTP/HTTPS）
             - metadata: 客户端自定义元数据（可选）
-            - patientInfo: 患者信息（cephalometric 必需）
+            - patientInfo: 患者信息（cephalometric 必需，但 dicomUrl 模式可从 DICOM 解析）
+            - pixelSpacing: 比例尺信息（可选，用于非 DICOM 图像）
         
     Returns:
         AnalyzeResponse: 包含 taskId, status, submittedAt, metadata 的响应
@@ -421,17 +486,19 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         HTTPException(500): 服务器内部错误（Redis/Celery）
         
     工作流程:
-        1. Pydantic 自动验证请求参数（taskId、taskType、imageUrl 等）
+        1. Pydantic 自动验证请求参数（taskId、taskType、imageUrl/dicomUrl 等）
         2. 检查 taskId 是否已存在（防止重复提交）
-        3. 从 imageUrl 下载图像文件
-        4. 保存任务元数据到 Redis
-        5. 将任务推入 Celery 队列
-        6. 返回 202 Accepted 响应
+        3. 下载图像/DICOM 文件
+        4. 如果是 DICOM，转换为 JPG 并提取患者信息和比例尺
+        5. 保存任务元数据到 Redis
+        6. 将任务推入 Celery 队列
+        7. 返回 202 Accepted 响应
     """
-    # 延迟导入 analyze_task 避免循环导入
     from server.tasks import analyze_task
+    from tools.dicom_utils import extract_dicom_info_for_inference
     
-    logger.info(f"Received async request: taskId={request.taskId}, taskType={request.taskType}, imageUrl={request.imageUrl}")
+    logger.info(f"Received async request: taskId={request.taskId}, taskType={request.taskType}, "
+                f"imageUrl={request.imageUrl}, dicomUrl={request.dicomUrl}")
     
     # 1. 检查 taskId 是否已存在
     if _persistence.task_exists(request.taskId):
@@ -445,56 +512,126 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             ).model_dump()
         )
     
-    # 2. 下载图像
-    file_ext = '.jpg'
-    image_filename = f"{request.taskId}{file_ext}"
-    image_path = os.path.join(_upload_dir, image_filename)
+    # 2. 下载图像（支持 imageUrl 或 dicomUrl）
+    image_path = None
+    dicom_path = None
+    patient_info = request.patientInfo.model_dump() if request.patientInfo else None
+    pixel_spacing = None
+    temp_files = []  # 记录需要清理的临时文件
+    image_source = "url"
+    source_url = request.imageUrl or request.dicomUrl
     
     try:
-        _image_downloader.download_image(request.imageUrl, image_path)
-        logger.info(f"Image downloaded: {request.imageUrl} -> {image_path}")
+        if request.dicomUrl:
+            # DICOM 模式
+            image_source = "dicom"
+            dicom_filename = f"{request.taskId}.dcm"
+            dicom_path = os.path.join(_upload_dir, dicom_filename)
+            temp_files.append(dicom_path)
+            
+            _image_downloader.download_dicom(request.dicomUrl, dicom_path)
+            logger.info(f"DICOM downloaded: {dicom_path}")
+            
+            # 转换 DICOM 并提取信息
+            dicom_info = extract_dicom_info_for_inference(dicom_path, out_dir=_upload_dir)
+            image_path = dicom_info["image_path"]
+            temp_files.append(image_path)
+            
+            # 从 DICOM 提取患者信息
+            if not patient_info and dicom_info["patient_info"]["gender"]:
+                patient_info = dicom_info["patient_info"]
+                logger.info(f"Patient info extracted from DICOM: {patient_info}")
+            
+            # 从 DICOM 提取比例尺
+            if dicom_info["pixel_spacing"]["available"]:
+                pixel_spacing = {
+                    "scale_x": dicom_info["pixel_spacing"]["scale_x"],
+                    "scale_y": dicom_info["pixel_spacing"]["scale_y"],
+                    "source": "dicom",
+                }
+                logger.info(f"Pixel spacing extracted from DICOM: {pixel_spacing}")
+        else:
+            # 普通图像模式
+            file_ext = '.jpg'
+            image_filename = f"{request.taskId}{file_ext}"
+            image_path = os.path.join(_upload_dir, image_filename)
+            temp_files.append(image_path)
+            
+            _image_downloader.download_image(request.imageUrl, image_path)
+            logger.info(f"Image downloaded: {request.imageUrl} -> {image_path}")
+            
+            # 使用请求中的比例尺
+            if request.pixelSpacing:
+                pixel_spacing = {
+                    "scale_x": request.pixelSpacing.scaleX,
+                    "scale_y": request.pixelSpacing.scaleY or request.pixelSpacing.scaleX,
+                    "source": "request",
+                }
+                logger.info(f"Pixel spacing from request: {pixel_spacing}")
     except ValueError as e:
-        logger.error(f"Image validation failed: {e}")
+        logger.error(f"Image/DICOM validation failed: {e}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=11004,
-                message=f"Cannot download image from '{request.imageUrl}'",
+                message=f"Cannot download image/DICOM from '{source_url}'",
                 detail=str(e)
             ).model_dump()
         )
     except Exception as e:
-        logger.error(f"Image download failed: {e}")
+        logger.error(f"Image/DICOM download failed: {e}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=11004,
-                message=f"Cannot download image from '{request.imageUrl}'",
+                message=f"Cannot download image/DICOM from '{source_url}'",
                 detail=str(e)
             ).model_dump()
         )
     
-    # 3. 构造任务元数据
+    # 3. 验证侧位片必须有患者信息
+    if request.taskType == 'cephalometric' and not patient_info:
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message="patientInfo is required for cephalometric tasks",
+                detail="Cannot extract valid patient info from DICOM. Please provide patientInfo manually."
+            ).model_dump()
+        )
+    
+    # 4. 构造任务元数据
     submitted_at = time.time()
     metadata_v3 = {
         "taskId": request.taskId,
         "taskType": request.taskType,
         "imageUrl": request.imageUrl,
+        "dicomUrl": request.dicomUrl,
         "imagePath": image_path,
         "callbackUrl": request.callbackUrl,
         "metadata": request.metadata or {},
-        "patientInfo": request.patientInfo.model_dump() if request.patientInfo else None,
+        "patientInfo": patient_info,
+        "pixelSpacing": pixel_spacing,
         "submittedAt": submitted_at,
-        "imageSource": "url"
+        "imageSource": image_source
     }
     
-    # 4. 保存到 Redis
+    # 5. 保存到 Redis
     success = _persistence.save_task(request.taskId, metadata_v3)
     if not success:
-        # 清理已下载的图像
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up image file: {image_path}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+                logger.info(f"Cleaned up file: {f}")
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
@@ -504,25 +641,26 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             ).model_dump()
         )
     
-    # 5. 异步任务入队（v4：使用统一任务参数，所有信息通过 Celery 传递）
+    # 6. 异步任务入队
     try:
         task_params = {
             "task_id": request.taskId,
             "task_type": request.taskType,
             "image_path": image_path,
-            "image_url": request.imageUrl,  # v4 新增：通过任务参数传递，不依赖 Redis
-            "patient_info": request.patientInfo.model_dump() if request.patientInfo else None,
-            "callback_url": request.callbackUrl,  # 纯异步：需要回调
+            "image_url": source_url,
+            "patient_info": patient_info,
+            "pixel_spacing": pixel_spacing,  # 新增：比例尺信息
+            "callback_url": request.callbackUrl,
             "metadata": request.metadata or {},
         }
         task_result = analyze_task.apply_async(kwargs=task_params)
         logger.info(f"Task queued: {request.taskId}, celery_id={task_result.id}")
     except Exception as e:
-        # 回滚：删除 Redis 记录和图像文件
         _persistence.delete_task(request.taskId)
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up image file: {image_path}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+                logger.info(f"Cleaned up file: {f}")
         logger.error(f"Failed to queue task: {e}")
         raise HTTPException(
             status_code=500,
@@ -533,7 +671,7 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             ).model_dump()
         )
     
-    # 6. 返回 202 响应
+    # 7. 返回 202 响应
     return AnalyzeResponse(
         taskId=request.taskId,
         status="QUEUED",
