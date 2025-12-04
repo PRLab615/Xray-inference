@@ -4,8 +4,13 @@ Worker 服务启动入口 (P2)
 负责监听任务队列，执行 AI 计算，触发回调
 """
 
-import logging
 import os
+
+# 禁用 ultralytics 自动安装依赖（必须在任何 ultralytics 导入之前设置）
+# 这可以避免 "Ultralytics requirement ['onnx'] not found, attempting AutoUpdate..." 警告
+os.environ["YOLO_AUTOINSTALL"] = "False"
+
+import logging
 from server.worker import celery_app
 from server import load_config
 

@@ -20,7 +20,7 @@ else:
 logger = logging.getLogger(__name__)
 
 # 关键点名称列表
-KEYPOINT_NAMES = [f"P{i + 1}" for i in range(19)]
+KEYPOINT_NAMES = [f"P{i + 1}" for i in range(25)]
 
 
 def preprocess_image(image_path: str, logger_instance: Optional[logging.Logger] = None) -> str:

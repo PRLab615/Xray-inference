@@ -4,8 +4,13 @@ API 服务启动入口 (P1)
 负责处理 HTTP 请求，验证参数，将任务推入队列，立即返回 202 响应
 """
 
-import uvicorn
 import os
+
+# 禁用 ultralytics 自动安装依赖（必须在任何 ultralytics 导入之前设置）
+# 这可以避免 "Ultralytics requirement ['onnx'] not found, attempting AutoUpdate..." 警告
+os.environ["YOLO_AUTOINSTALL"] = "False"
+
+import uvicorn
 import logging
 from server import load_config
 

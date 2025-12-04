@@ -1005,25 +1005,25 @@ function drawLandmarks(data, stage, scale) {
             const scaledX = landmark.X * scale;
             const scaledY = landmark.Y * scale;
             
-            // 绘制圆点
+            // 绘制圆点（医学精确点，使用较小半径）
             const circle = new Konva.Circle({
                 x: scaledX,
                 y: scaledY,
-                radius: 5,
+                radius: 2,
                 fill: 'red',
-                stroke: 'red',
-                strokeWidth: 2
+                stroke: '#ff0000',
+                strokeWidth: 1
             });
             
             // 绘制标签文本
             const text = new Konva.Text({
-                x: scaledX + 8,
-                y: scaledY - 8,
+                x: scaledX + 5,
+                y: scaledY - 6,
                 text: landmark.Label,
-                fontSize: 12,
+                fontSize: 10,
                 fill: 'white',
-                padding: 2,
-                backgroundColor: 'rgba(0,0,0,0.5)'
+                padding: 1,
+                backgroundColor: 'rgba(0,0,0,0.6)'
             });
             
             // 存储关键点数据到图形对象，用于后续 Tooltip
@@ -1094,10 +1094,8 @@ function showLandmarkTooltip(node, landmark, event) {
     // 新规范中坐标是整数，但也兼容小数格式
     const xDisplay = Number.isInteger(landmark.X) ? landmark.X : landmark.X.toFixed(1);
     const yDisplay = Number.isInteger(landmark.Y) ? landmark.Y : landmark.Y.toFixed(1);
-    content += `坐标: (${xDisplay}, ${yDisplay})<br>`;
-    if (landmark.Confidence !== undefined) {
-        content += `置信度: ${(landmark.Confidence * 100).toFixed(1)}%`;
-    }
+    content += `坐标: (${xDisplay}, ${yDisplay})`;
+    // 置信度已隐藏 - 不再显示
     
     tooltip.innerHTML = content;
     
@@ -1347,7 +1345,7 @@ function buildCephReport(data) {
         const qualityScore = data.StatisticalFields.QualityScore;
         const qualityPercent = qualityScore > 1 ? qualityScore : (qualityScore * 100);
         summarySection.appendChild(createKeyValue('质量评分', qualityPercent.toFixed(1) + '%'));
-        summarySection.appendChild(createKeyValue('平均置信度', (data.StatisticalFields.AverageConfidence * 100).toFixed(1) + '%'));
+        // 平均置信度已隐藏 - 不再显示
         
         // 已检测关键点：显示具体点列表
         const detectedCount = data.StatisticalFields.ProcessedLandmarks || 0;
@@ -1423,24 +1421,29 @@ function buildCephReport(data) {
         }
     }
     
-    // 4. 生长发育评估（包含 CVSM 图片）
+    // 4. 生长发育评估（包含所有生长相关测量项和 CVSM 图片）
     if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
         const growthSection = createReportSection('生长发育评估');
         const measurements = data.CephalometricMeasurements.AllMeasurements;
-        const cvsm = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
         
-        if (cvsm) {
-            if (cvsm.CVSM) {
-                const img = document.createElement('img');
-                img.src = cvsm.CVSM;
-                img.style.maxWidth = '100%';
-                img.style.marginTop = '10px';
-                img.style.borderRadius = '4px';
-                growthSection.appendChild(img);
+        // 先添加所有生长发育相关的测量项
+        measurements.forEach(m => {
+            if (isGrowthMeasurement(m.Label)) {
+                const item = createMeasurementItem(m);
+                growthSection.appendChild(item);
             }
-            
-            const cvsmItem = createMeasurementItem(cvsm);
-            growthSection.appendChild(cvsmItem);
+        });
+        
+        // 最后添加 CVSM 图片（如果有）
+        const cvsm = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
+        if (cvsm && cvsm.CVSM) {
+            const img = document.createElement('img');
+            img.src = cvsm.CVSM;
+            img.style.maxWidth = '100%';
+            img.style.marginTop = '10px';
+            img.style.borderRadius = '4px';
+            img.alt = '颈椎成熟度分期图像';
+            growthSection.appendChild(img);
         }
         
         if (growthSection.querySelectorAll('.measurement-item, img').length > 0) {
@@ -1544,32 +1547,69 @@ function createMeasurementItem(measurement) {
     const item = document.createElement('div');
     item.className = 'measurement-item';
     
-    // 判断是否为异常（Level !== 0 或 Level === false）
-    const isAbnormal = (measurement.Level !== undefined && measurement.Level !== 0 && measurement.Level !== true) || 
-                       (measurement.Level === false);
+    // 判断是否为未检测状态：Level === -1 或 Level === null 或 Level === [-1]
+    const isUndetected = measurement.Level === -1 || 
+                         measurement.Level === null ||
+                         (Array.isArray(measurement.Level) && measurement.Level.length === 1 && measurement.Level[0] === -1);
     
-    if (isAbnormal) {
+    // 判断是否为异常（修复：正确处理数组类型的 Level）
+    let isAbnormal = false;
+    if (!isUndetected && measurement.Level !== undefined) {
+        if (Array.isArray(measurement.Level)) {
+            // 数组类型：所有元素都是 0 才算正常，否则异常
+            isAbnormal = !measurement.Level.every(level => level === 0);
+        } else if (typeof measurement.Level === 'boolean') {
+            // 布尔类型：false 为异常，true 为正常
+            isAbnormal = measurement.Level === false;
+        } else if (typeof measurement.Level === 'number') {
+            // 数字类型：0 为正常，非 0 为异常
+            isAbnormal = measurement.Level !== 0;
+        }
+    }
+    
+    if (isUndetected) {
+        item.classList.add('undetected');
+    } else if (isAbnormal) {
         item.classList.add('abnormal');
     }
     
     // 构建内容
     let content = `<div class="measurement-label">${getMeasurementLabel(measurement.Label)}</div>`;
     
-    // 显示测量值
+    // 显示测量值（需同时检查 undefined 和 null）
     let valueText = '';
-    if (measurement.Angle !== undefined) {
-        valueText = `${measurement.Angle.toFixed(1)}°`;
-    } else if (measurement.Length_mm !== undefined) {
-        valueText = `${measurement.Length_mm.toFixed(1)} mm`;
-    } else if (measurement.Length !== undefined) {
-        valueText = `${measurement.Length.toFixed(1)} mm`;
-    } else if (measurement.Ratio !== undefined) {
-        valueText = `${measurement.Ratio.toFixed(1)}%`;
-    } else if (measurement.Value !== undefined) {
+    if (measurement.Angle != null) {
+        valueText = `${measurement.Angle.toFixed(2)}°`;
+    } else if (measurement.U1_SN_Angle != null) {
+        // UI_SN_Angle 的特殊字段名
+        valueText = `${measurement.U1_SN_Angle.toFixed(2)}°`;
+    } else if (measurement.Length_mm != null) {
+        valueText = `${measurement.Length_mm.toFixed(2)} mm`;
+    } else if (measurement.Length != null) {
+        valueText = `${measurement.Length.toFixed(2)} mm`;
+    } else if (measurement.Ratio != null) {
+        valueText = `${measurement.Ratio.toFixed(2)}%`;
+    } else if (measurement.Value != null) {
         valueText = measurement.Value.toFixed(2);
-    } else if (measurement['PNS-UPW'] !== undefined) {
-        // 气道间隙特殊处理
-        valueText = `PNS-UPW: ${measurement['PNS-UPW'].toFixed(1)} mm`;
+    } else if (measurement['PNS-UPW'] != null) {
+        // 气道间隙特殊处理 - 显示全部5个测量值
+        const airwayValues = [];
+        if (measurement['PNS-UPW'] != null) {
+            airwayValues.push(`PNS-UPW: ${measurement['PNS-UPW'].toFixed(2)}mm`);
+        }
+        if (measurement['SPP-SPPW'] != null) {
+            airwayValues.push(`SPP-SPPW: ${measurement['SPP-SPPW'].toFixed(2)}mm`);
+        }
+        if (measurement['U-MPW'] != null) {
+            airwayValues.push(`U-MPW: ${measurement['U-MPW'].toFixed(2)}mm`);
+        }
+        if (measurement['TB-YPPW'] != null) {
+            airwayValues.push(`TB-YPPW: ${measurement['TB-YPPW'].toFixed(2)}mm`);
+        }
+        if (measurement['V-LPW'] != null) {
+            airwayValues.push(`V-LPW: ${measurement['V-LPW'].toFixed(2)}mm`);
+        }
+        valueText = airwayValues.join(' | ');
     }
     
     if (valueText) {
@@ -1584,19 +1624,7 @@ function createMeasurementItem(measurement) {
         }
     }
     
-    // 显示Level和置信度
-    // if (measurement.Level !== undefined) {
-    //     const levelText = getLevelText(measurement.Label, measurement.Level);
-    //     if (levelText) {
-    //         content += `<div class="measurement-level">等级: ${levelText}</div>`;
-    //     }
-    // }
-    
-    if (measurement.Confidence !== undefined) {
-        // 新规范中 Confidence 是 0.00-1.00 的小数，需要乘以 100 显示为百分比
-        const confidencePercent = measurement.Confidence <= 1 ? (measurement.Confidence * 100) : measurement.Confidence;
-        content += `<div class="measurement-confidence">置信度: ${confidencePercent.toFixed(1)}%</div>`;
-    }
+    // 置信度已隐藏 - 不再显示测量数据的置信度
     
     item.innerHTML = content;
     return item;
@@ -1628,40 +1656,53 @@ function getLevelText(label, level) {
 }
 
 /**
- * 获取测量项标签（中文名称）
+ * 获取测量项标签
  * @param {string} label - 测量项标签
- * @returns {string} 中文名称
+ * @returns {string} 显示正确的字段名（修正后端命名错误）
+ * 
+ * 修改说明：
+ * - 大部分字段直接显示后端原始名称（便于排查）
+ * - 仅修正已知的命名错误字段（保持JSON格式不变，只改前端显示）
  */
 function getMeasurementLabel(label) {
-    const labelMap = {
-        'ANB_Angle': 'ANB角',
-        'PtmANS_Length': '上颌基骨长度',
-        'GoPo_Length': '下颌体长度',
-        'PoNB_Length': '颏部发育量',
-        'Jaw_Development_Coordination': '上下颌骨发育协调性',
-        'SGo_NMe_Ratio-1': '面部高度比例',
-        'FH_MP_Angle': '下颌平面角',
-        'UI_SN_Angle': '上切牙相对颅骨倾斜度',
-        'IMPA_Angle-1': '下切牙相对下颌平面倾斜度',
-        'Upper_Anterior_Alveolar_Height': '上前牙槽高度',
-        'Airway_Gap': '气道间隙',
-        'Adenoid_Index': '腺样体指数',
-        'Cervical_Vertebral_Maturity_Stage': '颈椎成熟度分期'
+    // 仅修正已知的命名错误，其他字段保持原样
+    const labelCorrections = {
+        // 后端字段名 → 正确的显示名称
+        'Y_SGo_NMe_Ratio-2': 'Y_Axis_Angle',  // Y轴角（°），不是比率
+        'SN_FH_Angle-1': 'SN_MP_Angle',  // SN-MP角（°），不是SN-FH角
+        // 'Pcd_Lower_Position' 保持原样，不做字段名映射
     };
-    return labelMap[label] || label;
+    
+    return labelCorrections[label] || label;
 }
 
 /**
  * 获取测量项诊断结论
  * @param {string} label - 测量项标签
- * @param {number|boolean|Array} level - 等级
+ * @param {number|boolean|Array|null} level - 等级，-1或null表示未检测
  * @returns {string} 诊断结论
  */
 function getMeasurementConclusion(label, level) {
-    if (Array.isArray(level)) {
-        return level.join(', ');
+    // 未检测状态：Level === -1 或 null
+    if (level === -1 || level === null) {
+        return '未检测';
     }
     
+    // 多选类型（如上下颌骨发育协调性）
+    if (Array.isArray(level)) {
+        // 未检测状态：Level === [-1]
+        if (level.length === 1 && level[0] === -1) {
+            return '未检测';
+        }
+        // Level: [0]=协调/正常; [1,0]=上颌过度-下颌正常 等
+        const coordLabels = { 0: '正常', 1: '前突/过度', 2: '后缩/不足' };
+        if (level.length === 1) {
+            return level[0] === 0 ? '协调' : coordLabels[level[0]] || level[0];
+        }
+        return level.map(l => coordLabels[l] || l).join(' - ');
+    }
+    
+    // 布尔类型（气道间隙、腺样体指数）
     if (typeof level === 'boolean') {
         if (label === 'Airway_Gap') {
             return level ? '正常' : '不足';
@@ -1671,53 +1712,169 @@ function getMeasurementConclusion(label, level) {
         return level ? '正常' : '异常';
     }
     
+    // 数值类型
     if (typeof level === 'number') {
+        // ㊳ 颈椎成熟度分期 (1-6)
         if (label === 'Cervical_Vertebral_Maturity_Stage') {
-            const stages = ['', 'CVMS I期', 'CVMS II期', 'CVMS III期', 'CVMS IV期', 'CVMS V期', 'CVMS VI期'];
+            const stages = ['', 'CVMS I期', 'CVMS II期', 'CVMS III期（生长高峰期）', 'CVMS IV期', 'CVMS V期', 'CVMS VI期'];
             return stages[level] || `CVMS ${level}期`;
         }
         
-        // 根据不同的测量项显示具体的Level含义
+        // ① ANB角: 0=骨性I类; 1=骨性II类; 2=骨性III类
         if (label === 'ANB_Angle') {
             if (level === 0) return '骨性I类（正常）';
             if (level === 1) return '骨性II类（ANB>6°）';
             if (level === 2) return '骨性III类（ANB<2°）';
         }
         
-        if (label === 'SGo_NMe_Ratio-1' || label === 'SGo_NMe_Ratio-2' || label === 'SGo_NMe_Ratio-3') {
-            if (level === 0) return '平均生长型';
-            if (level === 1) return '水平生长型（>71%）';
-            if (level === 2) return '垂直生长型（<63%）';
+        // ⑰ Wits分析: 0=骨性I类; 1=骨性II类; 2=骨性III类
+        if (label === 'Distance_Witsmm') {
+            if (level === 0) return '骨性I类';
+            if (level === 1) return '骨性II类（>1.5mm）';
+            if (level === 2) return '骨性III类（<-4.3mm）';
         }
         
-        if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2') {
-            if (level === 0) return '均角';
-            if (level === 1) return '高角（>33°）';
-            if (level === 2) return '低角（<25°）';
-        }
-        
+        // ②③㊲ 颌骨长度: 0=正常; 1=发育过度; 2=发育不足
         if (label === 'PtmANS_Length' || label === 'GoPo_Length' || label === 'Go_Me_Length') {
             if (level === 0) return '正常';
             if (level === 1) return '发育过度';
             if (level === 2) return '发育不足';
         }
         
+        // ④ 颏部发育量: 0=正常; 1=发育过度; 2=后缩
         if (label === 'PoNB_Length') {
             if (level === 0) return '正常';
             if (level === 1) return '发育过度（>2.5mm）';
             if (level === 2) return '后缩（<-0.5mm）';
         }
         
+        // ⑥㉖㉘ 面部高度比例: 0=平均生长型; 1=水平生长型; 2=垂直生长型
+        if (label === 'SGo_NMe_Ratio-1' || label === 'Y_SGo_NMe_Ratio-2' || label === 'SGo_NMe_Ratio-3') {
+            if (level === 0) return '平均生长型';
+            if (level === 1) return '水平生长型（>71%）';
+            if (level === 2) return '垂直生长型（<63%）';
+        }
+        
+        // ⑦㉚㉙ 下颌平面角/SN-MP角: 0=均角; 1=高角; 2=低角
+        if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2' || label === 'SN_FH_Angle-1') {
+            if (level === 0) return '均角';
+            if (level === 1) return '高角（>33°）';
+            if (level === 2) return '低角（<25°）';
+        }
+        
+        // ⑧⑱ 上切牙-SN角: 0=正常; 1=唇倾; 2=舌倾
+        // 注意：阈值因性别和牙期而异（男性恒牙期 107±6°，女性恒牙期 105±6°）
+        // 简化显示：不写具体数值，避免与实际阈值不符
+        if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（数值偏大）';
+            if (level === 2) return '舌倾（数值偏小）';
+        }
+        
+        // ⑨㉑ 下切牙-下颌平面角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾';
+            if (level === 2) return '舌倾';
+        }
+        
+        // ⑬⑮ SNA/SNB角: 0=正常; 1=前突; 2=后缩
         if (label === 'SNA_Angle' || label === 'SNB_Angle') {
             if (level === 0) return '正常';
             if (level === 1) return '前突';
             if (level === 2) return '后缩';
         }
         
-        if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat' || label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
+        // ⑭ 上颌骨位置: 0=正常; 1=靠前; 2=靠后
+        if (label === 'Upper_Jaw_Position') {
             if (level === 0) return '正常';
-            if (level === 1) return '唇倾';
-            if (level === 2) return '舌倾';
+            if (level === 1) return '靠前（>20mm）';
+            if (level === 2) return '靠后（<14mm）';
+        }
+        
+        // ⑯ 下颌骨位置 (Pcd-S): 0=正常; 1=后缩; 2=前突
+        // 注意：Pcd 是髁突后点（Posterior Condylion），位于 S 点后方
+        // 距离测量：从蝶鞍点（S）到髁突后点（Pcd）
+        // Level=1: 距离偏大 → 髁突位置过于靠后 → 下颌关节后移 → 下颌整体后缩
+        // Level=2: 距离偏小 → 髁突位置过于靠前 → 下颌关节前移 → 下颌整体前突
+        if (label === 'Pcd_Lower_Position') {
+            if (level === 0) return '正常';
+            if (level === 1) return '下颌后缩（S-髁突间距偏大，关节位置靠后）';
+            if (level === 2) return '下颌前突（S-髁突间距偏小，关节位置靠前）';
+        }
+        
+        // ⑲ 上切牙-NA角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'U1_NA_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（>30°）';
+            if (level === 2) return '舌倾（<18°）';
+        }
+        
+        // ⑳ 上切牙突度: 0=正常; 1=前突; 2=后缩
+        if (label === 'U1_NA_Incisor_Length') {
+            if (level === 0) return '正常';
+            if (level === 1) return '前突（>6mm）';
+            if (level === 2) return '后缩（<2mm）';
+        }
+        
+        // ㉒ FMIA角: 0=正常; 1=舌倾(增大); 2=唇倾(减小)
+        if (label === 'FMIA_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '舌倾（>59°）';
+            if (level === 2) return '唇倾（<45°）';
+        }
+        
+        // ㉓ 下切牙-NB角: 0=正常; 1=唇倾; 2=舌倾
+        if (label === 'L1_NB_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '唇倾（>38°）';
+            if (level === 2) return '舌倾（<26°）';
+        }
+        
+        // ㉔ 下切牙突度: 0=正常; 1=前突; 2=后缩
+        if (label === 'L1_NB_Distance') {
+            if (level === 0) return '正常';
+            if (level === 1) return '前突（>10mm）';
+            if (level === 2) return '后缩（<4mm）';
+        }
+        
+        // ㉕ 上下切牙角: 0=正常; 1=减小; 2=增大
+        if (label === 'U1_L1_Inter_Incisor_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '开唇露齿（>130°）';
+            if (level === 2) return '深覆合趋势（<112°）';
+        }
+        
+        // ㉗ 下颌生长方向角: 0=正常; 1=过度; 2=不足
+        if (label === 'Mandibular_Growth_Angle') {
+            if (level === 0) return '正常';
+            if (level === 1) return '过度（>91°）';
+            if (level === 2) return '不足（<83°）';
+        }
+        
+        // ㉟ 下颌生长型角: 0=平均生长型; 1=顺时针生长型; 2=逆时针生长型
+        if (label === 'Mandibular_Growth_Type_Angle') {
+            if (level === 0) return '平均生长型';
+            if (level === 1) return '顺时针生长型（>402°）';
+            if (level === 2) return '逆时针生长型（<390°）';
+        }
+        
+        // ㊱ 前颅底长度: 0=正常; 1=增大; 2=减小
+        if (label === 'S_N_Anterior_Cranial_Base_Length') {
+            if (level === 0) return '正常';
+            if (level === 1) return '增大（>70.6mm）';
+            if (level === 2) return '减小（<62.8mm）';
+        }
+        
+        // ⑩㉛㉜㉝㉞ 牙槽高度: 0=正常; 1=过大; 2=不足
+        if (label === 'Upper_Anterior_Alveolar_Height' || 
+            label === 'U1_PP_Upper_Anterior_Alveolar_Height' ||
+            label === 'L1_MP_Lower_Anterior_Alveolar_Height' ||
+            label === 'U6_PP_Upper_Posterior_Alveolar_Height' ||
+            label === 'L6_MP_Lower_Posterior_Alveolar_Height') {
+            if (level === 0) return '正常';
+            if (level === 1) return '过大';
+            if (level === 2) return '不足';
         }
         
         // 默认处理
@@ -1740,10 +1897,30 @@ function getMeasurementConclusion(label, level) {
  */
 function isBoneMeasurement(label) {
     const boneLabels = [
-        'ANB_Angle', 'PtmANS_Length', 'GoPo_Length', 'PoNB_Length',
-        'Jaw_Development_Coordination', 'SGo_NMe_Ratio-1', 'FH_MP_Angle',
-        'SNA_Angle', 'SNB_Angle', 'Upper_Jaw_Position', 'Pcd_Lower_Position',
-        'Distance_Witsmm', 'S_N_Anterior_Cranial_Base_Length', 'Go_Me_Length'
+        // ① ANB角
+        'ANB_Angle',
+        // ② 上颌基骨长度
+        'PtmANS_Length',
+        // ③ 下颌体长度
+        'GoPo_Length',
+        // ④ 颏部发育量
+        'PoNB_Length',
+        // ⑤ 上下颌骨发育协调性
+        'Jaw_Development_Coordination',
+        // ⑬ SNA角
+        'SNA_Angle',
+        // ⑭ 上颌骨位置
+        'Upper_Jaw_Position',
+        // ⑮ SNB角
+        'SNB_Angle',
+        // ⑯ 下颌骨位置
+        'Pcd_Lower_Position',
+        // ⑰ Wits分析
+        'Distance_Witsmm',
+        // ㊱ 前颅底长度
+        'S_N_Anterior_Cranial_Base_Length',
+        // ㊲ 下颌体长度(重复)
+        'Go_Me_Length'
     ];
     return boneLabels.includes(label);
 }
@@ -1755,14 +1932,67 @@ function isBoneMeasurement(label) {
  */
 function isToothMeasurement(label) {
     const toothLabels = [
-        'UI_SN_Angle', 'IMPA_Angle-1', 'Upper_Anterior_Alveolar_Height',
-        'U1_SN_Angle_Repeat', 'U1_NA_Angle', 'U1_NA_Incisor_Length',
-        'IMPA_Angle-2', 'FMIA_Angle', 'L1_NB_Angle', 'L1_NB_Distance',
-        'U1_L1_Inter_Incisor_Angle', 'U1_PP_Upper_Anterior_Alveolar_Height',
-        'L1_MP_Lower_Anterior_Alveolar_Height', 'U6_PP_Upper_Posterior_Alveolar_Height',
+        // ⑧ 上切牙-SN角
+        'UI_SN_Angle',
+        // ⑨ 下切牙-下颌平面角
+        'IMPA_Angle-1',
+        // ⑩ 上前牙槽高度
+        'Upper_Anterior_Alveolar_Height',
+        // ⑱ 上切牙-SN角(重复)
+        'U1_SN_Angle_Repeat',
+        // ⑲ 上切牙-NA角
+        'U1_NA_Angle',
+        // ⑳ 上切牙突度
+        'U1_NA_Incisor_Length',
+        // ㉑ 下切牙-下颌平面角(重复)
+        'IMPA_Angle-2',
+        // ㉒ FMIA角
+        'FMIA_Angle',
+        // ㉓ 下切牙-NB角
+        'L1_NB_Angle',
+        // ㉔ 下切牙突度
+        'L1_NB_Distance',
+        // ㉕ 上下切牙角
+        'U1_L1_Inter_Incisor_Angle',
+        // ㉛ 上前牙槽高度(重复)
+        'U1_PP_Upper_Anterior_Alveolar_Height',
+        // ㉜ 下前牙槽高度
+        'L1_MP_Lower_Anterior_Alveolar_Height',
+        // ㉝ 上后牙槽高度
+        'U6_PP_Upper_Posterior_Alveolar_Height',
+        // ㉞ 下后牙槽高度
         'L6_MP_Lower_Posterior_Alveolar_Height'
     ];
     return toothLabels.includes(label);
+}
+
+/**
+ * 判断是否为生长发育测量项
+ * @param {string} label - 测量项标签
+ * @returns {boolean} 是否为生长发育测量项
+ */
+function isGrowthMeasurement(label) {
+    const growthLabels = [
+        // ⑥ 面部高度比例
+        'SGo_NMe_Ratio-1',
+        // ⑦ 下颌平面角
+        'FH_MP_Angle',
+        // ㉖ 面部高度比例(重复)
+        'Y_SGo_NMe_Ratio-2',
+        // ㉗ 下颌生长方向角
+        'Mandibular_Growth_Angle',
+        // ㉘ 面部高度比例(再重复)
+        'SGo_NMe_Ratio-3',
+        // ㉙ SN-MP角 (字段名历史遗留为 SN_FH_Angle-1)
+        'SN_FH_Angle-1',
+        // ㉚ 下颌平面角(重复)
+        'MP_FH_Angle-2',
+        // ㉟ 下颌生长型角
+        'Mandibular_Growth_Type_Angle',
+        // ㊳ 颈椎成熟度分期
+        'Cervical_Vertebral_Maturity_Stage'
+    ];
+    return growthLabels.includes(label);
 }
 
 /**
@@ -2304,6 +2534,121 @@ function drawRegionalFindings(data, stage, scale) {
         stage.add(mandibleLayer);
         appState.konvaLayers.mandible = mandibleLayer;
     }
+    
+    // 5. 上颌窦图层
+    const sinusLayer = new Konva.Layer();
+    let sinusCount = 0;
+    
+    // 绘制上颌窦区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        // 获取上颌窦诊断信息
+        let sinusInfoMap = {};
+        if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+            data.MaxillarySinus.forEach(sinusData => {
+                sinusInfoMap[sinusData.Side] = sinusData;
+            });
+        }
+        
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理上颌窦
+            if (!rawLabel.includes('sinus')) return;
+            
+            // 判定左右
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            
+            if (!side) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 获取对应侧的诊断信息
+            const sinusInfo = sinusInfoMap[side] || null;
+            
+            // 选择配色：根据炎症状态决定颜色
+            // 有炎症：橙红色，无炎症：浅蓝色/正常
+            let strokeColor = '#4A90D9';  // 默认蓝色
+            let fillColor = 'rgba(74, 144, 217, 0.25)';
+            
+            if (sinusInfo) {
+                if (sinusInfo.Inflammation === true) {
+                    // 有炎症：橙红色警示
+                    strokeColor = '#E67E22';
+                    fillColor = 'rgba(230, 126, 34, 0.30)';
+                } else if (sinusInfo.Pneumatization === 2) {
+                    // 过度气化：黄色警示
+                    strokeColor = '#F1C40F';
+                    fillColor = 'rgba(241, 196, 15, 0.25)';
+                } else if (sinusInfo.Pneumatization === 0 && sinusInfo.Inflammation === false) {
+                    // 正常：绿色
+                    strokeColor = '#27AE60';
+                    fillColor = 'rgba(39, 174, 96, 0.25)';
+                }
+            }
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // 平滑并绘制
+                    let pts = smoothPolyline(pArr, 3);
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: 2.5,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        tension: 0.15,
+                        fill: fillColor,
+                        shadowColor: strokeColor,
+                        shadowBlur: 6,
+                        shadowOpacity: 0.6,
+                        listening: true,
+                        perfectDrawEnabled: false
+                    });
+                    poly.findingType = 'sinus';
+                    poly.findingData = sinusInfo;
+                    poly.sinusSide = side;
+                    
+                    // 绑定鼠标事件
+                    poly.on('mouseenter', function(e) {
+                        console.log('Sinus mouseenter triggered', side, sinusInfo);
+                        showSinusTooltip(this, sinusInfo, side, e);
+                    });
+                    poly.on('mouseleave', function() {
+                        console.log('Sinus mouseleave triggered');
+                        hideTooltip();
+                    });
+                    
+                    // 添加鼠标样式
+                    poly.on('mouseenter', function() {
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'sinus');
+                    
+                    sinusLayer.add(poly);
+                    sinusCount++;
+                });
+            }
+        });
+        
+        console.log('上颌窦区域绘制完成，已绘制:', sinusCount, '个');
+    }
+    
+    if (sinusCount > 0) {
+        stage.add(sinusLayer);
+        appState.konvaLayers.sinus = sinusLayer;
+    }
 }
 
 /**
@@ -2534,6 +2879,114 @@ function showCondyleTooltip(node, condyleInfo, side, event) {
     }
 }
 
+/**
+ * 显示上颌窦 Tooltip
+ * @param {Konva.Shape} node - Konva 节点
+ * @param {Object|null} sinusInfo - 上颌窦诊断信息
+ * @param {string} side - 侧别 ('left' 或 'right')
+ * @param {Event} event - 鼠标事件
+ */
+function showSinusTooltip(node, sinusInfo, side, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容（反转左右显示）
+    const sideName = side === 'left' ? '右' : '左';
+    let content = `<strong>${sideName}上颌窦</strong><br>`;
+    
+    if (sinusInfo) {
+        // 气化程度
+        let pneumatizationText = '正常';
+        if (sinusInfo.Pneumatization === 1) {
+            pneumatizationText = '轻度气化';
+        } else if (sinusInfo.Pneumatization === 2) {
+            pneumatizationText = '过度气化';
+        }
+        content += `气化程度: ${pneumatizationText}<br>`;
+        
+        // 炎症状态
+        const inflammationText = sinusInfo.Inflammation ? '有炎症' : '无炎症';
+        const inflammationStyle = sinusInfo.Inflammation ? 'color: #E74C3C; font-weight: bold;' : '';
+        content += `炎症状态: <span style="${inflammationStyle}">${inflammationText}</span><br>`;
+        
+        // 分类
+        if (sinusInfo.TypeClassification !== undefined && sinusInfo.TypeClassification !== 0) {
+            content += `分类: Type ${sinusInfo.TypeClassification}<br>`;
+        }
+        
+        // 牙根进入上颌窦
+        if (sinusInfo.RootEntryToothFDI && sinusInfo.RootEntryToothFDI.length > 0) {
+            content += `牙根进入: ${sinusInfo.RootEntryToothFDI.join(', ')}<br>`;
+        }
+        
+        // 详细描述
+        if (sinusInfo.Detail) {
+            content += `<span style="font-size: 11px; color: #888;">${sinusInfo.Detail}</span><br>`;
+        }
+        
+        // 置信度
+        if (sinusInfo.Confidence_Inflammation !== undefined) {
+            content += `置信度: ${(sinusInfo.Confidence_Inflammation * 100).toFixed(1)}%`;
+        }
+    } else {
+        content += '诊断信息未找到';
+    }
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置（多边形的中心点）
+    const points = node.points();
+    let sumX = 0, sumY = 0, pointCount = 0;
+    for (let i = 0; i < points.length; i += 2) {
+        sumX += points[i];
+        sumY += points[i + 1];
+        pointCount++;
+    }
+    const centerX = sumX / pointCount;
+    const centerY = sumY / pointCount;
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + centerX + 15;
+    const tooltipY = stageBox.top + centerY - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
+
 // ============================================
 // 步骤13：全景片结构化报告生成
 // ============================================
@@ -2597,6 +3050,15 @@ function buildPanoReport(data) {
     // 根尖密度影
     if (data.RootTipDensityAnalysis && data.RootTipDensityAnalysis.Items && data.RootTipDensityAnalysis.Items.length > 0) {
         summaryItems.push(`根尖密度影: ${data.RootTipDensityAnalysis.Items.length}处`);
+    }
+    
+    // 上颌窦异常
+    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+        const sinusAbnormal = data.MaxillarySinus.filter(s => s.Inflammation === true || s.Pneumatization === 2);
+        if (sinusAbnormal.length > 0) {
+            const abnormalSides = sinusAbnormal.map(s => s.Side === 'left' ? '右' : '左').join('、');
+            summaryItems.push(`上颌窦异常: ${abnormalSides}侧`);
+        }
     }
     
     if (summaryItems.length > 0) {
@@ -2693,61 +3155,102 @@ function buildPanoReport(data) {
         }
     }
     
-    // 上颌窦分析
-    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
+    if (hasJointContent) {
+        container.appendChild(jointSection);
+    }
+    
+    // 2.5 上颌窦分析（独立专区）
+    if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus) && data.MaxillarySinus.length > 0) {
+        const sinusSection = createReportSection('上颌窦分析');
+        
         data.MaxillarySinus.forEach(sinus => {
-            const sideName = sinus.Side === 'left' ? '左' : '右';
+            // 注意：图像左右与实际左右相反，所以left显示为"右"
+            const sideName = sinus.Side === 'left' ? '右' : '左';
+            
+            // 创建单侧上颌窦卡片
+            const sinusCard = document.createElement('div');
+            sinusCard.className = 'sinus-card';
+            
+            // 判断是否有异常（炎症或过度气化）
+            const hasAbnormal = sinus.Inflammation === true || sinus.Pneumatization === 2;
+            if (hasAbnormal) {
+                sinusCard.classList.add('abnormal');
+            }
+            
+            // 标题
+            const cardHeader = document.createElement('div');
+            cardHeader.className = 'sinus-card-header';
+            cardHeader.innerHTML = `<strong>${sideName}上颌窦</strong>`;
+            sinusCard.appendChild(cardHeader);
             
             // 气化程度
-            let pneumatizationText = '';
-            if (sinus.Pneumatization === 0) {
-                pneumatizationText = '正常';
-            } else if (sinus.Pneumatization === 1) {
+            let pneumatizationText = '正常';
+            let pneumatizationClass = 'normal';
+            if (sinus.Pneumatization === 1) {
                 pneumatizationText = '轻度气化';
+                pneumatizationClass = 'mild';
             } else if (sinus.Pneumatization === 2) {
                 pneumatizationText = '过度气化';
+                pneumatizationClass = 'severe';
             }
             
-            if (pneumatizationText) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦气化`, pneumatizationText));
-                hasJointContent = true;
+            const pneumatizationItem = document.createElement('div');
+            pneumatizationItem.className = 'sinus-item';
+            pneumatizationItem.innerHTML = `<span class="label">气化程度:</span> <span class="value ${pneumatizationClass}">${pneumatizationText}</span>`;
+            sinusCard.appendChild(pneumatizationItem);
+            
+            // 炎症状态（重要指标）
+            const inflammationItem = document.createElement('div');
+            inflammationItem.className = 'sinus-item';
+            const inflammationText = sinus.Inflammation ? '有炎症' : '无炎症';
+            const inflammationClass = sinus.Inflammation ? 'inflammation-positive' : 'inflammation-negative';
+            inflammationItem.innerHTML = `<span class="label">炎症状态:</span> <span class="value ${inflammationClass}">${inflammationText}</span>`;
+            sinusCard.appendChild(inflammationItem);
+            
+            // 分类（如果有）
+            if (sinus.TypeClassification !== undefined && sinus.TypeClassification !== 0) {
+                const classItem = document.createElement('div');
+                classItem.className = 'sinus-item';
+                classItem.innerHTML = `<span class="label">分类:</span> <span class="value">Type ${sinus.TypeClassification}</span>`;
+                sinusCard.appendChild(classItem);
             }
             
-            // 气化分类
-            if (sinus.TypeClassification) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦分类`, `Type ${sinus.TypeClassification}`));
-                hasJointContent = true;
-            }
-            
-            // 炎症
-            if (sinus.Inflammation !== undefined) {
-                const inflammationText = sinus.Inflammation ? '有炎症' : '无炎症';
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦炎症`, inflammationText));
-                hasJointContent = true;
-            }
-            
-            // 牙根进入上颌窦
+            // 牙根进入上颌窦（如果有）
             if (sinus.RootEntryToothFDI && Array.isArray(sinus.RootEntryToothFDI) && sinus.RootEntryToothFDI.length > 0) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦牙根进入`, sinus.RootEntryToothFDI.join(', ')));
-                hasJointContent = true;
+                const rootEntryItem = document.createElement('div');
+                rootEntryItem.className = 'sinus-item root-entry';
+                rootEntryItem.innerHTML = `<span class="label">牙根进入:</span> <span class="value">${sinus.RootEntryToothFDI.join(', ')} 牙位</span>`;
+                sinusCard.appendChild(rootEntryItem);
             }
             
             // 详细描述
             if (sinus.Detail) {
-                jointSection.appendChild(createKeyValue('', sinus.Detail));
-                hasJointContent = true;
+                const detailItem = document.createElement('div');
+                detailItem.className = 'sinus-detail';
+                detailItem.textContent = sinus.Detail;
+                sinusCard.appendChild(detailItem);
             }
             
             // 置信度
-            if (sinus.Confidence_Pneumatization !== undefined) {
-                jointSection.appendChild(createKeyValue(`${sideName}上颌窦气化置信度`, (sinus.Confidence_Pneumatization * 100).toFixed(1) + '%'));
-                hasJointContent = true;
+            const confidenceItem = document.createElement('div');
+            confidenceItem.className = 'sinus-confidence';
+            let confidenceText = '';
+            if (sinus.Confidence_Inflammation !== undefined) {
+                confidenceText += `炎症检测: ${(sinus.Confidence_Inflammation * 100).toFixed(1)}%`;
             }
+            if (sinus.Confidence_Pneumatization !== undefined) {
+                if (confidenceText) confidenceText += ' | ';
+                confidenceText += `气化分析: ${(sinus.Confidence_Pneumatization * 100).toFixed(1)}%`;
+            }
+            if (confidenceText) {
+                confidenceItem.innerHTML = `<span class="label">置信度:</span> ${confidenceText}`;
+                sinusCard.appendChild(confidenceItem);
+            }
+            
+            sinusSection.appendChild(sinusCard);
         });
-    }
-    
-    if (hasJointContent) {
-        container.appendChild(jointSection);
+        
+        container.appendChild(sinusSection);
     }
     
     // 3. 牙周与缺牙
@@ -3464,9 +3967,10 @@ const LAYER_CONFIG = {
     landmarks: { name: '关键点', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
-     implants: { name: '种植体', taskType: 'panoramic' },
+    implants: { name: '种植体', taskType: 'panoramic' },
     condyle: { name: '髁突', taskType: 'panoramic' },
     mandible: { name: '下颌升支', taskType: 'panoramic' },
+    sinus: { name: '上颌窦', taskType: 'panoramic' },
     density: { name: '根尖密度影', taskType: 'panoramic' }
 };
 

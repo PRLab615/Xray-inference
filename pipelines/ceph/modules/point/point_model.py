@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 from ultralytics import YOLO
-from pipelines.ceph.utils.ceph_report import calculate_measurements
+from pipelines.ceph.utils.ceph_report import calculate_measurements, DEFAULT_SPACING_MM_PER_PIXEL
 from pipelines.ceph.modules.point.pre_post import (
     preprocess_image,
     postprocess_results,
@@ -21,6 +21,9 @@ from tools.timer import timer
 
 
 logger = logging.getLogger(__name__)
+
+# 默认像素间距（仅作为后备方案，应优先使用 DICOM metadata 中的真实值）
+DEFAULT_BASE_SPACING = 0.1  # mm/pixel（经验值，不同设备可能不同）
 
 @dataclass
 class LandmarkResult:
@@ -202,6 +205,16 @@ class CephInferenceEngine:
     """
     封装CephModel和测量辅助工具的高级编排器
     以及JSON格式化器，以生成最终的头影测量输出。
+    
+    ⚠️ Spacing（像素间距）说明：
+        - Spacing 决定了像素到毫米的转换系数，直接影响所有长度测量的准确性
+        - **强烈建议**：在 patient_info 中提供 PixelSpacing（从 DICOM metadata 获取）
+        - 如果未提供，将使用默认值 0.1 mm/pixel，但**测量结果可能不准确**
+        
+    为什么不能自动计算 spacing？
+        - 不同设备的原始图像分辨率不同（2000px, 2400px, 3000px...）
+        - 用户可能传入 JPG/PNG 等非 DICOM 文件，无法得知原始物理尺度
+        - 没有物理参考标准（如标定板），无法从图像尺寸推断真实距离
     """
 
     def __init__(
@@ -215,6 +228,8 @@ class CephInferenceEngine:
         conf: float = 0.25,
         iou: float = 0.6,
         max_det: int = 1,
+        # Spacing 默认值（仅作为后备方案）
+        default_spacing: float = DEFAULT_BASE_SPACING,
     ):
         self.detector = CephModel(
             weights_path=weights_path,
@@ -226,34 +241,90 @@ class CephInferenceEngine:
             iou=iou,
             max_det=max_det,
         )
+        self.default_spacing = default_spacing
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def run(self, image_path: str, patient_info: Dict[str, str]) -> Dict[str, Any]:
         """
         Complete cephalometric workflow: preprocess -> detect -> compute measurements.
         （不负责 JSON 规范化，交给 pipeline 处理）
+        
+        ⚠️ 重要：请在 patient_info 中提供 PixelSpacing 以确保测量准确性
         """
         self._validate_patient_info(patient_info)
         self.logger.info("Running Ceph inference on %s", image_path)
 
-        # 关键点检测（内部已埋点 ceph_point.pre/inference/post）
+        # ===== 步骤 1: 关键点检测 =====
         landmark_result = self.detector.predict(image_path)
         
-        # 测量计算
+        # ===== 步骤 2: 确定 Spacing（像素间距）=====
+        spacing = self._get_spacing(patient_info, landmark_result)
+        
+        # 从 patient_info 获取性别和牙列期
+        sex = patient_info.get("gender", "Male").lower()
+        dentition = patient_info.get("DentalAgeStage", "Permanent").lower()
+        
+        # 测量计算（传入 spacing 进行像素到毫米的转换）
         with timer.record("ceph_point.measurement"):
-            measurements = calculate_measurements(landmark_result.coordinates)
+            measurements = calculate_measurements(
+                landmark_result.coordinates,
+                sex=sex,
+                dentition=dentition,
+                spacing=spacing,
+            )
 
         inference_bundle = {
             "landmarks": self._landmark_result_to_dict(landmark_result),
             "measurements": measurements,
+            "spacing": spacing,  # 传递实际使用的 spacing 给 pipeline
         }
 
         self.logger.info(
-            "Completed Ceph inference: %s landmarks detected, %s measurements",
+            "Completed Ceph inference: %s landmarks detected, %s measurements, spacing=%.4f mm/px",
             len(landmark_result.detected),
             len(measurements),
+            spacing,
         )
         return inference_bundle
+
+    def _get_spacing(self, patient_info: Dict[str, Any], landmark_result: LandmarkResult) -> float:
+        """
+        确定像素间距 (mm/pixel)
+        
+        优先级：
+            1. patient_info 中的 PixelSpacing（从 DICOM metadata 或设备参数）
+            2. 使用默认值（⚠️ 警告：可能不准确）
+        
+        Args:
+            patient_info: 患者信息字典
+            landmark_result: 关键点检测结果（用于日志记录图像尺寸）
+            
+        Returns:
+            float: Spacing (mm/pixel)
+        """
+        # 优先使用用户提供的 PixelSpacing
+        user_spacing = patient_info.get("PixelSpacing")
+        
+        if user_spacing is not None:
+            spacing = float(user_spacing)
+            self.logger.info(f"✅ Using user-provided PixelSpacing: {spacing} mm/pixel")
+            return spacing
+        
+        # 后备方案：使用默认值（并发出警告）
+        spacing = self.default_spacing
+        
+        # 获取图像尺寸用于日志
+        orig_shape = landmark_result.orig_shape
+        img_info = f"{orig_shape}" if orig_shape else "unknown"
+        
+        self.logger.warning(
+            f"⚠️  PixelSpacing not provided! Using default: {spacing} mm/pixel\n"
+            f"    Image size: {img_info}\n"
+            f"    ❗ Length measurements may be inaccurate!\n"
+            f"    💡 Recommendation: Provide PixelSpacing in patient_info for accurate measurements."
+        )
+        
+        return spacing
 
     def _validate_patient_info(self, patient_info: Dict[str, str]):
         if not patient_info:

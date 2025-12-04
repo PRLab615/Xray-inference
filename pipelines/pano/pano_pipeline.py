@@ -12,19 +12,15 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-# 导入原有五个模块的预测器
+# 导入预测器
 from pipelines.pano.modules.condyle_seg import JointPredictor as CondyleSegPredictor
 from pipelines.pano.modules.condyle_detection import JointPredictor as CondyleDetPredictor
 from pipelines.pano.modules.mandible_seg import MandiblePredictor
 from pipelines.pano.modules.implant_detect import ImplantDetectionModule
 from pipelines.pano.modules.teeth_seg import TeethSegmentationModule, process_teeth_results
-
-# 导入重构后的上颌窦模块预测器
-# 假设您已经按照建议重构了这两个文件，分别只负责分割和分类
+from pipelines.pano.modules.rootTipDensity_detect import RootTipDensityPredictor
 from pipelines.pano.modules.sinus_seg.sinus_seg_predictor import SinusSegPredictor
 from pipelines.pano.modules.sinus_class.sinus_class_predictor import SinusClassPredictor
-
-
 # 导入牙齿属性检测模块
 from pipelines.pano.modules.teeth_attribute1.teeth_attribute1_predictor import TeethAttributeModule
 from pipelines.pano.modules.teeth_attribute2.teeth_attribute2_predictor import TeethAttribute2Module
@@ -168,6 +164,7 @@ class PanoPipeline(BasePipeline):
             self.modules['sinus_class'] = SinusClassPredictor(**sinus_class_cfg)
             logger.info("  ✓ Sinus Classification module loaded")
 
+
             # 8. 牙齿属性检测模块1 (teeth_attribute1)
             teeth_attr1_cfg = self._get_module_config('teeth_attribute1')
             self.modules['teeth_attribute1'] = TeethAttributeModule(**teeth_attr1_cfg)
@@ -187,6 +184,11 @@ class PanoPipeline(BasePipeline):
             teeth_attr4_cfg = self._get_module_config('erupted_wisdomteeth')
             self.modules['erupted_wisdomteeth'] = EruptedModule(**teeth_attr4_cfg)
             logger.info("  ✓ erupted_wisdomteeth module loaded")
+
+            # 12. 根尖低密度影检测模块 (rootTipDensity_detect)
+            rootTipDensity_cfg = self._get_module_config('rootTipDensity_detect')
+            self.modules['rootTipDensity_detect'] = RootTipDensityPredictor(**rootTipDensity_cfg)
+            logger.info("  ✓ RootTipDensity Detection module loaded")
 
 
         except Exception as e:
@@ -258,6 +260,9 @@ class PanoPipeline(BasePipeline):
             # 2.10 上颌窦分析 (分割 + 分类)
             sinus_results = self._run_sinus_workflow(image_path)
 
+            # 2.11 根尖低密度影检测
+            rootTipDensity_results = self._run_rootTipDensity_detect(image_path)
+
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
@@ -306,11 +311,12 @@ class PanoPipeline(BasePipeline):
             mandible=mandible_results,
             implant=implant_results,
             teeth=teeth_results,
+            sinus=sinus_results,  # 加入上颌窦结果
             teeth_attribute1=teeth_attribute1_results,
             teeth_attribute2=teeth_attribute2_results,
             curved_short_root=curved_short_root_results,
             erupted_wisdomteeth=erupted_wisdomteeth_results,
-            sinus=sinus_results,  # 加入上颌窦结果
+            rootTipDensity=rootTipDensity_results  # 加入根尖低密度影结果
         )
         logger.info(f"Results collected successfully. Modules: {list(inference_results.keys())}")
         
@@ -650,6 +656,7 @@ class PanoPipeline(BasePipeline):
 
             # 2. 分割 (Sinus Seg)
             # 调用分割模块，获取全图 Mask
+            # 注意：predict 方法内部已经分别计时 pre/inference/post
             logger.info("Running Sinus Segmentation...")
             seg_res = self.modules['sinus_seg'].predict(image)
             mask_full = seg_res.get('mask')  # 预期 Seg 模块返回 {'mask': np.array}
@@ -659,24 +666,80 @@ class PanoPipeline(BasePipeline):
                 return {}
 
             # 3. 连通域分析 (获取左右侧 ROI)
-            # 使用 8 连通性
-            num, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
+            num, labels, stats, _ = cv2.connectedComponentsWithStats(mask_full, connectivity=8)
+            
+            logger.info(f"Found {num - 1} sinus components.")
+
+            # 按侧别分组连通域，每侧只保留面积最大的连通域
+            side_components = {'left': [], 'right': []}
+
+            for i in range(1, num):
+                # 过滤小面积噪点
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area < 500:
+                    continue
+
+                # 获取边界框
+                x, y, sw, sh = stats[i][:4]
+                # 判定左右侧：直接用边界框 x 坐标判断（左右窦不会重叠）
+                # 图像左侧 = 患者右侧
+                location = "Right" if x < (w / 2) else "Left"
+                side_lower = location.lower()
+
+                side_components[side_lower].append({
+                    'index': i,
+                    'area': area,
+                    'bbox': (x, y, sw, sh),
+                    'location': location
+                })
 
             results_list = []
             masks_info = []
 
-            logger.info(f"Found {num - 1} sinus components.")
+            # 对每一侧只处理面积最大的连通域
+            for side_lower in ['right', 'left']:
+                components = side_components[side_lower]
+                if not components:
+                    continue
 
-            for i in range(1, num):
-                # 过滤小面积噪点
-                if stats[i, cv2.CC_STAT_AREA] < 500: continue
+                # 选择面积最大的连通域
+                largest = max(components, key=lambda c: c['area'])
+                x, y, sw, sh = largest['bbox']
+                location = largest['location']
+                component_index = largest['index']
 
-                # 获取位置信息
-                x, y, sw, sh = stats[i][:4]
-                cx = centroids[i][0]
-                # 判定左右侧：图像左侧 = 患者右侧
-                location = "Right" if cx < (w / 2) else "Left"
-                side_lower = location.lower()
+                logger.info(f"Processing {location} sinus (largest of {len(components)} components, area={largest['area']})")
+
+                # 提取该连通域的 mask（用于前端可视化）
+                side_mask = (labels == component_index).astype(np.uint8)
+
+                # 提取轮廓坐标
+                contour_coords = []
+                try:
+                    contours, _ = cv2.findContours(
+                        side_mask,
+                        cv2.RETR_EXTERNAL,
+                        cv2.CHAIN_APPROX_SIMPLE
+                    )
+                    if contours:
+                        # 取最大轮廓
+                        largest_contour = max(contours, key=cv2.contourArea)
+
+                        # 简化轮廓，减少点数（epsilon = 周长的 0.5%）
+                        epsilon = 0.005 * cv2.arcLength(largest_contour, True)
+                        approx_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
+
+                        coords = approx_contour.squeeze()
+                        if coords.ndim == 1:
+                            # 只有一个点，转为 [[x, y]]
+                            contour_coords = [[int(coords[0]), int(coords[1])]]
+                        else:
+                            # 多个点，确保所有坐标都是 Python int（避免 numpy 类型导致序列化问题）
+                            contour_coords = [[int(pt[0]), int(pt[1])] for pt in coords]
+
+                        logger.info(f"Extracted {len(contour_coords)} contour points for {location} sinus (simplified from {len(largest_contour)} points)")
+                except Exception as e:
+                    logger.warning(f"Failed to extract contour for {location} sinus: {e}")
 
                 # 裁剪 ROI (加 Padding)
                 pad = 30
@@ -692,6 +755,7 @@ class PanoPipeline(BasePipeline):
                 if crop.size > 0:
                     logger.info(f"Classifying {location} sinus ROI...")
                     # 调用分类模块，传入 Crop 图片
+                    # 注意：predict 方法内部已经分别计时 pre/inference/post
                     cls_res = self.modules['sinus_class'].predict(crop)
                     is_inflam = cls_res.get('is_inflam', False)
                     conf = cls_res.get('confidence', 0.0)
@@ -712,12 +776,21 @@ class PanoPipeline(BasePipeline):
                     "Confidence_Pneumatization": 0.99,
                     "Confidence_Inflammation": float(f"{conf:.2f}")
                 })
-
-                masks_info.append({
-                    "label": f"sinus_{side_lower}",
-                    "bbox": [int(x), int(y), int(sw), int(sh)]
-                })
-
+                
+                # 包含 contour 用于前端可视化
+                # 注意：不传递 numpy array (mask)，因为无法通过 Celery/Redis 序列化
+                # contour 已足够用于前端绑定多边形
+                # 只有当 contour 有效时才添加，否则前端无法绘制
+                if contour_coords and len(contour_coords) >= 3:
+                    masks_info.append({
+                        "label": f"sinus_{side_lower}",
+                        "bbox": [int(x), int(y), int(sw), int(sh)],
+                        "contour": contour_coords  # [[x, y], [x, y], ...] 格式，可序列化
+                    })
+                    logger.info(f"Added {location} sinus to masks_info with {len(contour_coords)} points")
+                else:
+                    logger.warning(f"Skipping {location} sinus masks_info: contour is empty or too small ({len(contour_coords) if contour_coords else 0} points)")
+            
             elapsed = time.time() - start_time
             logger.info(f"Sinus workflow completed in {elapsed:.2f}s")
 
@@ -729,10 +802,40 @@ class PanoPipeline(BasePipeline):
             logger.error(traceback.format_exc())
             return {}
 
-    # ---------------------------------------------------------------------
-    # 牙齿 + 属性综合分析（牙位-属性绑定、缺失牙、智齿状态）
-    # ---------------------------------------------------------------------
+    def _run_rootTipDensity_detect(self, image_path: str) -> dict:
+        """
+        执行根尖低密度影检测
 
+        Args:
+            image_path: 图像文件路径
+
+        Returns:
+            dict: 根尖低密度影检测结果
+                包含 density_boxes 和 quadrant_counts
+        """
+        self._log_step("根尖低密度影检测", "使用 YOLOv11 进行检测")
+
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting rootTipDensity detection for: {image_path}")
+
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+
+            results = self.modules['rootTipDensity_detect'].predict(image)
+
+            elapsed = time.time() - start_time
+            logger.info(f"RootTipDensity detection completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"RootTipDensity detection failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
     def _analyze_teeth_and_attributes(
             self,
             teeth_results: dict,
@@ -893,209 +996,6 @@ class PanoPipeline(BasePipeline):
                 logger.info(
                     f"[DEBUG] 缩放后牙齿 [{fdi}] bbox: [{bbox[0]:.1f}, {bbox[1]:.1f}, {bbox[2]:.1f}, {bbox[3]:.1f}]")
 
-        # ------------------------------------------------------------------
-        # 2. 聚合四个属性模块的检测框
-        # ------------------------------------------------------------------
-        def _gather_from_module(module_res: dict, module_name: str) -> list:
-            boxes = module_res.get("boxes")
-            names = module_res.get("attribute_names")
-
-            if boxes is None or names is None:
-                return []
-
-            if len(boxes) == 0 or len(names) == 0:
-                return []
-
-            n = min(len(boxes), len(names))
-            dets = []
-            for i in range(n):
-                box = boxes[i]
-                cls_name = names[i]
-                try:
-                    if isinstance(box, np.ndarray):
-                        box = box.tolist()
-                    if isinstance(box, (list, tuple)) and len(box) >= 4:
-                        box_list = [float(box[0]), float(box[1]), float(box[2]), float(box[3])]
-                    else:
-                        continue
-                except Exception:
-                    continue
-                dets.append({
-                    "bbox": box_list,
-                    "class_name": cls_name,
-                    "confidence": 0.9,
-                })
-
-            return dets
-
-        attribute_detections = []
-        attribute_detections.extend(_gather_from_module(teeth_attr1 or {}, "teeth_attr1"))
-        attribute_detections.extend(_gather_from_module(teeth_attr2 or {}, "teeth_attr2"))
-        attribute_detections.extend(_gather_from_module(curved_short_root or {}, "curved_short_root"))
-        attribute_detections.extend(_gather_from_module(erupted_wisdomteeth or {}, "erupted_wisdomteeth"))
-
-        logger.info(f"[_analyze_teeth_and_attributes] total attribute boxes gathered={len(attribute_detections)}")
-
-        # 调试：打印一些属性框样例
-        if attribute_detections:
-            for det in attribute_detections[:3]:
-                bbox = det["bbox"]
-                logger.info(
-                    f"[DEBUG] 属性 [{det['class_name']}] bbox: [{bbox[0]:.1f}, {bbox[1]:.1f}, {bbox[2]:.1f}, {bbox[3]:.1f}]")
-
-        # ------------------------------------------------------------------
-        # 3. 牙位-属性绑定 (IoU)
-        # ------------------------------------------------------------------
-        tooth_attributes = defaultdict(list)
-
-        def _bbox_iou_xyxy(box1, box2) -> float:
-            x1, y1, x2, y2 = box1
-            x1g, y1g, x2g, y2g = box2
-            inter_x1 = max(x1, x1g)
-            inter_y1 = max(y1, y1g)
-            inter_x2 = min(x2, x2g)
-            inter_y2 = min(y2, y2g)
-            inter_w = max(0.0, inter_x2 - inter_x1)
-            inter_h = max(0.0, inter_y2 - inter_y1)
-            inter_area = inter_w * inter_h
-            if inter_area <= 0:
-                return 0.0
-            area1 = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-            area2 = max(0.0, x2g - x1g) * max(0.0, y2g - y1g)
-            if area1 <= 0 or area2 <= 0:
-                return 0.0
-            union = area1 + area2 - inter_area
-            if union <= 0:
-                return 0.0
-            return inter_area / union
-
-        filtered_attributes = [
-            attr for attr in attribute_detections
-            if float(attr.get("confidence", 0.0)) >= CONF_THRESHOLD
-        ]
-
-        # 调试：统计 IoU > 0.01 的次数
-        iou_positive_count = 0
-        for attr in filtered_attributes:
-            attr_box = attr["bbox"]
-            for fdi, tooth_box in tooth_bboxes.items():
-                iou = _bbox_iou_xyxy(attr_box, tooth_box)
-                if iou > 0.01:
-                    iou_positive_count += 1
-
-        logger.info(f"[DEBUG] IoU > 0.01 的重叠次数: {iou_positive_count}")
-
-        # 执行绑定
-        for attr in filtered_attributes:
-            attr_box = attr["bbox"]
-            attr_name = attr["class_name"]
-            attr_conf = float(attr.get("confidence", 0.0))
-
-            best_fdi = None
-            best_iou = 0.0
-            for fdi, tooth_box in tooth_bboxes.items():
-                iou = _bbox_iou_xyxy(attr_box, tooth_box)
-                if iou > best_iou and iou >= IOU_THRESHOLD:
-                    best_iou = iou
-                    best_fdi = fdi
-
-            if best_fdi is None:
-                continue
-
-            attr_list = tooth_attributes[best_fdi]
-            existing = None
-            for item in attr_list:
-                if item.get("Value") == attr_name:
-                    existing = item
-                    break
-
-            description = ATTRIBUTE_DESCRIPTION_MAP.get(attr_name, attr_name)
-
-            if existing is None:
-                attr_list.append({
-                    "Value": attr_name,
-                    "Description": description,
-                    "Confidence": attr_conf,
-                })
-            else:
-                if attr_conf > existing.get("Confidence", 0.0):
-                    existing["Confidence"] = attr_conf
-
-        teeth_with_attrs = sum(1 for v in tooth_attributes.values() if v)
-        logger.info(f"[_analyze_teeth_and_attributes] total teeth with attributes={teeth_with_attrs}")
-
-        # 打印绑定结果
-        if tooth_attributes:
-            logger.info(f"[DEBUG] 属性绑定结果:")
-            for fdi, attrs in tooth_attributes.items():
-                logger.info(f"  {fdi}: {[a['Value'] for a in attrs]}")
-
-        # ------------------------------------------------------------------
-        # 4. 缺失牙分析
-        # ------------------------------------------------------------------
-        detected_fdi_set = set(str(fdi) for fdi in tooth_bboxes.keys())
-        all_permanent_set = set(ALL_PERMANENT_TEETH_FDI)
-        missing_fdi_set = all_permanent_set - detected_fdi_set
-
-        missing_teeth_struct = []
-        for fdi in sorted(missing_fdi_set, key=lambda x: int(x)):
-            missing_teeth_struct.append({
-                "FDI": fdi,
-                "Reason": "missing",
-                "Detail": f"{fdi}牙位缺牙",
-            })
-
-        # ------------------------------------------------------------------
-        # 5. 智齿状态分析
-        # ------------------------------------------------------------------
-        third_molar_summary = {}
-        for fdi in WISDOM_TEETH_FDI:
-            if fdi not in detected_fdi_set:
-                third_molar_summary[fdi] = {
-                    "Level": 4,
-                    "Impactions": None,
-                    "Detail": "未见智齿",
-                }
-                continue
-
-            attrs = tooth_attributes.get(fdi, [])
-            attr_values = {a.get("Value") for a in attrs}
-
-            if "wisdom_tooth_impaction" in attr_values:
-                third_molar_summary[fdi] = {
-                    "Level": 1,
-                    "Impactions": "Impacted",
-                    "Detail": "阻生",
-                }
-            elif "tooth_germ" in attr_values:
-                third_molar_summary[fdi] = {
-                    "Level": 2,
-                    "Impactions": None,
-                    "Detail": "牙胚状态（未形成牙根）",
-                }
-            elif "to_be_erupted" in attr_values or "erupted" in attr_values:
-                third_molar_summary[fdi] = {
-                    "Level": 3,
-                    "Impactions": None,
-                    "Detail": "待萌出（垂直生长，无阻碍）",
-                }
-            else:
-                third_molar_summary[fdi] = {
-                    "Level": 3,
-                    "Impactions": None,
-                    "Detail": "已萌出",
-                }
-
-        logger.info("=" * 60)
-        logger.info("[DEBUG] _analyze_teeth_and_attributes 结束")
-        logger.info("=" * 60)
-
-        return {
-            "MissingTeeth": missing_teeth_struct,
-            "ThirdMolarSummary": third_molar_summary,
-            "ToothAttributes": dict(tooth_attributes),
-        }
-
     def _collect_results(self, **module_results) -> dict:
         """
         收集所有子模块的推理结果
@@ -1139,6 +1039,7 @@ class PanoPipeline(BasePipeline):
             "curved_short_root": module_results.get("curved_short_root", {}),
             "erupted_wisdomteeth": module_results.get("erupted_wisdomteeth", {}),
             "sinus": module_results.get("sinus", {}),  # 收集上颌窦结果
+            "rootTipDensity": module_results.get("rootTipDensity", {}),  # 收集根尖低密度影结果
         }
 
         return inference_results

@@ -83,6 +83,7 @@ def generate_standard_output(
     teeth_attribute2_res = inference_results.get("teeth_attribute2", {})
     curved_short_root_res = inference_results.get("curved_short_root", {})
     erupted_wisdomteeth_res = inference_results.get("erupted_wisdomteeth", {})
+    rootTipDensity_res = inference_results.get("rootTipDensity", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
     report = {
@@ -94,7 +95,7 @@ def generate_standard_output(
         "MissingTeeth": [],  # 真实数据：从 teeth 模块填充
         "ThirdMolarSummary": {},  # 真实数据：从 teeth 模块填充
         "ImplantAnalysis": _get_implant_default(),  # 真实数据：从 implant 模块填充
-        "RootTipDensityAnalysis": _get_root_tip_density_mock(),  # Mock: 无模型
+        "RootTipDensityAnalysis": _get_root_tip_density_default(),  # 真实数据：从 rootTipDensity 模块填充
         "ToothAnalysis": []  # 部分真实：从 teeth 模块填充（但 Properties 为 mock）
     }
 
@@ -174,6 +175,11 @@ def generate_standard_output(
                 report["AnatomyResults"].extend(sinus_anatomy_data)
                 logger.info(f"[generate_standard_output] Added {len(sinus_anatomy_data)} sinus AnatomyResults")
 
+    # 8. 组装根尖低密度影分析 (RootTipDensityAnalysis) - 真实数据
+    if rootTipDensity_res:
+        rootTipDensity_data = format_root_tip_density_report(rootTipDensity_res)
+        report["RootTipDensityAnalysis"] = rootTipDensity_data
+
     return report
 
 
@@ -209,31 +215,31 @@ def format_anatomy_results(condyle_seg: dict) -> List[dict]:
     if seg_left.get("exists", False):
         left_mask = seg_left.get("mask", None)
         left_contour = seg_left.get("contour", [])
-        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
-
+        left_contour = seg_left.get("contour", [])
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+        
         anatomy_results.append({
             "Label": "condyle_left",
             "Confidence": round(seg_left.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": left_contour if left_contour else [],
-                "SerializedMask": left_rle
+                "SerializedMask": ""
             }
         })
 
     # 右侧髁突
     if seg_right.get("exists", False):
-        right_mask = seg_right.get("mask", None)
         right_contour = seg_right.get("contour", [])
-        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
-
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+        
         anatomy_results.append({
             "Label": "condyle_right",
             "Confidence": round(seg_right.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": right_contour if right_contour else [],
-                "SerializedMask": right_rle
+                "SerializedMask": ""
             }
         })
 
@@ -266,33 +272,31 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
 
     # 左侧下颌分支
     if seg_left.get("exists", False):
-        left_mask = seg_left.get("mask", None)
         left_contour = seg_left.get("contour", [])
-        left_rle = _mask_to_rle(left_mask) if left_mask is not None else ""
-
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+        
         anatomy_results.append({
             "Label": "mandible_left",
             "Confidence": round(seg_left.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": left_contour if left_contour else [],
-                "SerializedMask": left_rle
+                "SerializedMask": ""
             }
         })
 
     # 右侧下颌分支
     if seg_right.get("exists", False):
-        right_mask = seg_right.get("mask", None)
         right_contour = seg_right.get("contour", [])
-        right_rle = _mask_to_rle(right_mask) if right_mask is not None else ""
-
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+        
         anatomy_results.append({
             "Label": "mandible_right",
             "Confidence": round(seg_right.get("confidence", 0.0), 2),
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": right_contour if right_contour else [],
-                "SerializedMask": right_rle
+                "SerializedMask": ""
             }
         })
 
@@ -608,11 +612,12 @@ def format_teeth_report(
                     else:
                         # 确保所有点都是 [x, y] 格式（浮点数）
                         coordinates = [[float(pt[0]), float(pt[1])] for pt in coordinates if len(pt) >= 2]
-
-                # 生成RLE编码
-                if raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
-                    serialized_mask = _mask_to_rle_fast(raw_masks[mask_index])
-
+                
+                # 跳过 RLE 编码生成 - RLE 数据太大会导致 Redis Protocol Error
+                # Coordinates 已经足够用于前端可视化
+                # 如果需要 RLE，可以在客户端单独请求或从 Coordinates 重建
+                serialized_mask = ""
+        
         # 如果segments不可用，从mask提取轮廓（这是正确的做法）
         if not coordinates and raw_masks is not None and mask_index >= 0 and mask_index < len(raw_masks):
             coordinates, serialized_mask = _extract_mask_contour_fallback(
@@ -741,10 +746,10 @@ def format_sinus_anatomy_results(sinus_results: dict) -> List[dict]:
         if mask is None and not contour:
             logger.debug(f"[format_sinus_anatomy_results] No mask/contour for {label}, skipping")
             continue
-
-        # 生成 RLE 编码
-        rle = _mask_to_rle(mask) if mask is not None else ""
-
+        
+        # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+        rle = ""
+        
         # 如果没有 contour 但有 mask，尝试从 mask 提取 contour
         if not contour and mask is not None:
             try:
@@ -795,6 +800,65 @@ def format_sinus_anatomy_results(sinus_results: dict) -> List[dict]:
 
     logger.info(f"[format_sinus_anatomy_results] Generated {len(anatomy_results)} sinus AnatomyResults")
     return anatomy_results
+
+
+def format_root_tip_density_report(rootTipDensity_results: dict) -> dict:
+    """
+    格式化根尖低密度影(RootTipDensityAnalysis)部分 - 真实数据
+
+    Args:
+        rootTipDensity_results: {
+            'density_boxes': [{'box': [...], 'confidence': 0.95, 'quadrant': 1}, ...],
+            'quadrant_counts': {1: 2, 2: 0, 3: 1, 4: 0}
+        }
+
+    Returns:
+        dict: 符合 RootTipDensityAnalysis 格式的字典
+    """
+    density_boxes = rootTipDensity_results.get("density_boxes", [])
+    quadrant_counts = rootTipDensity_results.get("quadrant_counts", {1: 0, 2: 0, 3: 0, 4: 0})
+
+    # 计算总数
+    total_count = len(density_boxes)
+
+    # 格式化 Items
+    items = []
+    for idx, det in enumerate(density_boxes):
+        quadrant_id = det.get("quadrant", 0)
+        quadrant_name = QUADRANT_MAP.get(quadrant_id, "未知象限")
+
+        items.append({
+            "ID": "Low_Density_Lesion",
+            "Quadrant": quadrant_name,
+            "Confidence": round(det.get("confidence", 0.0), 2),
+            "BBox": det.get("box", []),
+            "Detail": f"{quadrant_name}检测到根尖低密度影"
+        })
+
+    # 生成 Detail 文本
+    detail_parts = []
+    for quad_id in [1, 2, 3, 4]:
+        count = quadrant_counts.get(quad_id, 0)
+        if count > 0:
+            quad_name = QUADRANT_MAP[quad_id]
+            detail_parts.append(f"{quad_name}存在根尖低密度影，个数为{count}")
+
+    detail = "；".join(detail_parts) if detail_parts else "未检测到根尖低密度影"
+
+    # 格式化 QuadrantCounts
+    quadrant_counts_formatted = {
+        "Q1": quadrant_counts.get(1, 0),
+        "Q2": quadrant_counts.get(2, 0),
+        "Q3": quadrant_counts.get(3, 0),
+        "Q4": quadrant_counts.get(4, 0),
+    }
+
+    return {
+        "TotalCount": total_count,
+        "Items": items,
+        "Detail": detail,
+        "QuadrantCounts": quadrant_counts_formatted
+    }
 
 
 def _extract_fdi_from_text(text: str) -> str:
@@ -926,10 +990,10 @@ def _extract_mask_contour_fallback(mask, original_shape):
                 coordinates = [coords.tolist()]
             else:
                 coordinates = coords.tolist()
-
-        # 5. RLE 编码
-        serialized_mask = _mask_to_rle(binary_mask)
-
+        
+        # 5. 跳过 RLE 编码，避免数据过大导致 Redis Protocol Error
+        serialized_mask = ""
+        
         return coordinates, serialized_mask
 
     except Exception as e:
@@ -1025,11 +1089,11 @@ def _get_implant_default() -> dict:
     }
 
 
-def _get_root_tip_density_mock() -> dict:
-    """Mock: RootTipDensityAnalysis - 无模型支持"""
+def _get_root_tip_density_default() -> dict:
+    """RootTipDensityAnalysis 默认值（真实数据会覆盖）"""
     return {
         "TotalCount": 0,
         "Items": [],
-        "Detail": "未检测（需根尖密度影检测模型）",
+        "Detail": "未检测到根尖低密度影",
         "QuadrantCounts": {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
     }

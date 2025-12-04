@@ -7,7 +7,7 @@ import numpy as np
 import onnxruntime as ort
 
 sys.path.append(os.getcwd())
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
+from tools.weight_fetcher import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -69,17 +69,26 @@ class SinusClassPredictor:
             return {'is_inflam': False, 'confidence': 0.0}
 
         try:
-            input_tensor = self._preprocess(crop_image)
-            output = self.session.run(None, {self.input_name: input_tensor})[0]
+            from tools.timer import timer
+            
+            # 1. 预处理（单独计时）
+            with timer.record("sinus_class.pre"):
+                input_tensor = self._preprocess(crop_image)
 
-            # Softmax
-            exps = np.exp(output - np.max(output))
-            probs = exps / np.sum(exps)
-            pred_idx = np.argmax(probs)
+            # 2. 推理（只计时模型推理）
+            with timer.record("sinus_class.inference"):
+                output = self.session.run(None, {self.input_name: input_tensor})[0]
 
-            # 假设 0=Inflammation, 1=Normal (根据您之前的训练逻辑)
-            is_inflam = (pred_idx == 0)
-            conf = float(probs[0][pred_idx])
+            # 3. 后处理（单独计时）
+            with timer.record("sinus_class.post"):
+                # Softmax
+                exps = np.exp(output - np.max(output))
+                probs = exps / np.sum(exps)
+                pred_idx = np.argmax(probs)
+
+                # 假设 0=Inflammation, 1=Normal (根据您之前的训练逻辑)
+                is_inflam = (pred_idx == 0)
+                conf = float(probs[0][pred_idx])
 
             return {'is_inflam': is_inflam, 'confidence': conf}
 

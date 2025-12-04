@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 from statistics import mean
 from typing import Any, Dict, List, Union
 
@@ -17,6 +18,7 @@ from .ceph_report import (
     FH_MP_LOW_ANGLE_THRESHOLD,
     SGO_NME_HORIZONTAL_THRESHOLD,
     SGO_NME_VERTICAL_THRESHOLD,
+    DEFAULT_SPACING_MM_PER_PIXEL,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,11 +52,55 @@ LABEL_FULL_NAMES = {
     "Pcd": "Pcd",
 }
 
+MEASUREMENT_ORDER = [
+    "ANB_Angle",
+    "PtmANS_Length",
+    "GoPo_Length",
+    "PoNB_Length",
+    "Jaw_Development_Coordination",
+    "SGo_NMe_Ratio-1",
+    "FH_MP_Angle",
+    "UI_SN_Angle",
+    "IMPA_Angle-1",
+    "Upper_Anterior_Alveolar_Height",
+    "Airway_Gap",                    # 可选
+    "Adenoid_Index",                # 可选
+    "SNA_Angle",
+    "Upper_Jaw_Position",
+    "SNB_Angle",
+    "Pcd_Lower_Position",
+    "Distance_Witsmm",
+    "U1_SN_Angle_Repeat",
+    "U1_NA_Angle",
+    "U1_NA_Incisor_Length",
+    "IMPA_Angle-2",
+    "FMIA_Angle",
+    "L1_NB_Angle",
+    "L1_NB_Distance",
+    "U1_L1_Inter_Incisor_Angle",
+    "Y_SGo_NMe_Ratio-2",            # Y轴角
+    "Mandibular_Growth_Angle",
+    "SGo_NMe_Ratio-3",
+    "SN_FH_Angle-1",                # SN-MP 角（注：字段名历史遗留，实际是 SN-MP）
+    "MP_FH_Angle-2",
+    "U1_PP_Upper_Anterior_Alveolar_Height",
+    "L1_MP_Lower_Anterior_Alveolar_Height",
+    "U6_PP_Upper_Posterior_Alveolar_Height",
+    "L6_MP_Lower_Posterior_Alveolar_Height",
+    "Mandibular_Growth_Type_Angle", # Björk sum
+    "S_N_Anterior_Cranial_Base_Length",
+    "Go_Me_Length",
+    "Cervical_Vertebral_Maturity_Stage",  # 可选
+]
+
 # 特殊测量项类型定义
 MULTISELECT_MEASUREMENTS = {"Jaw_Development_Coordination"}
 AIRWAY_MEASUREMENTS = {"Airway_Gap"}
 BOOLEAN_LEVEL_MEASUREMENTS = {"Airway_Gap", "Adenoid_Index"}
 CERVICAL_VERTEBRAL_MEASUREMENTS = {"Cervical_Vertebral_Maturity_Stage"}
+
+# 未检测标识：Level=-1 表示该测量项未被模型检测到
+UNDETECTED_LEVEL = -1
 
 
 def generate_standard_output(
@@ -63,12 +109,22 @@ def generate_standard_output(
 ) -> Dict[str, Any]:
     """
     将推理结果映射为符合《接口定义.md》的 data 字段。
+    
+    Args:
+        inference_results: 推理结果，包含 landmarks, measurements, spacing
+        patient_info: 患者信息
+        
+    Returns:
+        符合规范的 data 字段
     """
     landmarks_block = inference_results.get("landmarks", {})
     measurements = inference_results.get("measurements", {})
+    
+    # 从推理结果获取实际使用的 spacing，如果没有则使用默认值
+    spacing = inference_results.get("spacing", DEFAULT_SPACING_MM_PER_PIXEL)
 
     landmark_section = _build_landmark_section(landmarks_block)
-    measurement_section = _build_measurement_section(measurements)
+    measurement_section = _build_measurement_section_in_order(measurements)
 
     visibility_grade = _visibility_grade(
         landmark_section["DetectedLandmarks"], landmark_section["TotalLandmarks"]
@@ -77,8 +133,8 @@ def generate_standard_output(
 
     data_dict = {
         "ImageSpacing": {
-            "X": 0.1,
-            "Y": 0.1,
+            "X": spacing,
+            "Y": spacing,
             "Unit": "mm/pixel",
         },
         "VisibilityMetrics": {
@@ -97,7 +153,7 @@ def generate_standard_output(
             "QualityScore": round(average_confidence, 2),
         },
         "PatientInformation": {
-            "Gender": patient_info.get("gender", "Male"),
+            "Gender": patient_info.get("Gender", "Male"),
             "DentalAgeStage": {
                 "CurrentStage": patient_info.get("DentalAgeStage", "Permanent"),
             },
@@ -114,9 +170,10 @@ def generate_standard_output(
     }
 
     logger.info(
-        "Generated cephalometric JSON: %s/%s landmarks",
+        "Generated cephalometric JSON: %s/%s landmarks,%s measurements",
         landmark_section["DetectedLandmarks"],
         landmark_section["TotalLandmarks"],
+        len(measurement_section),
     )
     return data_dict
 
@@ -173,6 +230,21 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _build_measurement_section_in_order(measurements: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    关键修改：严格按照 MEASUREMENT_ORDER 顺序输出所有测量项
+    缺失的项目也会占位（返回空值但保留Label），保证序号不乱
+    """
+    section: List[Dict[str, Any]] = []
+
+    for name in MEASUREMENT_ORDER:
+        payload = measurements.get(name, {})
+        entry = _build_measurement_entry(name, payload)
+        section.append(entry)
+
+    return section
+
+
 def _build_measurement_section(measurements: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     section: List[Dict[str, Any]] = []
 
@@ -194,11 +266,18 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
     - 多选类型：{"Label": "...", "Type": "MultiSelect", "Level": [int], "Confidence": ...}
     - 气道测量：{"Label": "...", "PNS-UPW": ..., ..., "Level": bool, "Confidence": ...}
     - 颈椎成熟度：{"Label": "...", "Coordinates": [...], "SerializedMask": "...", "Level": int, "Confidence": ...}
+    
+    未检测标识：
+    - 当 payload 为空或缺少 value 时，Level=-1 表示未检测到
+    - 数值字段设为 null，Confidence=0.0
     """
     value = payload.get("value")
     unit = payload.get("unit", "")
     conclusion = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
+    
+    # 判断是否为未检测状态：payload 为空或 value 为 None
+    is_undetected = not payload or value is None
     
     # 处理特殊类型
     if name in CERVICAL_VERTEBRAL_MEASUREMENTS:
@@ -222,39 +301,48 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
         entry["Ratio"] = _format_value(value)
     else:
         # 根据测量项名称推断类型
-        if "_Length" in name or "_Distance" in name:
+        if name.endswith("_Angle") or "Angle" in name:
+            entry["Angle"] = _format_value(value)
+        elif "Length" in name or "Distance" in name or "Height" in name:
             entry["Length_mm"] = _format_value(value)
-        elif "_Ratio" in name:
+        elif "Ratio" in name:
             entry["Ratio"] = _format_value(value)
-        elif "_Angle" in name:
-            entry["Angle"] = _format_value(value)
         else:
-            # 默认使用 Angle
             entry["Angle"] = _format_value(value)
     
-    # 确定 Level
-    if name in BOOLEAN_LEVEL_MEASUREMENTS:
-        entry["Level"] = True if conclusion else False
+    # 确定 Level：未检测时使用 UNDETECTED_LEVEL (-1)
+    if is_undetected:
+        entry["Level"] = UNDETECTED_LEVEL
+    elif name in BOOLEAN_LEVEL_MEASUREMENTS:
+        entry["Level"] = bool(conclusion) if conclusion is not None else True
     else:
-        entry["Level"] = _get_measurement_level(name, conclusion, value)
-    
+        level = conclusion if conclusion in (0, 1, 2) else 0
+        entry["Level"] = int(level)
+
     entry["Confidence"] = round(float(confidence), 2)
-    
+
     return entry
 
 
 def _build_cervical_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """构建颈椎成熟度测量项。"""
+    """
+    构建颈椎成熟度测量项。
+    
+    未检测标识：当 payload 为空或缺少 conclusion 时，Level=-1
+    """
+    # 判断是否为未检测状态
+    is_undetected = not payload or payload.get("conclusion") is None
+    
     coordinates = payload.get("coordinates", [])
-    serialized_mask = payload.get("serialized_mask", "rle:...")
-    level = payload.get("conclusion", 3)
+    serialized_mask = payload.get("serialized_mask", "")
+    level = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
     
     return {
         "Label": name,
-        "Coordinates": coordinates,
-        "SerializedMask": serialized_mask,
-        "Level": int(level) if level is not None else 0,
+        "Coordinates": coordinates if not is_undetected else [],
+        "SerializedMask": serialized_mask if not is_undetected else "",
+        "Level": int(level) if level is not None else UNDETECTED_LEVEL,
         "Confidence": round(float(confidence), 2),
     }
 
@@ -265,14 +353,23 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     
     格式：{"Label": "Airway_Gap", "PNS-UPW": ..., "SPP-SPPW": ..., 
            "U-MPW": ..., "TB-YPPW": ..., "V-LPW": ..., "Level": bool, "Confidence": ...}
+    
+    未检测标识：当 payload 为空时，所有气道值为 null，Level=null（而非 true/false）
     """
     entry: Dict[str, Any] = {"Label": name}
     
+    # 判断是否为未检测状态
+    is_undetected = not payload
+    
     # 提取各个气道距离值
     airway_keys = ["PNS-UPW", "SPP-SPPW", "U-MPW", "TB-YPPW", "V-LPW"]
+    has_any_value = False
+    
     for key in airway_keys:
         if key in payload:
             entry[key] = _format_value(payload[key])
+            if entry[key] is not None:
+                has_any_value = True
     
     # 如果没有单独字段，尝试从 value 中提取
     value = payload.get("value")
@@ -280,8 +377,17 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in airway_keys:
             if key in value:
                 entry[key] = _format_value(value[key])
+                if entry[key] is not None:
+                    has_any_value = True
     
-    entry["Level"] = True  # 气道测量的 Level 为 bool
+    # 未检测时 Level 设为 null（前端可据此判断）
+    if is_undetected or not has_any_value:
+        entry["Level"] = None
+    else:
+        # 气道测量的 Level 为 bool，根据 conclusion 或默认 True
+        conclusion = payload.get("conclusion")
+        entry["Level"] = bool(conclusion) if conclusion is not None else True
+    
     entry["Confidence"] = round(float(payload.get("confidence", 0.0)), 2)
     
     return entry
@@ -292,17 +398,22 @@ def _build_multiselect_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
     构建多选类型测量项。
     
     格式：{"Label": "...", "Type": "MultiSelect", "Level": [int], "Confidence": ...}
+    
+    未检测标识：当 payload 为空或 conclusion 为 None 时，Level=[-1]
     """
+    # 判断是否为未检测状态
+    is_undetected = not payload or payload.get("conclusion") is None
+    
     conclusion = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
     
-    # Level 为数组形式
-    if isinstance(conclusion, list):
+    # Level 为数组形式，未检测时使用 [-1]
+    if is_undetected:
+        level = [UNDETECTED_LEVEL]
+    elif isinstance(conclusion, list):
         level = [int(x) for x in conclusion]
-    elif conclusion is not None:
-        level = [int(conclusion)]
     else:
-        level = [0]
+        level = [int(conclusion)]
     
     return {
         "Label": name,
@@ -313,12 +424,19 @@ def _build_multiselect_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
 
 
 def _format_value(value: Any) -> Union[float, None]:
-    """格式化数值，保留一位小数。"""
+    """
+    格式化数值，保留两位小数。
+    
+    使用 Decimal 避免浮点数精度问题：
+    - 保留两位小数可以更清晰地显示实际测量值（如 112.05° 而不是 112.0°）
+    - 使用 ROUND_HALF_UP 标准四舍五入（而非 Python 默认的银行家舍入）
+    """
     if value is None:
         return None
     try:
-        return round(float(value), 1)
-    except (ValueError, TypeError):
+        # 转为 Decimal 进行精确舍入（保留两位小数），再转回 float
+        return float(Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+    except (ValueError, TypeError, Exception):
         return None
 
 

@@ -7,7 +7,7 @@ import numpy as np
 import onnxruntime as ort
 
 sys.path.append(os.getcwd())
-from tools.load_weight import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
+from tools.weight_fetcher import get_s3_client, S3_BUCKET_NAME, LOCAL_WEIGHTS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -74,21 +74,28 @@ class SinusSegPredictor:
         if not self.session: return {}
 
         try:
+            from tools.timer import timer
+            
             h, w = image.shape[:2]
 
-            # 1. 推理
-            input_tensor = self._preprocess(image, (512, 512))
-            output = self.session.run(None, {self.input_name: input_tensor})[0]
+            # 1. 预处理（单独计时）
+            with timer.record("sinus_seg.pre"):
+                input_tensor = self._preprocess(image, (512, 512))
 
-            # 2. 后处理 Mask
-            # 假设输出 shape 是 (1, 2, 512, 512) 或 (1, 1, 512, 512)
-            if output.shape[1] > 1:
-                mask_512 = np.argmax(output, axis=1)[0]
-            else:
-                mask_512 = (output[0, 0] > 0.5).astype(np.uint8)
+            # 2. 推理（只计时模型推理）
+            with timer.record("sinus_seg.inference"):
+                output = self.session.run(None, {self.input_name: input_tensor})[0]
 
-            # 还原到原图尺寸
-            mask_full = cv2.resize(mask_512.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+            # 3. 后处理（单独计时，包括耗时的resize操作）
+            with timer.record("sinus_seg.post"):
+                # 假设输出 shape 是 (1, 2, 512, 512) 或 (1, 1, 512, 512)
+                if output.shape[1] > 1:
+                    mask_512 = np.argmax(output, axis=1)[0]
+                else:
+                    mask_512 = (output[0, 0] > 0.5).astype(np.uint8)
+
+                # 还原到原图尺寸（这个操作很耗时，不应该算在推理时间里）
+                mask_full = cv2.resize(mask_512.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
 
             return {'mask': mask_full}
 
