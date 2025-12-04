@@ -40,6 +40,28 @@ DECIDUOUS_TEETH_FDI = [
     "81", "82", "83", "84", "85"   # 下颌右侧乳牙
 ]
 
+# 属性到中文描述映射（用于 ToothAnalysis.Properties 格式化）
+ATTRIBUTE_DESCRIPTION_MAP = {
+    "area": "病灶区域",
+    "carious_lesion": "龋坏",
+    "curved_short_root": "牙根形态弯曲短小",
+    "embedded_tooth": "埋伏牙",
+    "erupted": "已萌出",
+    "impacted": "阻生",
+    "implant": "种植体病灶",
+    "not_visible": "不可见",
+    "periodontal": "牙周病灶",
+    "rct_treated": "根管治疗",
+    "residual_crown": "残冠",
+    "residual_root": "残根",
+    "restored_tooth": "修复牙",
+    "retained_primary_tooth": "滞留乳牙",
+    "root_absorption": "牙根吸收",
+    "to_be_erupted": "待萌出",
+    "tooth_germ": "牙胚",
+    "wisdom_tooth_impaction": "智齿阻生",
+}
+
 
 # =============================================================================
 # 1. 核心对外接口
@@ -584,7 +606,21 @@ def format_teeth_report(
             continue
 
         # 构建属性列表：优先使用 Pipeline 已经绑定好的属性
-        properties = list(tooth_attributes_map.get(fdi, []))
+        # 将属性名称转换为符合规范的对象格式: {"Value": str, "Description": str, "Confidence": float}
+        raw_properties = tooth_attributes_map.get(fdi, [])
+        properties = []
+        for attr_name in raw_properties:
+            # 如果已经是字典格式，直接使用
+            if isinstance(attr_name, dict):
+                properties.append(attr_name)
+            else:
+                # 转换字符串为标准格式
+                description = ATTRIBUTE_DESCRIPTION_MAP.get(attr_name, attr_name)
+                properties.append({
+                    "Value": attr_name,
+                    "Description": description,
+                    "Confidence": 0.85  # 默认置信度，后续可从模型输出获取
+                })
 
         # 提取轮廓坐标：使用YOLO直接输出的segments（格式: [N, num_points, 2]）
         # 目标格式: [[x, y], [x, y], ...] 符合前端期望和规范

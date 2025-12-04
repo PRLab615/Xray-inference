@@ -996,6 +996,179 @@ class PanoPipeline(BasePipeline):
                 logger.info(
                     f"[DEBUG] 缩放后牙齿 [{fdi}] bbox: [{bbox[0]:.1f}, {bbox[1]:.1f}, {bbox[2]:.1f}, {bbox[3]:.1f}]")
 
+        # ------------------------------------------------------------------
+        # 2. 收集所有属性检测框
+        # ------------------------------------------------------------------
+        all_attr_boxes = []  # [(bbox, attribute_name), ...]
+
+        # 从 teeth_attr1 提取属性框
+        if teeth_attr1:
+            boxes = teeth_attr1.get("boxes", [])
+            attr_names = teeth_attr1.get("attribute_names", [])
+            # 兼容旧格式
+            if not attr_names:
+                attributes_detected = teeth_attr1.get("attributes_detected", [])
+                for i, attr_info in enumerate(attributes_detected):
+                    if i < len(boxes):
+                        attr_name = attr_info.get("attribute", "unknown")
+                        all_attr_boxes.append((boxes[i], attr_name))
+            else:
+                for i, box in enumerate(boxes):
+                    if i < len(attr_names):
+                        all_attr_boxes.append((box, attr_names[i]))
+
+        # 从 teeth_attr2 提取属性框
+        if teeth_attr2:
+            boxes = teeth_attr2.get("boxes", [])
+            attr_names = teeth_attr2.get("attribute_names", [])
+            if isinstance(boxes, np.ndarray):
+                boxes = boxes.tolist()
+            for i, box in enumerate(boxes):
+                if i < len(attr_names):
+                    all_attr_boxes.append((box, attr_names[i]))
+
+        # 从 curved_short_root 提取属性框
+        if curved_short_root:
+            boxes = curved_short_root.get("boxes", [])
+            attr_names = curved_short_root.get("attribute_names", [])
+            if isinstance(boxes, np.ndarray):
+                boxes = boxes.tolist()
+            for i, box in enumerate(boxes):
+                if i < len(attr_names):
+                    all_attr_boxes.append((box, attr_names[i]))
+
+        # 从 erupted_wisdomteeth 提取属性框
+        if erupted_wisdomteeth:
+            boxes = erupted_wisdomteeth.get("boxes", [])
+            attr_names = erupted_wisdomteeth.get("attribute_names", [])
+            if isinstance(boxes, np.ndarray):
+                boxes = boxes.tolist()
+            for i, box in enumerate(boxes):
+                if i < len(attr_names):
+                    all_attr_boxes.append((box, attr_names[i]))
+
+        logger.info(f"[DEBUG] 收集到 {len(all_attr_boxes)} 个属性框")
+
+        # ------------------------------------------------------------------
+        # 3. IoU 匹配：属性框 -> 牙齿
+        # ------------------------------------------------------------------
+        tooth_attributes = defaultdict(set)  # FDI -> set of attribute names
+
+        def bbox_iou(box1, box2) -> float:
+            """计算两个 bbox 的 IoU"""
+            x1, y1, x2, y2 = box1
+            x1g, y1g, x2g, y2g = box2
+            inter_x1 = max(x1, x1g)
+            inter_y1 = max(y1, y1g)
+            inter_x2 = min(x2, x2g)
+            inter_y2 = min(y2, y2g)
+            inter_w = max(0.0, inter_x2 - inter_x1)
+            inter_h = max(0.0, inter_y2 - inter_y1)
+            inter_area = inter_w * inter_h
+            area1 = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+            area2 = max(0.0, x2g - x1g) * max(0.0, y2g - y1g)
+            if area1 <= 0 or area2 <= 0:
+                return 0.0
+            union = area1 + area2 - inter_area
+            return inter_area / union if union > 0 else 0.0
+
+        for attr_box, attr_name in all_attr_boxes:
+            best_fdi = None
+            best_iou = 0.0
+            for fdi, tooth_box in tooth_bboxes.items():
+                iou = bbox_iou(attr_box, tooth_box)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_fdi = fdi
+
+            if best_fdi and best_iou >= iou_threshold:
+                tooth_attributes[best_fdi].add(attr_name)
+                logger.debug(f"[DEBUG] 属性 '{attr_name}' 匹配到牙齿 {best_fdi}，IoU={best_iou:.3f}")
+            elif best_fdi:
+                logger.debug(f"[DEBUG] 属性 '{attr_name}' 最佳匹配 {best_fdi}，但 IoU={best_iou:.3f} < {iou_threshold}")
+
+        logger.info(f"[DEBUG] 成功匹配属性的牙齿数: {len(tooth_attributes)}")
+
+        # ------------------------------------------------------------------
+        # 4. 分析缺失牙
+        # ------------------------------------------------------------------
+        detected_fdi_set = set(tooth_bboxes.keys())
+        missing_teeth = []
+
+        for fdi in ALL_PERMANENT_TEETH_FDI:
+            if fdi not in detected_fdi_set:
+                # 排除智齿（智齿缺失不算缺牙）
+                if fdi not in WISDOM_TEETH_FDI:
+                    missing_teeth.append({
+                        "FDI": fdi,
+                        "Reason": "missing",
+                        "Detail": f"牙位 {fdi} 未检测到"
+                    })
+
+        logger.info(f"[DEBUG] 缺失牙数量: {len(missing_teeth)}")
+
+        # ------------------------------------------------------------------
+        # 5. 分析智齿状态 (ThirdMolarSummary)
+        # ------------------------------------------------------------------
+        third_molar_summary = {}
+
+        for fdi in WISDOM_TEETH_FDI:
+            if fdi in detected_fdi_set:
+                attrs = tooth_attributes.get(fdi, set())
+                # 判断智齿状态
+                if "erupted" in attrs:
+                    # 已萌出
+                    third_molar_summary[fdi] = {
+                        "Level": 0,
+                        "Impactions": None,
+                        "Detail": "已萌出",
+                        "Confidence": 0.85
+                    }
+                elif "wisdom_tooth_impaction" in attrs or "impacted" in attrs:
+                    # 阻生
+                    third_molar_summary[fdi] = {
+                        "Level": 1,
+                        "Impactions": "Impacted",
+                        "Detail": "阻生",
+                        "Confidence": 0.85
+                    }
+                else:
+                    # 已检测到但状态未知，默认视为存在
+                    third_molar_summary[fdi] = {
+                        "Level": 2,
+                        "Impactions": None,
+                        "Detail": "已检测到",
+                        "Confidence": 0.70
+                    }
+            else:
+                # 未检测到智齿
+                third_molar_summary[fdi] = {
+                    "Level": 4,
+                    "Impactions": None,
+                    "Detail": "未见智齿",
+                    "Confidence": 0.0
+                }
+
+        logger.info(f"[DEBUG] 智齿状态分析完成: {list(third_molar_summary.keys())}")
+
+        # ------------------------------------------------------------------
+        # 6. 返回结果
+        # ------------------------------------------------------------------
+        result = {
+            "MissingTeeth": missing_teeth,
+            "ThirdMolarSummary": third_molar_summary,
+            "ToothAttributes": {fdi: list(attrs) for fdi, attrs in tooth_attributes.items()}
+        }
+
+        logger.info("=" * 60)
+        logger.info("[DEBUG] _analyze_teeth_and_attributes 完成")
+        logger.info(f"[DEBUG] 结果: MissingTeeth={len(missing_teeth)}, "
+                    f"ThirdMolarSummary={len(third_molar_summary)}, "
+                    f"ToothAttributes={len(tooth_attributes)}")
+        logger.info("=" * 60)
+
+        return result
+
     def _collect_results(self, **module_results) -> dict:
         """
         收集所有子模块的推理结果
