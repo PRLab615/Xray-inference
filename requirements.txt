@@ -30,6 +30,13 @@ numpy>=1.26.0
 opencv-python-headless>=4.8.0
 pillow>=10.0.0
 
+# Medical Imaging
+# pydicom: DICOM 医学图像格式解析 (用于处理 X 光片等医学影像)
+# pylibjpeg 系列: DICOM JPEG 压缩格式解码 (JPEG Lossless 等)
+pydicom>=2.4.0
+pylibjpeg>=2.0
+pylibjpeg-libjpeg>=2.1
+
 # Deep Learning
 # ultralytics: YOLOv8 用于头影测量关键点检测 (pipelines/ceph/modules/point/)
 # torch: PyTorch 深度学习框架 (ultralytics 依赖)

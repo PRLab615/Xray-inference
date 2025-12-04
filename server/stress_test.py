@@ -24,6 +24,7 @@ IMAGE_MODE = "local_server"  # 可选: "local_server" 或 "remote_url"
 # 【模式1】本地HTTP服务器配置（仅在 IMAGE_MODE="local_server" 时使用）
 PANO_IMAGE_DIR = r"/AAA_615/dataset/Xray/pano"  # 全景片文件夹路径
 CEPH_IMAGE_DIR = r"/AAA_615/dataset/Xray/ceph"  # 侧位片文件夹路径
+DICOM_IMAGE_DIR = r"/AAA_615/dataset/Xray/dicom"  # DICOM文件夹路径（支持 .dcm 文件）
 IMAGE_SERVER_HOST = "127.0.0.1"  # ⚠️ 重要：在同一台机器上运行时必须用 localhost/127.0.0.1
 IMAGE_SERVER_PORT = 9999  # 本地服务器端口
 IMAGE_SERVER_BASE_URL = "http://{}:{}".format(IMAGE_SERVER_HOST, IMAGE_SERVER_PORT)  # 自动生成，无需修改
@@ -33,6 +34,7 @@ IMAGE_SERVER_BASE_URL = "http://{}:{}".format(IMAGE_SERVER_HOST, IMAGE_SERVER_PO
 # 例如：将图片上传到后端服务器的静态文件目录，或使用公共图床
 REMOTE_PANO_URL_PREFIX = "http://192.168.1.23:18000/static/test_images/pano"  # 全景片URL前缀
 REMOTE_CEPH_URL_PREFIX = "http://192.168.1.23:18000/static/test_images/ceph"  # 侧位片URL前缀
+REMOTE_DICOM_URL_PREFIX = "http://192.168.1.23:18000/static/test_images/dicom"  # DICOM URL前缀
 
 # 图片文件名列表（模式2使用，手动列出可用的图片文件名）
 REMOTE_PANO_IMAGES = [
@@ -40,6 +42,9 @@ REMOTE_PANO_IMAGES = [
 ]
 REMOTE_CEPH_IMAGES = [
     "ceph_001.png", "ceph_002.png"  # 示例，请根据实际情况修改
+]
+REMOTE_DICOM_IMAGES = [
+    "sample.dcm"  # 示例，请根据实际情况修改
 ]
 
 # 并发配置
@@ -49,9 +54,11 @@ TOTAL_REQUESTS = 50    # 总共要发送多少个请求
 # 任务类型权重 (可以调整被随机选中的概率)
 # 格式: (任务类型, 权重)
 TASK_DISTRIBUTION = [
-    ("analyze_pano", 3),        # 全景分析
-    ("analyze_ceph", 3),        # 侧位分析
+    ("analyze_pano", 3),        # 全景分析 (imageUrl)
+    ("analyze_ceph", 3),        # 侧位分析 (imageUrl)
     ("analyze_dental_stage", 2),# 牙期检测 (使用全景图)
+    ("analyze_pano_dicom", 2),  # 全景分析 (dicomUrl) - DICOM格式
+    ("analyze_ceph_dicom", 2),  # 侧位分析 (dicomUrl) - DICOM格式，患者信息从DICOM解析
     ("recalculate_pano", 1),    # 全景重算
     ("recalculate_ceph", 1)     # 侧位重算
 ]
@@ -86,18 +93,24 @@ class DirectoryHTTPRequestHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def start_image_server(pano_dir, ceph_dir):
+def start_image_server(pano_dir, ceph_dir, dicom_dir=None):
     """
     启动一个简单的HTTP服务器来提供图片访问
     返回 (server_thread, image_list)
+    
+    Args:
+        pano_dir: 全景片文件夹路径
+        ceph_dir: 侧位片文件夹路径
+        dicom_dir: DICOM文件夹路径（可选）
     """
-    # 创建临时目录结构：将两个文件夹的图片映射到 /pano 和 /ceph 路径
+    # 创建临时目录结构：将文件夹的图片映射到 /pano, /ceph, /dicom 路径
     import tempfile
     import shutil
     
     temp_dir = tempfile.mkdtemp(prefix="stress_test_images_")
     pano_serve_dir = os.path.join(temp_dir, "pano")
     ceph_serve_dir = os.path.join(temp_dir, "ceph")
+    dicom_serve_dir = os.path.join(temp_dir, "dicom")
     
     # 复制图片到临时目录（或创建符号链接）
     if os.path.exists(pano_dir):
@@ -110,15 +123,25 @@ def start_image_server(pano_dir, ceph_dir):
     else:
         os.makedirs(ceph_serve_dir)
     
+    # 复制DICOM文件到临时目录
+    if dicom_dir and os.path.exists(dicom_dir):
+        shutil.copytree(dicom_dir, dicom_serve_dir)
+    else:
+        os.makedirs(dicom_serve_dir)
+    
     # 获取图片列表
     pano_images = ["pano/{}".format(f) for f in os.listdir(pano_serve_dir) 
                    if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))] if os.path.exists(pano_serve_dir) else []
     ceph_images = ["ceph/{}".format(f) for f in os.listdir(ceph_serve_dir) 
                    if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))] if os.path.exists(ceph_serve_dir) else []
+    # DICOM文件列表（支持 .dcm 扩展名）
+    dicom_images = ["dicom/{}".format(f) for f in os.listdir(dicom_serve_dir) 
+                    if f.lower().endswith(('.dcm', '.dicom'))] if os.path.exists(dicom_serve_dir) else []
     
     image_list = {
         "pano": pano_images,
         "ceph": ceph_images,
+        "dicom": dicom_images,
         "temp_dir": temp_dir
     }
     
@@ -131,6 +154,7 @@ def start_image_server(pano_dir, ceph_dir):
         print("📡 Image server starting on {}".format(IMAGE_SERVER_BASE_URL))
         print("   - Pano images: {}".format(len(pano_images)))
         print("   - Ceph images: {}".format(len(ceph_images)))
+        print("   - DICOM files: {}".format(len(dicom_images)))
         server.serve_forever()
 
     server_thread = threading.Thread(target=serve, daemon=True)
@@ -146,7 +170,7 @@ def get_random_image_url(image_list, image_type):
     
     Args:
         image_list: 图片列表字典 (在local_server模式下) 或 None (在remote_url模式下)
-        image_type: "pano" 或 "ceph"
+        image_type: "pano", "ceph", 或 "dicom"
     
     Returns:
         完整的图片URL，如果没有图片则返回None
@@ -158,11 +182,18 @@ def get_random_image_url(image_list, image_type):
                 return None
             filename = random.choice(REMOTE_PANO_IMAGES)
             return "{}/{}".format(REMOTE_PANO_URL_PREFIX, filename)
-        else:  # ceph
+        elif image_type == "ceph":
             if not REMOTE_CEPH_IMAGES:
                 return None
             filename = random.choice(REMOTE_CEPH_IMAGES)
             return "{}/{}".format(REMOTE_CEPH_URL_PREFIX, filename)
+        elif image_type == "dicom":
+            if not REMOTE_DICOM_IMAGES:
+                return None
+            filename = random.choice(REMOTE_DICOM_IMAGES)
+            return "{}/{}".format(REMOTE_DICOM_URL_PREFIX, filename)
+        else:
+            return None
     else:
         # 模式1：使用本地服务器
         images = image_list.get(image_type, [])
@@ -293,6 +324,46 @@ def run_task(task_id_seq, image_list):
             
             response = requests.post(url, json=payload, timeout=REQUEST_TIMEOUT)
 
+        elif task_type == "analyze_pano_dicom":
+            # 全景片 DICOM 分析（使用 dicomUrl）
+            url = "{}/api/v1/analyze".format(API_BASE_URL)
+            dicom_url = get_random_image_url(image_list, "dicom")
+            if not dicom_url:
+                return "[{}] Request #{} | SKIPPED (No DICOM Files)".format(task_type, task_id_seq)
+            
+            payload = {
+                "taskId": task_id,
+                "taskType": "panoramic",
+                "dicomUrl": dicom_url,  # 使用 dicomUrl 而非 imageUrl
+                "metadata": {"source": "stress_test", "seq": task_id_seq, "format": "dicom"}
+            }
+            
+            response = requests.post(url, json=payload, timeout=REQUEST_TIMEOUT)
+
+        elif task_type == "analyze_ceph_dicom":
+            # 侧位片 DICOM 分析（使用 dicomUrl，患者信息从 DICOM 解析）
+            url = "{}/api/v1/analyze".format(API_BASE_URL)
+            dicom_url = get_random_image_url(image_list, "dicom")
+            if not dicom_url:
+                return "[{}] Request #{} | SKIPPED (No DICOM Files)".format(task_type, task_id_seq)
+            
+            # 使用 dicomUrl 时，patientInfo 可选（后端从 DICOM 解析）
+            # 但为了兼容性，这里还是提供 patientInfo 作为备用
+            payload = {
+                "taskId": task_id,
+                "taskType": "cephalometric",
+                "dicomUrl": dicom_url,  # 使用 dicomUrl 而非 imageUrl
+                "metadata": {"source": "stress_test", "seq": task_id_seq, "format": "dicom"},
+                # patientInfo 可选，如果 DICOM 中没有患者信息，后端会报错
+                # 这里提供备用值，防止 DICOM 解析失败
+                "patientInfo": {
+                    "gender": random.choice(["Male", "Female"]),
+                    "DentalAgeStage": random.choice(["Permanent", "Mixed"])
+                }
+            }
+            
+            response = requests.post(url, json=payload, timeout=REQUEST_TIMEOUT)
+
         elif task_type == "recalculate_pano":
             url = "{}/api/v1/measurements/pano/recalculate".format(API_BASE_URL)
             payload = generate_mock_pano_recalculate_data()
@@ -403,25 +474,44 @@ def test_network_connectivity(image_list):
         print("   ℹ️  This might be OK if root endpoint is not implemented")
     
     # 测试3：后端能否访问图片URL（通过发送一个测试请求）
-    print("3️⃣  Testing if backend can download images...")
+    print("3️⃣  Testing if backend can download images/DICOM...")
     print("   ℹ️  This is the CRITICAL test - backend must be able to download images!")
     
-    test_image_url = get_random_image_url(image_list, "pano") if (IMAGE_MODE == "local_server" and image_list.get("pano")) or (IMAGE_MODE == "remote_url" and REMOTE_PANO_IMAGES) else get_random_image_url(image_list, "ceph")
+    # 优先测试 DICOM（如果有），否则测试普通图片
+    test_image_url = None
+    test_is_dicom = False
+    
+    if (IMAGE_MODE == "local_server" and image_list.get("dicom")) or (IMAGE_MODE == "remote_url" and REMOTE_DICOM_IMAGES):
+        test_image_url = get_random_image_url(image_list, "dicom")
+        test_is_dicom = True
+    elif (IMAGE_MODE == "local_server" and image_list.get("pano")) or (IMAGE_MODE == "remote_url" and REMOTE_PANO_IMAGES):
+        test_image_url = get_random_image_url(image_list, "pano")
+    else:
+        test_image_url = get_random_image_url(image_list, "ceph")
     
     if not test_image_url:
-        print("   ⚠️  No images available for testing")
+        print("   ⚠️  No images/DICOM available for testing")
         return False
     
-    print("   📷 Test image URL: {}".format(test_image_url))
+    print("   📷 Test {} URL: {}".format("DICOM" if test_is_dicom else "image", test_image_url))
     
     try:
-        test_payload = {
-            "taskId": str(uuid.uuid4()),
-            "taskType": "panoramic" if "pano" in test_image_url else "cephalometric",
-            "imageUrl": test_image_url,
-            "metadata": {"test": "connectivity"},
-            "patientInfo": {"age": 20, "gender": "male"} if "ceph" in test_image_url else None
-        }
+        # 根据是否是 DICOM 构造不同的请求
+        if test_is_dicom:
+            test_payload = {
+                "taskId": str(uuid.uuid4()),
+                "taskType": "panoramic",
+                "dicomUrl": test_image_url,  # 使用 dicomUrl
+                "metadata": {"test": "connectivity", "format": "dicom"}
+            }
+        else:
+            test_payload = {
+                "taskId": str(uuid.uuid4()),
+                "taskType": "panoramic" if "pano" in test_image_url else "cephalometric",
+                "imageUrl": test_image_url,
+                "metadata": {"test": "connectivity"},
+                "patientInfo": {"gender": "Male", "DentalAgeStage": "Permanent"} if "ceph" in test_image_url else None
+            }
         
         response = requests.post("{}/api/v1/analyze".format(API_BASE_URL), json=test_payload, timeout=30)
         
@@ -462,12 +552,15 @@ def main():
     if IMAGE_MODE == "local_server":
         print("   - Pano Image Dir  : {}".format(PANO_IMAGE_DIR))
         print("   - Ceph Image Dir  : {}".format(CEPH_IMAGE_DIR))
+        print("   - DICOM Image Dir : {}".format(DICOM_IMAGE_DIR))
         print("   - Image Server    : http://{}:{}".format(IMAGE_SERVER_HOST, IMAGE_SERVER_PORT))
     else:
         print("   - Pano URL Prefix : {}".format(REMOTE_PANO_URL_PREFIX))
         print("   - Ceph URL Prefix : {}".format(REMOTE_CEPH_URL_PREFIX))
+        print("   - DICOM URL Prefix: {}".format(REMOTE_DICOM_URL_PREFIX))
         print("   - Pano Images     : {} configured".format(len(REMOTE_PANO_IMAGES)))
         print("   - Ceph Images     : {} configured".format(len(REMOTE_CEPH_IMAGES)))
+        print("   - DICOM Images    : {} configured".format(len(REMOTE_DICOM_IMAGES)))
     print()
     
     # 根据模式初始化
@@ -476,28 +569,36 @@ def main():
     
     if IMAGE_MODE == "local_server":
         # 模式1：启动本地HTTP服务器
-        # 检查图片目录
-        if not os.path.exists(PANO_IMAGE_DIR) and not os.path.exists(CEPH_IMAGE_DIR):
-            print("❌ ERROR: Neither PANO_IMAGE_DIR nor CEPH_IMAGE_DIR exists!")
+        # 检查图片目录（至少需要一个目录存在）
+        dirs_exist = [
+            os.path.exists(PANO_IMAGE_DIR),
+            os.path.exists(CEPH_IMAGE_DIR),
+            os.path.exists(DICOM_IMAGE_DIR)
+        ]
+        if not any(dirs_exist):
+            print("❌ ERROR: None of the image directories exist!")
+            print("   PANO_IMAGE_DIR: {} (exists: {})".format(PANO_IMAGE_DIR, dirs_exist[0]))
+            print("   CEPH_IMAGE_DIR: {} (exists: {})".format(CEPH_IMAGE_DIR, dirs_exist[1]))
+            print("   DICOM_IMAGE_DIR: {} (exists: {})".format(DICOM_IMAGE_DIR, dirs_exist[2]))
             print("   Please update the paths in the configuration section.")
             return
         
         # 启动图片服务器
         print("📡 Starting local image server...")
         try:
-            image_server, image_list = start_image_server(PANO_IMAGE_DIR, CEPH_IMAGE_DIR)
+            image_server, image_list = start_image_server(PANO_IMAGE_DIR, CEPH_IMAGE_DIR, DICOM_IMAGE_DIR)
         except Exception as e:
             print("❌ Failed to start image server: {}".format(e))
             return
         
-        if not image_list["pano"] and not image_list["ceph"]:
-            print("❌ ERROR: No images found in either directory!")
+        if not image_list["pano"] and not image_list["ceph"] and not image_list["dicom"]:
+            print("❌ ERROR: No images/DICOM files found in any directory!")
             return
     else:
         # 模式2：使用远程URL
-        if not REMOTE_PANO_IMAGES and not REMOTE_CEPH_IMAGES:
+        if not REMOTE_PANO_IMAGES and not REMOTE_CEPH_IMAGES and not REMOTE_DICOM_IMAGES:
             print("❌ ERROR: No remote images configured!")
-            print("   Please update REMOTE_PANO_IMAGES or REMOTE_CEPH_IMAGES in the configuration.")
+            print("   Please update REMOTE_PANO_IMAGES, REMOTE_CEPH_IMAGES, or REMOTE_DICOM_IMAGES in the configuration.")
             return
         
         print("✅ Using remote image URLs (no local server needed)")
@@ -505,6 +606,7 @@ def main():
         image_list = {
             "pano": REMOTE_PANO_IMAGES,
             "ceph": REMOTE_CEPH_IMAGES,
+            "dicom": REMOTE_DICOM_IMAGES,
             "temp_dir": None
         }
     
