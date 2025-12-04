@@ -5,7 +5,7 @@ from botocore.exceptions import ClientError
 from urllib.parse import urlparse
 
 # --- MinIO S3 配置（支持环境变量覆盖） ---
-S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://localhost:19000')
+S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://192.168.1.17:19000')
 S3_ACCESS_KEY = os.getenv('S3_ACCESS_KEY', 'root')
 S3_SECRET_KEY = os.getenv('S3_SECRET_KEY', 'Sitonholy@2023')
 # 假设 'teeth' 是 Bucket 名称。如果 'teeth' 只是文件夹，请修改这里为实际 Bucket 名称

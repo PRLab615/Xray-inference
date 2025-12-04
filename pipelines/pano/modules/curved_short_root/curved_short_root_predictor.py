@@ -1,6 +1,7 @@
-# 文件名: teeth_attribute1_predictor.py
-"""牙齿属性检测模块 - YOLOv11 检测模型实现"""
-
+# 文件名: curved_short_root_predictor.py
+"""
+牙齿属性检测模块 - YOLOv11 检测模型实现
+"""
 import sys
 import logging
 import os
@@ -18,28 +19,25 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
-#from pipelines.pano.modules.teeth_attribute1.pre_post import process_teeth_attributes
 
 logger = logging.getLogger(__name__)
 
-
-class TeethAttributeModule:
+class CurvedShortRootModule:
     """
     全景片牙齿属性检测模块（YOLOv11 检测模型实现）
-
     主要功能：
     - 预测 bbox + class（无分割掩码）
     - 过滤无用标签
     """
 
     def __init__(
-            self,
-            *,
-            weights_key: Optional[str] = None,
-            weights_force_download: bool = False,
-            device: Optional[str] = None,
-            conf: float = 0.25,
-            iou: float = 0.45,
+        self,
+        *,
+        weights_key: Optional[str] = None,
+        weights_force_download: bool = False,
+        device: Optional[str] = None,
+        conf: float = 0.25,
+        iou: float = 0.45,
     ):
         self.weights_key = weights_key
         self.weights_force_download = weights_force_download
@@ -58,44 +56,32 @@ class TeethAttributeModule:
 
         # 有用标签与过滤标签
         self.useful_labels = {
-            0: 'restored_tooth',
-            1: 'residual_root',
-            2: 'residual_crown',
-            4: 'carious_lesion',
-            5: 'embedded_tooth',
-            8:'not_visible',
-            10: 'retained_primary_tooth',
-            11: 'to_be_erupted',
-            12: 'tooth_germ'
+            0: 'curved_short_root'
         }
-        self.filtered_indices = set([3, 6, 7, 9])
+        self.filtered_indices = set()  # 假设新模型仅包含有用标签，无需过滤
 
     def _resolve_weights_path(self) -> str:
-        env_weights = os.getenv("PANO_TEETH_ATTR_WEIGHTS")
+        env_weights = os.getenv("PANO_TEETH_ATTR3_WEIGHTS")
         candidates = [
             ("weights_key", self.weights_key),
             ("env", env_weights),
         ]
-
         for origin, candidate in candidates:
             if not candidate:
                 continue
-
             if os.path.exists(candidate):
                 logger.info(f"Using local weights file: {candidate} (from {origin})")
                 return candidate
-
             if origin == "weights_key":
                 try:
                     downloaded = ensure_weight_file(candidate, force_download=self.weights_force_download)
-                    logger.info(f"Downloaded Teeth attribute weights from S3 key '{candidate}' to {downloaded}")
+                    logger.info(f"Downloaded curved_short_root weights from S3 key '{candidate}' to {downloaded}")
                     return downloaded
                 except WeightFetchError as e:
                     logger.warning(f"Failed to download from {origin}: {e}")
                     continue
-
         raise FileNotFoundError(
-            "Teeth attribute detection model weights not found. "
+            "Curved short root detection model weights not found. "
             "Please configure weights_key in config.yaml."
         )
 
@@ -104,10 +90,10 @@ class TeethAttributeModule:
             logger.info(f"Initializing YOLO model from: {self.weights_path}")
             logger.info(f"CUDA available: {torch.cuda.is_available()}, Target device: {self.device}")
             model = YOLO(self.weights_path)
-            logger.info("YOLOv11 Teeth Attribute Detection Model initialized successfully.")
+            logger.info("YOLOv11 Curved Short Root Detection Model initialized successfully.")
             return model
         except Exception as e:
-            logger.error(f"Failed to load Teeth attribute detection model: {e}")
+            logger.error(f"Failed to load curved short root detection model: {e}")
             raise
 
     def predict(self, image: Image.Image) -> Dict[str, Any]:
@@ -122,8 +108,7 @@ class TeethAttributeModule:
             return {"boxes": [], "attribute_names": [], "original_shape": image.size[::-1]}
 
         original_shape = image.size[::-1]  # (H, W)
-        logger.info("Starting YOLOv11 teeth attribute detection inference.")
-
+        logger.info("Starting YOLOv11 curved short root detection inference.")
         try:
             results = self.model.predict(
                 source=image,
@@ -133,7 +118,6 @@ class TeethAttributeModule:
                 verbose=False,
                 save=False,
             )
-
             if not results:
                 logger.warning("No teeth attributes detected.")
                 return {"boxes": [], "attribute_names": [], "original_shape": original_shape}
@@ -143,7 +127,6 @@ class TeethAttributeModule:
 
             attribute_names = []
             filtered_boxes = []
-
             for box, cls in zip(boxes_xyxy, class_indices):
                 cls = int(cls)
                 if cls not in self.filtered_indices and cls in self.useful_labels:
@@ -159,9 +142,29 @@ class TeethAttributeModule:
                 "attribute_names": attribute_names,
                 "original_shape": original_shape
             }
-
         except Exception as e:
-            logger.error(f"Teeth attribute detection inference failed: {e}")
+            logger.error(f"Curved short root detection inference failed: {e}")
             raise
-
-
+"""
+if __name__ == "__main__":
+    # 示例使用
+    sample_image_path = '/app/code/x/r.png'  # 修改为实际路径
+    if not os.path.exists(sample_image_path):
+        # 创建测试图像
+        test_img = Image.new('RGB', (1000, 800), color='gray')
+        test_img.save(sample_image_path)
+        print(f"Created test image: {sample_image_path}")
+    try:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print(f"Using device: {device}")
+        detector = CurvedShortRootModule(device=device)
+        img = Image.open(sample_image_path).convert('RGB')
+        print(f"Image size: {img.size}")
+        raw_results = detector.predict(img)
+        print("Curved Short Root Detection Results:")
+        import json
+        print(json.dumps(raw_results, indent=4, ensure_ascii=False))
+    except Exception as e:
+        print(f"Error: {e}")
+        logger.error(f"Main error: {e}")
+"""

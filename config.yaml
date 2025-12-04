@@ -60,6 +60,39 @@ pipelines:
         device: "0"
         conf: 0.25
         iou: 0.45
+
+      teeth_attribute1:
+        description: "牙齿属性1模块（YOLOv11）"
+        weights_key: "weights/panoramic/model1.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+
+      teeth_attribute2:
+        description: "牙齿属性2模块（YOLOv11）"
+        weights_key: "weights/panoramic/model2.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+
+
+      curved_short_root:
+        description: "压根形态弯曲短小（YOLOv11）"
+        weights_key: "weights/panoramic/model3.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+
+      erupted_wisdomteeth:
+        description: "智齿已萌出（YOLOv11）"
+        weights_key: "weights/panoramic/model4.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
       
       mandible_seg:
         description: "下颌骨分割模块（TransUNet ONNX）"
