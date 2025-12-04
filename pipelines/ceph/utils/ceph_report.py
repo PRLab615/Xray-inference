@@ -227,31 +227,19 @@ def calculate_measurements(
     measurements["SNA_Angle"] = _compute_sna(landmarks, sex=sex, dentition=dentition)
     measurements["SNB_Angle"] = _compute_snb(landmarks, sex=sex, dentition=dentition)
     measurements["UI_SN_Angle"] = _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
-    measurements["IMPA_Angle-1"] = _compute_impa(landmarks, sex=sex, dentition=dentition)
+    measurements["IMPA_Angle"] = _compute_impa(landmarks, sex=sex, dentition=dentition)
     measurements["U1_NA_Angle"] = _compute_u1_na_angle(landmarks, sex=sex, dentition=dentition)
     measurements["FMIA_Angle"] = _compute_fmia(landmarks, sex=sex, dentition=dentition)
     measurements["L1_NB_Angle"] = _compute_l1_nb_angle(landmarks, sex=sex, dentition=dentition)
     measurements["U1_L1_Inter_Incisor_Angle"] = _compute_interincisor_angle(landmarks, sex=sex, dentition=dentition)
     measurements["Mandibular_Growth_Angle"] = _compute_face_axis(landmarks, sex=sex, dentition=dentition)
     measurements["U1_SN_Angle_Repeat"] = _compute_u1_sn_repeat(landmarks, sex=sex, dentition=dentition)
-    measurements["IMPA_Angle-2"] = _compute_impa_2(landmarks, sex=sex, dentition=dentition)
-    # 注意：字段名 "Y_SGo_NMe_Ratio-2" 命名有误（应为 Y_Axis_Angle）
-    # 实际计算的是 Y轴角（°），不是比率（%）
-    # 为保持 JSON 格式不变，暂不修改字段名，前端已做显示修正
-    # 注意：字段名 "Y_SGo_NMe_Ratio-2" 命名有误（应为 Y_Axis_Angle）
-    # 实际计算的是 Y轴角（°），不是比率（%）
-    # 为保持 JSON 格式不变，暂不修改字段名，前端已做显示修正
-    measurements["Y_SGo_NMe_Ratio-2"] = _compute_y_axis_angle(landmarks, sex=sex, dentition=dentition)
-    # 注意：字段名 "SN_FH_Angle-1" 是历史遗留命名（应为 SN_MP_Angle）
-    # 实际计算的是 SN-MP 角（正常约 35°），不是 SN-FH 角（正常约 7°）
-    # 为保持 JSON 格式不变，暂不修改字段名，前端已做显示修正
-    measurements["SN_FH_Angle-1"] = _compute_sn_mp_angle(landmarks, sex=sex, dentition=dentition)
-    measurements["MP_FH_Angle-2"] = _compute_fh_mp_repeat(landmarks, sex=sex, dentition=dentition)
+    measurements["Y_Axis_Angle"] = _compute_y_axis_angle(landmarks, sex=sex, dentition=dentition)
+    measurements["SN_MP_Angle"] = _compute_sn_mp_angle(landmarks, sex=sex, dentition=dentition)
     measurements["Mandibular_Growth_Type_Angle"] = _compute_mandibular_growth_type_angle(landmarks, sex=sex, dentition=dentition)
     
     # === 比率测量（不需要 spacing，分子分母抵消）===
-    measurements["SGo_NMe_Ratio-1"] = _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)
-    measurements["SGo_NMe_Ratio-3"] = _compute_sgo_nme_ratio_3(landmarks, sex=sex, dentition=dentition)
+    measurements["SGo_NMe_Ratio"] = _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)
 
     # === 长度测量（需要 spacing 转换为 mm）===
     measurements["PtmANS_Length"] = _compute_ptmans_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
@@ -732,18 +720,6 @@ def _compute_u1_sn_repeat(landmarks, sex: str = "male", dentition: str = "perman
     """第18项：U1-SN角度重复测量（与UI_SN_Angle完全相同，复用 _compute_u1_sn）"""
     return _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
 
-def _compute_impa_2(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第21项：IMPA角度重复测量（与IMPA_Angle-1完全相同，复用 _compute_impa）"""
-    return _compute_impa(landmarks, sex=sex, dentition=dentition)
-
-def _compute_sgo_nme_ratio_2(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第26项：SGo/NMe比例重复测量（与SGo_NMe_Ratio-1完全相同）"""
-    return _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)  # 复用，传入 sex/dentition
-
-def _compute_sgo_nme_ratio_3(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第28项：SGo/NMe比例再次重复测量"""
-    return _compute_sgo_nme(landmarks, sex=sex, dentition=dentition)
-
 def _compute_sn_fh_angle(landmarks):
     """
     SN-FH 角：前颅底平面（SN）与眶耳平面（FH）的夹角
@@ -801,10 +777,6 @@ def _compute_sn_mp_angle(landmarks, sex: str = "male", dentition: str = "permane
     # 使用阈值表（若没有则调用 _get_growth_type 作为回退）
     level = _evaluate_by_threshold("SN_MP_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
-
-def _compute_fh_mp_repeat(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第30项：FH-MP角度重复测量（与FH_MP_Angle完全相同，但独立计算）"""
-    return _compute_fh_mp(landmarks, sex=sex, dentition=dentition)  # 直接复用
 
 def _compute_u1_pp_repeat(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第31项：上前牙槽高度重复测量（与Upper_Anterior_Alveolar_Height完全相同）"""

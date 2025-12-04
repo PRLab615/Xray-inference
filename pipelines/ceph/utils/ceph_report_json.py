@@ -58,13 +58,13 @@ MEASUREMENT_ORDER = [
     "GoPo_Length",
     "PoNB_Length",
     "Jaw_Development_Coordination",
-    "SGo_NMe_Ratio-1",
+    "SGo_NMe_Ratio",
     "FH_MP_Angle",
     "UI_SN_Angle",
-    "IMPA_Angle-1",
+    "IMPA_Angle",
     "Upper_Anterior_Alveolar_Height",
     "Airway_Gap",                    # 可选
-    "Adenoid_Index",                # 可选
+    "Adenoid_Index",                 # 可选
     "SNA_Angle",
     "Upper_Jaw_Position",
     "SNB_Angle",
@@ -73,21 +73,18 @@ MEASUREMENT_ORDER = [
     "U1_SN_Angle_Repeat",
     "U1_NA_Angle",
     "U1_NA_Incisor_Length",
-    "IMPA_Angle-2",
     "FMIA_Angle",
     "L1_NB_Angle",
     "L1_NB_Distance",
     "U1_L1_Inter_Incisor_Angle",
-    "Y_SGo_NMe_Ratio-2",            # Y轴角
+    "Y_Axis_Angle",                  # ㉗ Y轴角（原 Y_SGo_NMe_Ratio-2，已修正命名）
     "Mandibular_Growth_Angle",
-    "SGo_NMe_Ratio-3",
-    "SN_FH_Angle-1",                # SN-MP 角（注：字段名历史遗留，实际是 SN-MP）
-    "MP_FH_Angle-2",
+    "SN_MP_Angle",                   # ㉚ SN-MP角（原 SN_FH_Angle-1，已修正命名）
     "U1_PP_Upper_Anterior_Alveolar_Height",
     "L1_MP_Lower_Anterior_Alveolar_Height",
     "U6_PP_Upper_Posterior_Alveolar_Height",
     "L6_MP_Lower_Posterior_Alveolar_Height",
-    "Mandibular_Growth_Type_Angle", # Björk sum
+    "Mandibular_Growth_Type_Angle",  # Björk sum
     "S_N_Anterior_Cranial_Base_Length",
     "Go_Me_Length",
     "Cervical_Vertebral_Maturity_Stage",  # 可选

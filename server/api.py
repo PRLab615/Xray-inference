@@ -173,6 +173,47 @@ async def startup_event():
 
 # ==================== 核心 API 接口 ====================
 
+def _wait_for_celery_result_polling(celery_result, timeout, poll_interval=0.2):
+    """
+    使用轮询方式等待 Celery 结果（替代 pub/sub）
+    
+    Celery 的 AsyncResult.get() 默认使用 Redis pub/sub，在高并发下
+    多个线程同时调用会导致连接冲突（I/O operation on closed file）。
+    
+    此函数使用轮询 ready()/successful() 来检查任务状态，
+    这些方法使用简单的 Redis GET 操作，更加可靠。
+    
+    Args:
+        celery_result: Celery AsyncResult 对象
+        timeout: 超时时间（秒）
+        poll_interval: 轮询间隔（秒），默认 0.2s
+    
+    Returns:
+        任务结果
+        
+    Raises:
+        celery.exceptions.TimeoutError: 超时
+        Exception: 任务执行失败时抛出原始异常
+    """
+    import celery.exceptions
+    
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        if celery_result.ready():
+            # 任务完成（成功或失败）
+            if celery_result.successful():
+                return celery_result.result
+            else:
+                # 任务失败，获取并抛出异常
+                # 注意：这里 get() 只是获取已完成的结果，不会阻塞
+                celery_result.get(propagate=True)
+        time.sleep(poll_interval)
+    
+    # 超时
+    raise celery.exceptions.TimeoutError(f"Task did not complete within {timeout} seconds")
+
+
 @app.post("/api/v1/analyze", status_code=200)
 async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     """
@@ -191,7 +232,8 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         - 协程挂起：使用 run_in_executor 包装阻塞调用，不阻塞事件循环
     
     技术细节:
-        - celery_result.get() 是阻塞调用，不能直接在 async def 中使用
+        - 使用轮询方式（而非 pub/sub）等待 Celery 结果
+        - 轮询更可靠，避免高并发下 Redis 连接冲突
         - 使用 asyncio.get_event_loop().run_in_executor() 将其转为 awaitable
         - 这样等待时不会阻塞事件循环，P1 可以处理其他请求
     
@@ -276,18 +318,18 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     logger.info(f"[Pseudo-Sync] Submitting task to Celery: {task_id}")
     celery_result = analyze_task.apply_async(kwargs=task_params)
     
-    # 5. 【关键】等待 P2 完成（伪同步，使用 run_in_executor 避免阻塞事件循环）
+    # 5. 【关键】等待 P2 完成（使用轮询方式，避免高并发下 Redis pub/sub 连接冲突）
     try:
         # 设置超时（可配置，默认 30 秒）
         timeout = 30  # 可从 config.yaml 读取
-        logger.info(f"[Pseudo-Sync] Waiting for result (timeout={timeout}s): {task_id}")
+        logger.info(f"[Pseudo-Sync] Waiting for result via polling (timeout={timeout}s): {task_id}")
         
-        # 使用 run_in_executor 将阻塞的 get() 转为 awaitable
+        # 使用 run_in_executor 将阻塞的轮询转为 awaitable
         # 这样等待时不会阻塞事件循环，P1 可以处理其他请求
         loop = asyncio.get_event_loop()
         data_dict = await loop.run_in_executor(
             None,  # 使用默认的 ThreadPoolExecutor
-            lambda: celery_result.get(timeout=timeout)
+            lambda: _wait_for_celery_result_polling(celery_result, timeout)
         )
         
         logger.info(f"[Pseudo-Sync] Task completed: {task_id}")

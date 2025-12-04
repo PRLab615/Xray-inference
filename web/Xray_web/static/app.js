@@ -1665,15 +1665,9 @@ function getLevelText(label, level) {
  * - 仅修正已知的命名错误字段（保持JSON格式不变，只改前端显示）
  */
 function getMeasurementLabel(label) {
-    // 仅修正已知的命名错误，其他字段保持原样
-    const labelCorrections = {
-        // 后端字段名 → 正确的显示名称
-        'Y_SGo_NMe_Ratio-2': 'Y_Axis_Angle',  // Y轴角（°），不是比率
-        'SN_FH_Angle-1': 'SN_MP_Angle',  // SN-MP角（°），不是SN-FH角
-        // 'Pcd_Lower_Position' 保持原样，不做字段名映射
-    };
-    
-    return labelCorrections[label] || label;
+    // 后端字段名已修正，前端直接显示即可
+    // 保留此函数以备将来扩展
+    return label;
 }
 
 /**
@@ -1748,15 +1742,22 @@ function getMeasurementConclusion(label, level) {
             if (level === 2) return '后缩（<-0.5mm）';
         }
         
-        // ⑥㉖㉘ 面部高度比例: 0=平均生长型; 1=水平生长型; 2=垂直生长型
-        if (label === 'SGo_NMe_Ratio-1' || label === 'Y_SGo_NMe_Ratio-2' || label === 'SGo_NMe_Ratio-3') {
+        // ⑥ 面部高度比例: 0=平均生长型; 1=水平生长型; 2=垂直生长型
+        if (label === 'SGo_NMe_Ratio') {
             if (level === 0) return '平均生长型';
             if (level === 1) return '水平生长型（>71%）';
             if (level === 2) return '垂直生长型（<63%）';
         }
         
-        // ⑦㉚㉙ 下颌平面角/SN-MP角: 0=均角; 1=高角; 2=低角
-        if (label === 'FH_MP_Angle' || label === 'MP_FH_Angle-2' || label === 'SN_FH_Angle-1') {
+        // ㉗ Y轴角: 0=平均生长型; 1=水平生长型; 2=垂直生长型
+        if (label === 'Y_Axis_Angle') {
+            if (level === 0) return '平均生长型';
+            if (level === 1) return '水平生长型';
+            if (level === 2) return '垂直生长型';
+        }
+        
+        // ⑦㉚ 下颌平面角/SN-MP角: 0=均角; 1=高角; 2=低角
+        if (label === 'FH_MP_Angle' || label === 'SN_MP_Angle') {
             if (level === 0) return '均角';
             if (level === 1) return '高角（>33°）';
             if (level === 2) return '低角（<25°）';
@@ -1772,7 +1773,7 @@ function getMeasurementConclusion(label, level) {
         }
         
         // ⑨㉑ 下切牙-下颌平面角: 0=正常; 1=唇倾; 2=舌倾
-        if (label === 'IMPA_Angle-1' || label === 'IMPA_Angle-2') {
+        if (label === 'IMPA_Angle') {
             if (level === 0) return '正常';
             if (level === 1) return '唇倾';
             if (level === 2) return '舌倾';
@@ -1935,7 +1936,7 @@ function isToothMeasurement(label) {
         // ⑧ 上切牙-SN角
         'UI_SN_Angle',
         // ⑨ 下切牙-下颌平面角
-        'IMPA_Angle-1',
+        'IMPA_Angle',
         // ⑩ 上前牙槽高度
         'Upper_Anterior_Alveolar_Height',
         // ⑱ 上切牙-SN角(重复)
@@ -1944,8 +1945,6 @@ function isToothMeasurement(label) {
         'U1_NA_Angle',
         // ⑳ 上切牙突度
         'U1_NA_Incisor_Length',
-        // ㉑ 下切牙-下颌平面角(重复)
-        'IMPA_Angle-2',
         // ㉒ FMIA角
         'FMIA_Angle',
         // ㉓ 下切牙-NB角
@@ -1974,22 +1973,18 @@ function isToothMeasurement(label) {
 function isGrowthMeasurement(label) {
     const growthLabels = [
         // ⑥ 面部高度比例
-        'SGo_NMe_Ratio-1',
+        'SGo_NMe_Ratio',
         // ⑦ 下颌平面角
         'FH_MP_Angle',
-        // ㉖ 面部高度比例(重复)
-        'Y_SGo_NMe_Ratio-2',
-        // ㉗ 下颌生长方向角
+        // ㉗ Y轴角
+        'Y_Axis_Angle',
+        // ㉘ 下颌生长方向角
         'Mandibular_Growth_Angle',
-        // ㉘ 面部高度比例(再重复)
-        'SGo_NMe_Ratio-3',
-        // ㉙ SN-MP角 (字段名历史遗留为 SN_FH_Angle-1)
-        'SN_FH_Angle-1',
-        // ㉚ 下颌平面角(重复)
-        'MP_FH_Angle-2',
+        // ㉚ SN-MP角
+        'SN_MP_Angle',
         // ㉟ 下颌生长型角
         'Mandibular_Growth_Type_Angle',
-        // ㊳ 颈椎成熟度分期
+        // ㊴ 颈椎成熟度分期
         'Cervical_Vertebral_Maturity_Stage'
     ];
     return growthLabels.includes(label);
