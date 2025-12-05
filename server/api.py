@@ -778,94 +778,103 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
         接收客户端修改后的完整推理结果（关键点坐标 + 颈椎分割），
         重新计算所有测量值，生成完整的侧位片报告。
     
-    技术细节:
-        - 在 P1 中实现（不在 P2）
-        - 使用 def 而非 async def，因为测量计算和报告生成是同步 CPU 密集型任务
-        - FastAPI 会自动在线程池中运行，不会阻塞事件循环
+    因果关系：
+        "因"字段（客户端传入，服务端使用）：
+        - ImageSpacing (X, Y, Unit)
+        - PatientInformation.Gender, DentalAgeStage
+        - LandmarkPositions.Landmarks[*] (Label, X, Y, Confidence, Status)
+        - Cervical_Vertebral_Maturity_Stage (Coordinates, SerializedMask, Level, Confidence)
+        
+        "果"字段（服务端重算，客户端传值将被忽略）：
+        - VisibilityMetrics, MissingPointHandling, StatisticalFields
+        - LandmarkPositions 统计字段
+        - 除 Cervical_Vertebral_Maturity_Stage 外的所有测量值及其 Level
     
     Args:
-        request: 重算请求（对齐接口定义）
+        request: 重算请求
             - taskId: 任务唯一标识，仅用于日志追踪
-            - data: 完整的侧位片推理结果 JSON（即 example_ceph_result.json 格式）
+            - data: 完整的侧位片推理结果 JSON
     
     Returns:
-        RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
-        
-    Raises:
-        HTTPException(400): 参数验证失败
-        HTTPException(500): 报告生成失败
-    
-    工作流程（当前实现）:
-        1. 验证请求参数
-        2. 暂时直接返回 data（不做处理）
-        3. 后续实现：提取"因"字段，重新计算"果"字段
-    
-    注意:
-        - 当前暂时直接返回，因为需要所有推理模块的后处理写完才能集成
-        - 输入是推理的格式，输出返回的也是推理的格式，所以直接返回就是正确的格式
+        RecalculateResponse: 包含重算后的完整报告
     """
+    from pipelines.ceph.utils.ceph_recalculate import recalculate_ceph_report
+    
     logger.info(f"[Ceph Recalculate] Request received: taskId={request.taskId}")
     
-    try:
-        # 1. 校验 taskId（schema 已校验 UUID 格式，这里再次确认）
-        if not request.taskId:
-            raise ValueError("taskId is required")
-        
-        # 2. 校验 data 不为空
-        if not request.data:
-            raise ValueError("data is required and cannot be empty")
-        
-        # 3. 校验 patientInfo（侧位片必填，schema 已校验，这里再次确认）
-        if not request.patientInfo:
-            raise ValueError("patientInfo is required for cephalometric recalculation")
-        
-        # 4. 校验 Gender（schema 已校验，这里再次确认）
-        gender = request.patientInfo.gender
-        if gender not in ["Male", "Female"]:
-            raise ValueError(f"patientInfo.gender must be 'Male' or 'Female', got '{gender}'")
-        
-        # 5. 校验 DentalAgeStage（schema 已校验，这里再次确认）
-        dental_age_stage = request.patientInfo.DentalAgeStage
-        if dental_age_stage not in ["Permanent", "Mixed"]:
-            raise ValueError(f"patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'")
-        
-        logger.info(f"[Ceph Recalculate] Validation passed: taskId={request.taskId}, gender={gender}, dentalAgeStage={dental_age_stage}")
-        
-        # TODO: 后续实现重算逻辑
-        # 6. 从 request.data 中提取"因"字段（关键点坐标、颈椎分割等）
-        # 7. 重新计算"果"字段（所有测量值、测量值Level等）
-        # 8. 返回完整的侧位片报告
-        
-        # 当前实现：直接返回 data（因为输入输出格式一致）
-        logger.info(f"[Ceph Recalculate] Directly returning data (recalculation logic to be implemented): taskId={request.taskId}")
-        
-        return RecalculateResponse(
-            taskId=request.taskId,
-            status="SUCCESS",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            metadata=None,  # 接口定义中 metadata 可选
-            data=request.data,  # 直接返回，格式与推理接口一致
-            error=None
-        )
-    
-    except ValueError as e:
-        # 参数验证错误，返回 400
-        logger.warning(f"[Ceph Recalculate] Validation failed: {e}")
+    # 1. 校验 taskId
+    if not request.taskId:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=10001,
-                message=f"Invalid parameter: {e}",
-                detail=str(e)
+                message="Invalid parameter: taskId is required",
+                detail="taskId is required"
             ).model_dump()
         )
-    except Exception as e:
-        logger.error(f"[Ceph Recalculate] Failed: {e}", exc_info=True)
+    
+    # 2. 校验 data 不为空
+    if not request.data:
         raise HTTPException(
-            status_code=500,
+            status_code=400,
             detail=ErrorResponse(
-                code=12001,
-                message="AI model execution failed",
-                detail=str(e)
+                code=10001,
+                message="Invalid parameter: data is required and cannot be empty",
+                detail="data is required and cannot be empty"
             ).model_dump()
         )
+    
+    # 3. 校验 patientInfo（侧位片必填）
+    if not request.patientInfo:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message="Invalid parameter: patientInfo is required for cephalometric recalculation",
+                detail="patientInfo is required for cephalometric recalculation"
+            ).model_dump()
+        )
+    
+    # 4. 校验 Gender
+    gender = request.patientInfo.gender
+    if gender not in ["Male", "Female"]:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message=f"Invalid parameter: patientInfo.gender must be 'Male' or 'Female', got '{gender}'",
+                detail=f"patientInfo.gender must be 'Male' or 'Female', got '{gender}'"
+            ).model_dump()
+        )
+    
+    # 5. 校验 DentalAgeStage
+    dental_age_stage = request.patientInfo.DentalAgeStage
+    if dental_age_stage not in ["Permanent", "Mixed"]:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message=f"Invalid parameter: patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'",
+                detail=f"patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'"
+            ).model_dump()
+        )
+    
+    logger.info(f"[Ceph Recalculate] Validation passed: taskId={request.taskId}, gender={gender}, dentalAgeStage={dental_age_stage}")
+    
+    # 6. 调用重算逻辑
+    recalculated_data = recalculate_ceph_report(
+        input_data=request.data,
+        gender=gender,
+        dental_age_stage=dental_age_stage,
+    )
+    
+    logger.info(f"[Ceph Recalculate] Recalculation completed: taskId={request.taskId}")
+    
+    return RecalculateResponse(
+        taskId=request.taskId,
+        status="SUCCESS",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        metadata=None,
+        data=recalculated_data,
+        error=None
+    )
