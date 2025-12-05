@@ -4,9 +4,11 @@
 负责从 imageUrl 下载图像文件到本地，包含格式验证、大小限制、超时控制
 """
 
+import os
+import re
 import requests
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -17,6 +19,7 @@ class ImageDownloader:
     HTTP 图像下载管理
     
     负责从 URL 下载图像文件并保存到本地，支持格式验证、大小限制、超时控制。
+    支持 Docker 环境下的 URL 重写（将 localhost/127.0.0.1 替换为 Docker 服务名）。
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -34,6 +37,11 @@ class ImageDownloader:
         self.max_size_mb = download_config.get('max_size_mb', 50)
         self.allowed_extensions = download_config.get('allowed_extensions', ['.jpg', '.jpeg', '.png', '.dcm'])
         
+        # Docker 环境 URL 重写规则
+        # 格式: "source_host:source_port->target_host:target_port,..."
+        # 例如: "127.0.0.1:5000->frontend:5000,localhost:5000->frontend:5000"
+        self.url_rewrite_rules = self._parse_url_rewrite_rules()
+        
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Xray-Inference-Service/2.0'
@@ -42,8 +50,50 @@ class ImageDownloader:
         logger.info(
             f"ImageDownloader initialized: "
             f"timeout={self.timeout}s, max_size={self.max_size_mb}MB, "
-            f"allowed_formats={self.allowed_extensions}"
+            f"allowed_formats={self.allowed_extensions}, "
+            f"url_rewrite_rules={len(self.url_rewrite_rules)} rules"
         )
+    
+    def _parse_url_rewrite_rules(self) -> List[Tuple[str, str]]:
+        """
+        从环境变量解析 URL 重写规则
+        
+        环境变量格式: URL_REWRITE_RULES="source1->target1,source2->target2"
+        例如: "127.0.0.1:5000->frontend:5000,localhost:5000->frontend:5000"
+        
+        Returns:
+            List[Tuple[str, str]]: [(source, target), ...]
+        """
+        rules_str = os.environ.get('URL_REWRITE_RULES', '')
+        if not rules_str:
+            return []
+        
+        rules = []
+        for rule in rules_str.split(','):
+            rule = rule.strip()
+            if '->' in rule:
+                source, target = rule.split('->', 1)
+                rules.append((source.strip(), target.strip()))
+                logger.info(f"URL rewrite rule loaded: {source.strip()} -> {target.strip()}")
+        
+        return rules
+    
+    def _rewrite_url(self, url: str) -> str:
+        """
+        根据规则重写 URL（用于 Docker 环境）
+        
+        Args:
+            url: 原始 URL
+            
+        Returns:
+            str: 重写后的 URL（如果没有匹配规则则返回原 URL）
+        """
+        for source, target in self.url_rewrite_rules:
+            if source in url:
+                new_url = url.replace(source, target)
+                logger.info(f"URL rewritten: {url} -> {new_url}")
+                return new_url
+        return url
     
     def download_dicom(self, dicom_url: str, save_path: str) -> bool:
         """
@@ -65,6 +115,9 @@ class ImageDownloader:
             requests.exceptions.Timeout: 下载超时
             requests.exceptions.RequestException: 网络错误
         """
+        # Docker 环境 URL 重写
+        dicom_url = self._rewrite_url(dicom_url)
+        
         logger.info(f"Starting DICOM download: {dicom_url}")
         
         # 直接下载（DICOM 的 Content-Type 验证在 _validate_content_type 中处理）
@@ -129,6 +182,9 @@ class ImageDownloader:
             4. 发送 GET 请求下载文件（流式下载）
             5. 保存到本地文件
         """
+        # Docker 环境 URL 重写
+        image_url = self._rewrite_url(image_url)
+        
         logger.info(f"Starting image download: {image_url}")
         
         # 1. 尝试发送 HEAD 请求检查文件类型和大小
