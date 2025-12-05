@@ -29,6 +29,20 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# 全局默认比例尺常量
+# =============================================================================
+# 含义：1 像素 = 0.1 毫米（即 10 像素/毫米）
+# 这是医学影像的常见默认值，适用于大多数口腔 X 光片
+# 
+# 使用场景：
+#   1. 普通图片模式（imageUrl）且用户未提供 pixelSpacing
+#   2. DICOM 模式但解析比例尺失败时
+#
+# 注意：此常量是全局唯一的默认值来源，下游模块不应再定义独立的默认值
+DEFAULT_PIXEL_SPACING_MM = 0.1
+
+
 def create_app() -> FastAPI:
     """
     创建 FastAPI 应用实例
@@ -321,7 +335,20 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
                     "scale_y": dicom_info["pixel_spacing"]["scale_y"],
                     "source": "dicom",
                 }
-                logger.info(f"Pixel spacing extracted from DICOM: {pixel_spacing}")
+                logger.info(f"[PixelSpacing] Extracted from DICOM: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # DICOM 解析比例尺失败，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default_dicom_fallback",
+                }
+                logger.warning(
+                    f"[PixelSpacing] DICOM pixel spacing not available or invalid. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel. "
+                    f"DICOM file: {dicom_path}. "
+                    f"This may affect measurement accuracy. Consider providing pixelSpacing in request."
+                )
         else:
             # 普通图像模式
             file_ext = '.jpg'
@@ -332,14 +359,25 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
             _image_downloader.download_image(request.imageUrl, image_path)
             logger.info(f"Image downloaded: {image_path}")
             
-            # 使用请求中的比例尺
+            # 使用请求中的比例尺，若未提供则使用默认值
             if request.pixelSpacing:
                 pixel_spacing = {
                     "scale_x": request.pixelSpacing.scaleX,
                     "scale_y": request.pixelSpacing.scaleY or request.pixelSpacing.scaleX,
                     "source": "request",
                 }
-                logger.info(f"Pixel spacing from request: {pixel_spacing}")
+                logger.info(f"[PixelSpacing] From request: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # 普通图片未提供比例尺，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default",
+                }
+                logger.info(
+                    f"[PixelSpacing] No pixelSpacing provided in request. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel"
+                )
     except Exception as e:
         logger.error(f"Image/DICOM download failed: {e}")
         # 清理临时文件
@@ -549,7 +587,20 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
                     "scale_y": dicom_info["pixel_spacing"]["scale_y"],
                     "source": "dicom",
                 }
-                logger.info(f"Pixel spacing extracted from DICOM: {pixel_spacing}")
+                logger.info(f"[PixelSpacing] Extracted from DICOM: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # DICOM 解析比例尺失败，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default_dicom_fallback",
+                }
+                logger.warning(
+                    f"[PixelSpacing] DICOM pixel spacing not available or invalid. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel. "
+                    f"DICOM file: {dicom_path}. "
+                    f"This may affect measurement accuracy. Consider providing pixelSpacing in request."
+                )
         else:
             # 普通图像模式
             file_ext = '.jpg'
@@ -560,14 +611,25 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             _image_downloader.download_image(request.imageUrl, image_path)
             logger.info(f"Image downloaded: {request.imageUrl} -> {image_path}")
             
-            # 使用请求中的比例尺
+            # 使用请求中的比例尺，若未提供则使用默认值
             if request.pixelSpacing:
                 pixel_spacing = {
                     "scale_x": request.pixelSpacing.scaleX,
                     "scale_y": request.pixelSpacing.scaleY or request.pixelSpacing.scaleX,
                     "source": "request",
                 }
-                logger.info(f"Pixel spacing from request: {pixel_spacing}")
+                logger.info(f"[PixelSpacing] From request: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # 普通图片未提供比例尺，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default",
+                }
+                logger.info(
+                    f"[PixelSpacing] No pixelSpacing provided in request. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel"
+                )
     except ValueError as e:
         logger.error(f"Image/DICOM validation failed: {e}")
         for f in temp_files:

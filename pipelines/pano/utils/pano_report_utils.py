@@ -110,17 +110,19 @@ def generate_standard_output(
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
     # 处理 ImageSpacing（像素间距/比例尺）
-    # 默认值 0.1 mm/pixel，如果外部传入 pixel_spacing 则使用传入值
-    default_spacing = 0.1
-    if pixel_spacing and pixel_spacing.get("scale_x"):
-        spacing_x = pixel_spacing["scale_x"]
-        spacing_y = pixel_spacing.get("scale_y", spacing_x)
-        spacing_source = pixel_spacing.get("source", "external")
-        logger.info(f"Using pixel spacing from {spacing_source}: X={spacing_x}, Y={spacing_y} mm/pixel")
-    else:
-        spacing_x = default_spacing
-        spacing_y = default_spacing
-        logger.info(f"Using default pixel spacing: {default_spacing} mm/pixel")
+    # API 层（server/api.py）是唯一的默认值来源，此处不再设置默认值
+    if not pixel_spacing or not pixel_spacing.get("scale_x"):
+        # 如果走到这里，说明调用方存在 bug（API 层应该保证有值）
+        raise ValueError(
+            "[PixelSpacing] pixel_spacing is required but not provided. "
+            "This is likely a bug in the calling code. "
+            "API layer (server/api.py) should guarantee pixel_spacing is always set."
+        )
+    
+    spacing_x = pixel_spacing["scale_x"]
+    spacing_y = pixel_spacing.get("scale_y", spacing_x)
+    spacing_source = pixel_spacing.get("source", "unknown")
+    logger.info(f"[PixelSpacing] Using value from {spacing_source}: X={spacing_x:.4f}, Y={spacing_y:.4f} mm/pixel")
     
     report = {
         "Metadata": _format_metadata(metadata),

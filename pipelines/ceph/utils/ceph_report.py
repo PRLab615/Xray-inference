@@ -44,7 +44,15 @@ FH_MP_LOW_ANGLE_THRESHOLD = 25.0
 SGO_NME_HORIZONTAL_THRESHOLD = 71.0
 SGO_NME_VERTICAL_THRESHOLD = 63.0
 
-# 默认像素间距：1 pixel = 0.1 mm
+# 默认像素间距常量（已废弃，仅保留用于向后兼容旧代码调用）
+# 
+# ⚠️ 重要：API 层（server/api.py）是唯一的默认值来源
+# 所有通过 API 进入的请求都已保证 pixel_spacing 有值
+# 如果此模块收到 None，说明调用方存在 bug，应该修复调用方而非在此处静默处理
+#
+# 此常量仅用于：
+#   1. 向后兼容：旧的直接调用 calculate_measurements() 的代码
+#   2. 单元测试：测试代码可能不经过 API 层
 DEFAULT_SPACING_MM_PER_PIXEL = 0.1
 
 # 新增
