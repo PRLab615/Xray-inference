@@ -25,9 +25,36 @@ IMAGE_MODE = "local_server"  # 可选: "local_server" 或 "remote_url"
 PANO_IMAGE_DIR = r"/AAA_615/dataset/Xray/pano"  # 全景片文件夹路径
 CEPH_IMAGE_DIR = r"/AAA_615/dataset/Xray/ceph"  # 侧位片文件夹路径
 DICOM_IMAGE_DIR = r"/AAA_615/dataset/Xray/dicom"  # DICOM文件夹路径（支持 .dcm 文件）
-IMAGE_SERVER_HOST = "127.0.0.1"  # ⚠️ 重要：在同一台机器上运行时必须用 localhost/127.0.0.1
+
+# ⚠️ IMAGE_SERVER_HOST 配置说明：
+# - Linux + docker-compose.linux.yml (host网络): 使用 "127.0.0.1" 或 "0.0.0.0"
+# - Linux + docker-compose.yml (桥接网络): 使用宿主机实际 IP（如 "192.168.1.100"）或 "host.docker.internal"
+# - Windows/Mac + docker-compose.yml: 使用 "host.docker.internal"
+IMAGE_SERVER_HOST = "0.0.0.0"  # 监听所有网卡，方便 Docker 容器访问
 IMAGE_SERVER_PORT = 9999  # 本地服务器端口
-IMAGE_SERVER_BASE_URL = "http://{}:{}".format(IMAGE_SERVER_HOST, IMAGE_SERVER_PORT)  # 自动生成，无需修改
+
+# 用于生成图片 URL 的地址（后端下载图片时使用）
+# 如果后端运行在 Docker 桥接网络中，需要改成宿主机 IP 或 host.docker.internal
+import socket
+def _get_host_ip():
+    """获取本机 IP 地址（用于 Docker 桥接网络场景）"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return "127.0.0.1"
+
+# 自动检测：如果环境变量 DOCKER_BRIDGE 设置为 1，使用宿主机 IP
+import os
+if os.environ.get("DOCKER_BRIDGE") == "1":
+    IMAGE_SERVER_URL_HOST = _get_host_ip()
+else:
+    IMAGE_SERVER_URL_HOST = IMAGE_SERVER_HOST if IMAGE_SERVER_HOST != "0.0.0.0" else "127.0.0.1"
+
+IMAGE_SERVER_BASE_URL = "http://{}:{}".format(IMAGE_SERVER_URL_HOST, IMAGE_SERVER_PORT)  # 自动生成
 
 # 【模式2】远程URL配置（仅在 IMAGE_MODE="remote_url" 时使用）
 # 将图片文件名列表和URL前缀配置在这里
