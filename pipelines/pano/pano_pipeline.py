@@ -735,7 +735,15 @@ class PanoPipeline(BasePipeline):
             tooth_apex_positions = self._extract_tooth_apex_positions(
                 teeth_results, UPPER_POSTERIOR_TEETH, h, w
             )
-            logger.info(f"Extracted apex positions for {len(tooth_apex_positions)} upper posterior teeth")
+            logger.info(f"Extracted apex positions for {len(tooth_apex_positions)} upper posterior teeth: {list(tooth_apex_positions.keys())}")
+            
+            # 调试：打印检测到的所有牙齿FDI
+            if teeth_results:
+                detected_teeth = teeth_results.get("detected_teeth", [])
+                all_fdi = [t.get("fdi") for t in detected_teeth]
+                logger.info(f"[DEBUG] All detected teeth FDI: {all_fdi}")
+                upper_posterior_fdi = [f for f in all_fdi if f in ["14","15","16","17","18","24","25","26","27","28"]]
+                logger.info(f"[DEBUG] Upper posterior teeth in detection: {upper_posterior_fdi}")
 
             # 获取比例尺（默认 0.1 mm/pixel）
             scale_y = 0.1  # 垂直方向比例尺
@@ -768,8 +776,9 @@ class PanoPipeline(BasePipeline):
                 logger.info(f"{location} sinus bottom Y position: {sinus_bottom_y}")
 
                 # 6. 气化判断：计算与该侧上颌后牙根尖的距离
+                # 传递整个 side_mask 用于检测牙齿与上颌窦的空间交集
                 pneumatization_type, root_entry_teeth, min_distance_mm = self._calculate_pneumatization(
-                    side_lower, sinus_bottom_y, tooth_apex_positions, 
+                    side_lower, side_mask, tooth_apex_positions, 
                     UPPER_POSTERIOR_TEETH, scale_y
                 )
                 
@@ -874,8 +883,15 @@ class PanoPipeline(BasePipeline):
             image_w: 图像宽度
 
         Returns:
-            dict: FDI -> {'apex_y': y坐标, 'side': 'left'/'right'}
-                  apex_y 是根尖的 y 坐标（y 值越大，位置越靠下/靠近上颌窦底）
+            dict: FDI -> {
+                'apex_y': y坐标, 
+                'apex_x': 根尖x坐标,
+                'x_min': 牙齿mask最左x坐标,
+                'x_max': 牙齿mask最右x坐标,
+                'side': 'left'/'right',
+                'mask': 缩放后的牙齿mask (用于交集检测)
+            }
+            apex_y 是根尖的 y 坐标（y 值越大，位置越靠下/靠近上颌窦底）
         """
         apex_positions = {}
 
@@ -899,8 +915,10 @@ class PanoPipeline(BasePipeline):
             if isinstance(first_mask, np.ndarray):
                 mask_h, mask_w = first_mask.shape[:2]
             else:
+                logger.warning("[_extract_tooth_apex_positions] First mask is not ndarray")
                 return apex_positions
         else:
+            logger.warning("[_extract_tooth_apex_positions] raw_masks format not recognized")
             return apex_positions
 
         # 计算缩放因子
@@ -909,7 +927,10 @@ class PanoPipeline(BasePipeline):
             orig_h, orig_w = original_shape[0], original_shape[1]
             scale_x = orig_w / mask_w
             scale_y = orig_h / mask_h
-            logger.debug(f"[_extract_tooth_apex_positions] Scale factors: x={scale_x:.3f}, y={scale_y:.3f}")
+        
+        logger.info(f"[_extract_tooth_apex_positions] mask_shape=({mask_h}, {mask_w}), "
+                   f"original_shape={original_shape}, target_image=({image_h}, {image_w}), "
+                   f"scale_factors: x={scale_x:.3f}, y={scale_y:.3f}")
 
         # 所有上颌后牙 FDI
         all_upper_posterior_fdi = set()
@@ -947,13 +968,21 @@ class PanoPipeline(BasePipeline):
                 if ys.size == 0:
                     continue
 
-                # 根尖位置 = mask 的最大 y 值（y 越大越靠下）
-                # 对于上颌牙，根尖朝上（但在图像坐标系中 y 增大是向下的）
-                # 所以上颌牙的根尖是 mask 中 y 最大的位置
-                apex_y_mask = int(ys.max())
+                # 根尖位置：
+                # 上颌牙根尖朝上 → 在图像坐标系中 y 值**最小**的位置
+                # （图像坐标系中 y 增大是向下的）
+                # 注意：这里处理的是上颌后牙，所以取 ys.min()
+                apex_y_mask = int(ys.min())
+                
+                # 提取根尖区域（取y最小处对应的x范围的中点作为根尖x坐标）
+                apex_region_xs = xs[ys == apex_y_mask]
+                apex_x_mask = int(np.mean(apex_region_xs)) if len(apex_region_xs) > 0 else int(xs.mean())
                 
                 # 缩放到原图坐标
                 apex_y = apex_y_mask * scale_y
+                apex_x = apex_x_mask * scale_x
+                x_min = int(xs.min() * scale_x)
+                x_max = int(xs.max() * scale_x)
 
                 # 判断该牙属于哪一侧
                 side = None
@@ -962,11 +991,26 @@ class PanoPipeline(BasePipeline):
                         side = s
                         break
 
+                # 缩放 mask 到原图大小（用于后续交集检测）
+                scaled_mask = None
+                if scale_x != 1.0 or scale_y != 1.0:
+                    scaled_mask = cv2.resize(
+                        (mask > 0.5).astype(np.uint8), 
+                        (image_w, image_h), 
+                        interpolation=cv2.INTER_NEAREST
+                    )
+                else:
+                    scaled_mask = (mask > 0.5).astype(np.uint8)
+
                 apex_positions[fdi] = {
                     'apex_y': apex_y,
-                    'side': side
+                    'apex_x': apex_x,
+                    'x_min': x_min,
+                    'x_max': x_max,
+                    'side': side,
+                    'mask': scaled_mask
                 }
-                logger.debug(f"[_extract_tooth_apex_positions] Tooth {fdi}: apex_y={apex_y:.1f}, side={side}")
+                logger.debug(f"[_extract_tooth_apex_positions] Tooth {fdi}: apex_y={apex_y:.1f}, apex_x={apex_x:.1f}, x_range=[{x_min}, {x_max}], side={side}")
 
             except Exception as exc:
                 logger.warning(f"[_extract_tooth_apex_positions] Failed to extract apex for tooth {fdi}: {exc}")
@@ -991,7 +1035,7 @@ class PanoPipeline(BasePipeline):
     def _calculate_pneumatization(
         self,
         side: str,
-        sinus_bottom_y: int,
+        sinus_mask: np.ndarray,
         tooth_apex_positions: dict,
         upper_posterior_teeth: dict,
         scale_y: float
@@ -999,78 +1043,120 @@ class PanoPipeline(BasePipeline):
         """
         计算上颌窦气化类型
 
-        根据标准：
-            - Ⅰ型: 上颌窦底与上颌后牙根尖距离 > 3mm（正常/未气化）
-            - Ⅱ型: 上颌窦底与上颌后牙根尖距离在 0~3mm（显著气化）
-            - Ⅲ型: 上颌窦底与上颌后牙根尖距离 < 0mm（过度气化，牙根进入窦内）
+        算法核心：
+            计算每颗上颌后牙根尖到上颌窦底部的**垂直距离**。
+            对于每颗牙，找到该牙X范围内上颌窦的局部底部Y坐标，
+            然后计算：距离 = 窦底Y - 根尖Y
+            - 距离 > 0: 根尖在窦底上方（未进入）
+            - 距离 < 0: 根尖在窦底下方（已进入）
+
+        气化分型标准：
+            - Ⅰ型: 距离 > 3mm（正常/未气化）
+            - Ⅱ型: 0 ≤ 距离 ≤ 3mm（显著气化）
+            - Ⅲ型: 距离 < 0mm（过度气化，牙根进入窦内）
 
         Args:
             side: 'left' 或 'right'
-            sinus_bottom_y: 上颌窦底部 y 坐标（像素）
+            sinus_mask: 该侧上颌窦的二值 mask
             tooth_apex_positions: 牙齿根尖位置字典
             upper_posterior_teeth: 上颌后牙 FDI 定义
             scale_y: 垂直方向比例尺（mm/pixel）
 
         Returns:
             tuple: (气化类型, 进入上颌窦的牙齿列表, 最小距离mm)
-                - 气化类型: 1=I型, 2=II型, 3=III型, 0=无法判断
-                - 进入上颌窦的牙齿列表: 距离 < 0mm 的牙齿 FDI
-                - 最小距离: 所有牙齿中的最小距离（mm）
         """
-        if not tooth_apex_positions or sinus_bottom_y == 0:
-            logger.warning(f"[_calculate_pneumatization] Cannot calculate: no teeth data or sinus not found")
+        if sinus_mask is None or not tooth_apex_positions:
+            logger.warning("[_calculate_pneumatization] Missing sinus_mask or tooth data")
             return 0, [], float('inf')
 
-        # 获取该侧的上颌后牙 FDI
+        sinus_binary = (sinus_mask > 0).astype(np.uint8)
+        if np.sum(sinus_binary) == 0:
+            logger.warning("[_calculate_pneumatization] Empty sinus mask")
+            return 0, [], float('inf')
+
+        h, w = sinus_mask.shape
         side_teeth_fdi = upper_posterior_teeth.get(side, [])
-        
         min_distance_mm = float('inf')
-        root_entry_teeth = []  # 进入上颌窦的牙齿
+        root_entry_teeth = []
+        
+        # 获取上颌窦的全局范围
+        sinus_ys, sinus_xs = np.where(sinus_binary > 0)
+        sinus_x_min, sinus_x_max = int(sinus_xs.min()), int(sinus_xs.max())
+        sinus_y_max = int(sinus_ys.max())  # 全局窦底Y
+        
+        logger.info(f"[_calculate_pneumatization] side={side}, sinus range: x=[{sinus_x_min}, {sinus_x_max}], "
+                   f"global_bottom_y={sinus_y_max}, teeth to check: {side_teeth_fdi}, "
+                   f"available positions: {list(tooth_apex_positions.keys())}")
 
         for fdi in side_teeth_fdi:
-            if fdi not in tooth_apex_positions:
+            apex_info = tooth_apex_positions.get(fdi)
+            if not apex_info:
+                logger.debug(f"[_calculate_pneumatization] Tooth {fdi}: NOT FOUND in apex_positions")
                 continue
-
-            apex_info = tooth_apex_positions[fdi]
-            # 只处理同侧的牙齿
             if apex_info.get('side') != side:
+                logger.debug(f"[_calculate_pneumatization] Tooth {fdi}: side mismatch")
                 continue
 
+            # 获取根尖坐标
             apex_y = apex_info['apex_y']
+            apex_x = apex_info.get('apex_x', 0)
+            tooth_x_min = apex_info.get('x_min', int(apex_x) - 20)
+            tooth_x_max = apex_info.get('x_max', int(apex_x) + 20)
             
-            # 计算距离（像素）
-            # 距离 = 上颌窦底 y - 牙根尖 y
-            # 如果距离 > 0，说明牙根尖在窦底之上（没进入）
-            # 如果距离 < 0，说明牙根尖在窦底之下（进入了）
-            distance_pixels = sinus_bottom_y - apex_y
+            # 检查牙齿X范围是否与上颌窦有重叠
+            if tooth_x_max < sinus_x_min or tooth_x_min > sinus_x_max:
+                logger.debug(f"[_calculate_pneumatization] Tooth {fdi}: no X overlap with sinus")
+                continue
             
-            # 转换为 mm
+            # 计算该牙齿X范围内的上颌窦局部底部Y坐标
+            x_start = max(0, tooth_x_min)
+            x_end = min(w, tooth_x_max + 1)
+            local_region = sinus_binary[:, x_start:x_end]
+            local_ys, _ = np.where(local_region > 0)
+            
+            if local_ys.size == 0:
+                # 该牙齿X范围内没有上颌窦，使用全局窦底
+                local_sinus_bottom_y = sinus_y_max
+            else:
+                local_sinus_bottom_y = int(local_ys.max())
+            
+            # 计算垂直距离（像素）
+            # 图像坐标系：y=0在顶部，y增大向下
+            # 上颌后牙根尖朝上（y值小），窦底是窦的下边界（y值大）
+            # 距离 = 根尖Y - 窦底Y
+            # > 0: 根尖在窦底下方（有骨质间隙，正常）
+            # < 0: 根尖在窦底上方（进入窦内，异常）
+            distance_pixels = apex_y - local_sinus_bottom_y
             distance_mm = distance_pixels * scale_y
-            
-            logger.debug(f"[_calculate_pneumatization] Tooth {fdi}: "
-                        f"apex_y={apex_y:.1f}, sinus_bottom={sinus_bottom_y}, "
-                        f"distance={distance_mm:.2f}mm")
 
-            if distance_mm < min_distance_mm:
-                min_distance_mm = distance_mm
+            logger.info(f"[_calculate_pneumatization] Tooth {fdi}: apex=({apex_x:.0f}, {apex_y:.0f}), "
+                       f"local_sinus_bottom_y={local_sinus_bottom_y}, "
+                       f"distance_pixels={distance_pixels:.1f}, distance_mm={distance_mm:.2f}mm")
 
-            # 如果距离 < 0，牙根进入上颌窦
+            # 更新最小距离
+            min_distance_mm = min(min_distance_mm, distance_mm)
+
+            # 距离 < 0 表示根尖在窦底上方（牙根进入上颌窦）
             if distance_mm < 0:
                 root_entry_teeth.append(fdi)
+                logger.info(f"[_calculate_pneumatization] Tooth {fdi}: ROOT ENTERS SINUS (distance={distance_mm:.2f}mm)")
 
-        # 根据最小距离判断气化类型
+        # 气化类型判断
+        # Ⅰ型: 距离 > 3mm（正常）
+        # Ⅱ型: 0 ≤ 距离 ≤ 3mm（显著气化）
+        # Ⅲ型: 距离 < 0mm（过度气化，牙根进入窦内）
         if min_distance_mm == float('inf'):
-            # 没有有效数据
             pneumatization_type = 0
+            logger.info(f"[_calculate_pneumatization] Result: Type=0 (no valid teeth data)")
         elif min_distance_mm < 0:
-            # III型：过度气化（距离 < 0mm）
-            pneumatization_type = 3
+            pneumatization_type = 3  # III型：过度气化
+            logger.info(f"[_calculate_pneumatization] Result: Type=3 (III型过度气化), min_distance={min_distance_mm:.2f}mm")
         elif min_distance_mm <= 3:
-            # II型：显著气化（0 <= 距离 <= 3mm）
-            pneumatization_type = 2
+            pneumatization_type = 2  # II型：显著气化
+            logger.info(f"[_calculate_pneumatization] Result: Type=2 (II型显著气化), min_distance={min_distance_mm:.2f}mm")
         else:
-            # I型：正常气化（距离 > 3mm）
-            pneumatization_type = 1
+            pneumatization_type = 1  # I型：正常
+            logger.info(f"[_calculate_pneumatization] Result: Type=1 (I型正常), min_distance={min_distance_mm:.2f}mm")
 
         return pneumatization_type, root_entry_teeth, min_distance_mm
 

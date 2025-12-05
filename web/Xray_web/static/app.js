@@ -2574,11 +2574,15 @@ function drawRegionalFindings(data, stage, scale) {
                     // 有炎症：橙红色警示
                     strokeColor = '#E67E22';
                     fillColor = 'rgba(230, 126, 34, 0.30)';
-                } else if (sinusInfo.Pneumatization === 2) {
-                    // 过度气化：黄色警示
+                } else if (sinusInfo.Pneumatization === 3) {
+                    // III型过度气化：黄色警示
                     strokeColor = '#F1C40F';
                     fillColor = 'rgba(241, 196, 15, 0.25)';
-                } else if (sinusInfo.Pneumatization === 0 && sinusInfo.Inflammation === false) {
+                } else if (sinusInfo.Pneumatization === 2) {
+                    // II型显著气化：浅黄色提示
+                    strokeColor = '#F39C12';
+                    fillColor = 'rgba(243, 156, 18, 0.20)';
+                } else if (sinusInfo.Pneumatization <= 1 && sinusInfo.Inflammation === false) {
                     // 正常：绿色
                     strokeColor = '#27AE60';
                     fillColor = 'rgba(39, 174, 96, 0.25)';
@@ -2895,12 +2899,15 @@ function showSinusTooltip(node, sinusInfo, side, event) {
     let content = `<strong>${sideName}上颌窦</strong><br>`;
     
     if (sinusInfo) {
-        // 气化程度
-        let pneumatizationText = '正常';
-        if (sinusInfo.Pneumatization === 1) {
-            pneumatizationText = '轻度气化';
-        } else if (sinusInfo.Pneumatization === 2) {
-            pneumatizationText = '过度气化';
+        // 气化程度（按医学分型标准）
+        // Ⅰ型: 正常/未气化 (距离>3mm)
+        // Ⅱ型: 显著气化 (0-3mm)
+        // Ⅲ型: 过度气化 (距离<0mm，牙根进入窦内)
+        let pneumatizationText = 'Ⅰ型（正常）';
+        if (sinusInfo.Pneumatization === 2) {
+            pneumatizationText = 'Ⅱ型（显著气化）';
+        } else if (sinusInfo.Pneumatization === 3) {
+            pneumatizationText = 'Ⅲ型（过度气化）';
         }
         content += `气化程度: ${pneumatizationText}<br>`;
         
@@ -3047,9 +3054,9 @@ function buildPanoReport(data) {
         summaryItems.push(`根尖密度影: ${data.RootTipDensityAnalysis.Items.length}处`);
     }
     
-    // 上颌窦异常
+    // 上颌窦异常（炎症或III型过度气化）
     if (data.MaxillarySinus && Array.isArray(data.MaxillarySinus)) {
-        const sinusAbnormal = data.MaxillarySinus.filter(s => s.Inflammation === true || s.Pneumatization === 2);
+        const sinusAbnormal = data.MaxillarySinus.filter(s => s.Inflammation === true || s.Pneumatization === 3);
         if (sinusAbnormal.length > 0) {
             const abnormalSides = sinusAbnormal.map(s => s.Side === 'left' ? '右' : '左').join('、');
             summaryItems.push(`上颌窦异常: ${abnormalSides}侧`);
@@ -3166,8 +3173,8 @@ function buildPanoReport(data) {
             const sinusCard = document.createElement('div');
             sinusCard.className = 'sinus-card';
             
-            // 判断是否有异常（炎症或过度气化）
-            const hasAbnormal = sinus.Inflammation === true || sinus.Pneumatization === 2;
+            // 判断是否有异常（炎症或III型过度气化）
+            const hasAbnormal = sinus.Inflammation === true || sinus.Pneumatization === 3;
             if (hasAbnormal) {
                 sinusCard.classList.add('abnormal');
             }
@@ -3178,14 +3185,17 @@ function buildPanoReport(data) {
             cardHeader.innerHTML = `<strong>${sideName}上颌窦</strong>`;
             sinusCard.appendChild(cardHeader);
             
-            // 气化程度
-            let pneumatizationText = '正常';
+            // 气化程度（按医学分型标准）
+            // Ⅰ型: 正常/未气化 (距离>3mm)
+            // Ⅱ型: 显著气化 (0-3mm)
+            // Ⅲ型: 过度气化 (距离<0mm，牙根进入窦内)
+            let pneumatizationText = 'Ⅰ型（正常）';
             let pneumatizationClass = 'normal';
-            if (sinus.Pneumatization === 1) {
-                pneumatizationText = '轻度气化';
+            if (sinus.Pneumatization === 2) {
+                pneumatizationText = 'Ⅱ型（显著气化）';
                 pneumatizationClass = 'mild';
-            } else if (sinus.Pneumatization === 2) {
-                pneumatizationText = '过度气化';
+            } else if (sinus.Pneumatization === 3) {
+                pneumatizationText = 'Ⅲ型（过度气化）';
                 pneumatizationClass = 'severe';
             }
             
