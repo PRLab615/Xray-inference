@@ -692,81 +692,75 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
         跳过模型推理，重新计算所有衍生数据（对称性判断、缺牙推导、描述文本等），
         返回完整的全景片报告。
     
-    技术细节:
-        - 在 P1 中实现（不在 P2）
-        - 使用 def 而非 async def，因为报告生成是同步 CPU 密集型任务
-        - FastAPI 会自动在线程池中运行，不会阻塞事件循环
+    因果关系：
+        "因"字段（客户端传入，服务端使用）：
+        - Metadata
+        - AnatomyResults[*].SegmentationMask（髁突/下颌升支/上颌窦的多边形坐标）
+        - MaxillarySinus[*].Inflammation, TypeClassification（模型直推）
+        - ToothAnalysis[*].FDI, SegmentationMask, Properties, Confidence
+        - JointAndMandible.CondyleAssessment.*.Morphology
+        - ImplantAnalysis.Items[*].BBox, Confidence
+        - ThirdMolarSummary[*].Impactions（模型直推）
+        - PeriodontalCondition（模型直推）
+        - RootTipDensityAnalysis.Items[*]
+        
+        "果"字段（服务端重算，客户端传值将被忽略）：
+        - CondyleAssessment.OverallSymmetry（髁突对称性）
+        - RamusSymmetry, GonialAngleSymmetry（下颌升支/下颌角对称性）
+        - MaxillarySinus[*].Pneumatization, RootEntryToothFDI
+        - MissingTeeth（缺牙推导）
+        - ThirdMolarSummary[*].Level
+        - ImplantAnalysis.TotalCount, QuadrantCounts
+        - RootTipDensityAnalysis.TotalCount, QuadrantCounts
+        - 所有 Detail 字段
     
     Args:
-        request: 重算请求（对齐接口定义）
+        request: 重算请求
             - taskId: 任务唯一标识，仅用于日志追踪
             - data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
     
     Returns:
         RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
-        
-    Raises:
-        HTTPException(400): 参数验证失败
-        HTTPException(500): 报告生成失败
-    
-    工作流程（当前实现）:
-        1. 验证请求参数
-        2. 暂时直接返回 data（不做处理）
-        3. 后续实现：提取"因"字段，重新计算"果"字段
-    
-    注意:
-        - 当前暂时直接返回，因为需要所有推理模块的后处理写完才能集成
-        - 输入是推理的格式，输出返回的也是推理的格式，所以直接返回就是正确的格式
     """
+    from pipelines.pano.utils.pano_recalculate import recalculate_pano_report
+    
     logger.info(f"[Pano Recalculate] Request received: taskId={request.taskId}")
     
-    try:
-        # 1. 校验 taskId（schema 已校验 UUID 格式，这里再次确认）
-        if not request.taskId:
-            raise ValueError("taskId is required")
-        
-        # 2. 校验 data 不为空
-        if not request.data:
-            raise ValueError("data is required and cannot be empty")
-        
-        # TODO: 后续实现重算逻辑
-        # 3. 从 request.data 中提取"因"字段（基础几何数据）
-        # 4. 重新计算"果"字段（对称性判断、缺牙推导、描述文本等）
-        # 5. 返回完整的全景片报告
-        
-        # 当前实现：直接返回 data（因为输入输出格式一致）
-        logger.info(f"[Pano Recalculate] Directly returning data (recalculation logic to be implemented): taskId={request.taskId}")
-        
-        return RecalculateResponse(
-            taskId=request.taskId,
-            status="SUCCESS",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            metadata=None,  # 接口定义中 metadata 可选
-            data=request.data,  # 直接返回，格式与推理接口一致
-            error=None
-        )
-    
-    except ValueError as e:
-        # 参数验证错误，返回 400
-        logger.warning(f"[Pano Recalculate] Validation failed: {e}")
+    # 1. 校验 taskId
+    if not request.taskId:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=10001,
-                message=f"Invalid parameter: {e}",
-                detail=str(e)
+                message="Invalid parameter: taskId is required",
+                detail="taskId is required"
             ).model_dump()
         )
-    except Exception as e:
-        logger.error(f"[Pano Recalculate] Failed: {e}", exc_info=True)
+    
+    # 2. 校验 data 不为空
+    if not request.data:
         raise HTTPException(
-            status_code=500,
+            status_code=400,
             detail=ErrorResponse(
-                code=12001,
-                message="AI model execution failed",
-                detail=str(e)
+                code=10001,
+                message="Invalid parameter: data is required and cannot be empty",
+                detail="data is required and cannot be empty"
             ).model_dump()
         )
+    
+    # 3. 调用重算逻辑
+    logger.info(f"[Pano Recalculate] Starting recalculation: taskId={request.taskId}")
+    recalculated_data = recalculate_pano_report(request.data)
+    logger.info(f"[Pano Recalculate] Recalculation completed: taskId={request.taskId}")
+    
+    return RecalculateResponse(
+        taskId=request.taskId,
+        status="SUCCESS",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        metadata=None,  # 接口定义中 metadata 可选
+        data=recalculated_data,
+        error=None
+    )
 
 
 @app.post("/api/v1/measurements/ceph/recalculate", status_code=200)
