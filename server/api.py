@@ -43,6 +43,67 @@ logger = logging.getLogger(__name__)
 DEFAULT_PIXEL_SPACING_MM = 0.1
 
 
+def _resolve_pixel_spacing_for_recalculate(
+    request_pixel_spacing,
+    data_image_spacing: dict,
+    task_id: str,
+    task_type: str
+) -> dict:
+    """
+    为重算接口解析 pixel_spacing（统一处理优先级逻辑）
+    
+    优先级：请求 pixelSpacing > data.ImageSpacing > 默认值
+    
+    Args:
+        request_pixel_spacing: 请求中的 PixelSpacingInfo 对象（可能为 None）
+        data_image_spacing: data 字段中的 ImageSpacing 字典（可能为 None）
+        task_id: 任务 ID（用于日志）
+        task_type: 任务类型（"pano" 或 "ceph"，用于日志）
+    
+    Returns:
+        dict: 格式为 {"scale_x": float, "scale_y": float, "source": str}
+    """
+    # 优先级 1：请求中的 pixelSpacing
+    if request_pixel_spacing:
+        pixel_spacing = {
+            "scale_x": request_pixel_spacing.scaleX,
+            "scale_y": request_pixel_spacing.scaleY or request_pixel_spacing.scaleX,
+            "source": "request",
+        }
+        logger.info(
+            f"[{task_type.upper()} Recalculate] [PixelSpacing] Using value from request: "
+            f"X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel, "
+            f"taskId={task_id}"
+        )
+        return pixel_spacing
+    
+    # 优先级 2：data 中的 ImageSpacing
+    if data_image_spacing and data_image_spacing.get("X"):
+        pixel_spacing = {
+            "scale_x": data_image_spacing["X"],
+            "scale_y": data_image_spacing.get("Y", data_image_spacing["X"]),
+            "source": "data",
+        }
+        logger.info(
+            f"[{task_type.upper()} Recalculate] [PixelSpacing] Using value from data.ImageSpacing: "
+            f"X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel, "
+            f"taskId={task_id}"
+        )
+        return pixel_spacing
+    
+    # 优先级 3：默认值
+    pixel_spacing = {
+        "scale_x": DEFAULT_PIXEL_SPACING_MM,
+        "scale_y": DEFAULT_PIXEL_SPACING_MM,
+        "source": "default",
+    }
+    logger.info(
+        f"[{task_type.upper()} Recalculate] [PixelSpacing] No pixelSpacing in request or data, "
+        f"using default: {DEFAULT_PIXEL_SPACING_MM} mm/pixel, taskId={task_id}"
+    )
+    return pixel_spacing
+
+
 def create_app() -> FastAPI:
     """
     创建 FastAPI 应用实例
@@ -780,6 +841,7 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
         request: 重算请求
             - taskId: 任务唯一标识，仅用于日志追踪
             - data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
+            - pixelSpacing: 像素间距/比例尺（可选）
     
     Returns:
         RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
@@ -810,9 +872,17 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
             ).model_dump()
         )
     
-    # 3. 调用重算逻辑
+    # 3. 解析 pixelSpacing（优先级：请求 > data.ImageSpacing > 默认值）
+    pixel_spacing = _resolve_pixel_spacing_for_recalculate(
+        request_pixel_spacing=request.pixelSpacing,
+        data_image_spacing=request.data.get("ImageSpacing"),
+        task_id=request.taskId,
+        task_type="pano"
+    )
+    
+    # 4. 调用重算逻辑
     logger.info(f"[Pano Recalculate] Starting recalculation: taskId={request.taskId}")
-    recalculated_data = recalculate_pano_report(request.data)
+    recalculated_data = recalculate_pano_report(request.data, pixel_spacing=pixel_spacing)
     logger.info(f"[Pano Recalculate] Recalculation completed: taskId={request.taskId}")
     
     return RecalculateResponse(
@@ -850,6 +920,7 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
         request: 重算请求
             - taskId: 任务唯一标识，仅用于日志追踪
             - data: 完整的侧位片推理结果 JSON
+            - pixelSpacing: 像素间距/比例尺（可选）
     
     Returns:
         RecalculateResponse: 包含重算后的完整报告
@@ -917,11 +988,20 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
     
     logger.info(f"[Ceph Recalculate] Validation passed: taskId={request.taskId}, gender={gender}, dentalAgeStage={dental_age_stage}")
     
-    # 6. 调用重算逻辑
+    # 6. 解析 pixelSpacing（优先级：请求 > data.ImageSpacing > 默认值）
+    pixel_spacing = _resolve_pixel_spacing_for_recalculate(
+        request_pixel_spacing=request.pixelSpacing,
+        data_image_spacing=request.data.get("ImageSpacing"),
+        task_id=request.taskId,
+        task_type="ceph"
+    )
+    
+    # 7. 调用重算逻辑
     recalculated_data = recalculate_ceph_report(
         input_data=request.data,
         gender=gender,
         dental_age_stage=dental_age_stage,
+        pixel_spacing=pixel_spacing,
     )
     
     logger.info(f"[Ceph Recalculate] Recalculation completed: taskId={request.taskId}")

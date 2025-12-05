@@ -454,9 +454,13 @@ class PanoRecalculateRequest(BaseModel):
     Attributes:
         taskId: 任务唯一标识（必填，UUID v4 格式），仅用于日志追踪
         data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
+        pixelSpacing: 像素间距/比例尺（可选）
+            - 优先级：请求 pixelSpacing > data.ImageSpacing > 默认值
+            - 如果需要覆盖 data 中的 ImageSpacing，可通过此字段传入
     """
     taskId: str
     data: Dict[str, Any]
+    pixelSpacing: Optional[PixelSpacingInfo] = None
     
     @field_validator('taskId')
     @classmethod
@@ -483,10 +487,14 @@ class CephRecalculateRequest(BaseModel):
         patientInfo: 患者信息（侧位片必填）
             - gender: 性别（Male/Female）
             - DentalAgeStage: 牙期（Permanent/Mixed）
+        pixelSpacing: 像素间距/比例尺（可选）
+            - 优先级：请求 pixelSpacing > data.ImageSpacing > 默认值
+            - 如果需要覆盖 data 中的 ImageSpacing，可通过此字段传入
     """
     taskId: str
     data: Dict[str, Any]
     patientInfo: PatientInfo  # 侧位片必填，直接设为必填字段
+    pixelSpacing: Optional[PixelSpacingInfo] = None
     
     @field_validator('taskId')
     @classmethod
