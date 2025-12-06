@@ -1581,7 +1581,7 @@ function createMeasurementItem(measurement) {
     if (measurement.Angle != null) {
         valueText = `${measurement.Angle.toFixed(2)}°`;
     } else if (measurement.U1_SN_Angle != null) {
-        // UI_SN_Angle 的特殊字段名
+        // U1_SN_Angle 的特殊字段名
         valueText = `${measurement.U1_SN_Angle.toFixed(2)}°`;
     } else if (measurement.Length_mm != null) {
         valueText = `${measurement.Length_mm.toFixed(2)} mm`;
@@ -1763,10 +1763,10 @@ function getMeasurementConclusion(label, level) {
             if (level === 2) return '低角（<25°）';
         }
         
-        // ⑧⑱ 上切牙-SN角: 0=正常; 1=唇倾; 2=舌倾
+        // ⑧ 上切牙-SN角: 0=正常; 1=唇倾; 2=舌倾
         // 注意：阈值因性别和牙期而异（男性恒牙期 107±6°，女性恒牙期 105±6°）
         // 简化显示：不写具体数值，避免与实际阈值不符
-        if (label === 'UI_SN_Angle' || label === 'U1_SN_Angle_Repeat') {
+        if (label === 'U1_SN_Angle') {
             if (level === 0) return '正常';
             if (level === 1) return '唇倾（数值偏大）';
             if (level === 2) return '舌倾（数值偏小）';
@@ -1867,9 +1867,8 @@ function getMeasurementConclusion(label, level) {
             if (level === 2) return '减小（<62.8mm）';
         }
         
-        // ⑩㉛㉜㉝㉞ 牙槽高度: 0=正常; 1=过大; 2=不足
-        if (label === 'Upper_Anterior_Alveolar_Height' || 
-            label === 'U1_PP_Upper_Anterior_Alveolar_Height' ||
+        // ㉛㉜㉝㉞ 牙槽高度: 0=正常; 1=过大; 2=不足
+        if (label === 'U1_PP_Upper_Anterior_Alveolar_Height' ||
             label === 'L1_MP_Lower_Anterior_Alveolar_Height' ||
             label === 'U6_PP_Upper_Posterior_Alveolar_Height' ||
             label === 'L6_MP_Lower_Posterior_Alveolar_Height') {
@@ -1934,13 +1933,9 @@ function isBoneMeasurement(label) {
 function isToothMeasurement(label) {
     const toothLabels = [
         // ⑧ 上切牙-SN角
-        'UI_SN_Angle',
+        'U1_SN_Angle',
         // ⑨ 下切牙-下颌平面角
         'IMPA_Angle',
-        // ⑩ 上前牙槽高度
-        'Upper_Anterior_Alveolar_Height',
-        // ⑱ 上切牙-SN角(重复)
-        'U1_SN_Angle_Repeat',
         // ⑲ 上切牙-NA角
         'U1_NA_Angle',
         // ⑳ 上切牙突度
@@ -1953,7 +1948,7 @@ function isToothMeasurement(label) {
         'L1_NB_Distance',
         // ㉕ 上下切牙角
         'U1_L1_Inter_Incisor_Angle',
-        // ㉛ 上前牙槽高度(重复)
+        // ㉛ 上前牙槽高度
         'U1_PP_Upper_Anterior_Alveolar_Height',
         // ㉜ 下前牙槽高度
         'L1_MP_Lower_Anterior_Alveolar_Height',

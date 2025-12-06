@@ -60,9 +60,7 @@ MEASUREMENT_ORDER = [
     "Jaw_Development_Coordination",
     "SGo_NMe_Ratio",
     "FH_MP_Angle",
-    "UI_SN_Angle",
     "IMPA_Angle",
-    "Upper_Anterior_Alveolar_Height",
     "Airway_Gap",                    # 可选
     "Adenoid_Index",                 # 可选
     "SNA_Angle",
@@ -70,7 +68,7 @@ MEASUREMENT_ORDER = [
     "SNB_Angle",
     "Pcd_Lower_Position",
     "Distance_Witsmm",
-    "U1_SN_Angle_Repeat",
+    "U1_SN_Angle",
     "U1_NA_Angle",
     "U1_NA_Incisor_Length",
     "FMIA_Angle",

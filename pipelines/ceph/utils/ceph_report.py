@@ -92,7 +92,7 @@ THRESHOLDS = {
         "male": {"mixed": (28.0, 4.0), "permanent": (29.0, 4.0)},
         "female": {"mixed": (30.0, 4.0), "permanent": (28.0, 4.0)},
     },
-    "UI_SN_Angle": {
+    "U1_SN_Angle": {
         "male": {"mixed": (107.0, 5.0), "permanent": (107.0, 6.0)},
         "female": {"mixed": (106.0, 6.0), "permanent": (105.0, 6.0)},
     },
@@ -124,7 +124,7 @@ THRESHOLDS = {
         "male": {"mixed": (35.0, 4.0), "permanent": (35.0, 4.0)},
         "female": {"mixed": (35.0, 4.0), "permanent": (33.0, 4.0)},
     },
-    "Upper_Anterior_Alveolar_Height": {  # U1-PP
+    "U1_PP_Upper_Anterior_Alveolar_Height": {  # U1-PP
         "male": {"mixed": (27.0, 2.0), "permanent": (28.0, 3.0)},
         "female": {"mixed": (26.0, 2.0), "permanent": (28.0, 2.0)},
     },
@@ -234,14 +234,13 @@ def calculate_measurements(
     measurements["FH_MP_Angle"] = _compute_fh_mp(landmarks, sex=sex, dentition=dentition)
     measurements["SNA_Angle"] = _compute_sna(landmarks, sex=sex, dentition=dentition)
     measurements["SNB_Angle"] = _compute_snb(landmarks, sex=sex, dentition=dentition)
-    measurements["UI_SN_Angle"] = _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
     measurements["IMPA_Angle"] = _compute_impa(landmarks, sex=sex, dentition=dentition)
     measurements["U1_NA_Angle"] = _compute_u1_na_angle(landmarks, sex=sex, dentition=dentition)
     measurements["FMIA_Angle"] = _compute_fmia(landmarks, sex=sex, dentition=dentition)
     measurements["L1_NB_Angle"] = _compute_l1_nb_angle(landmarks, sex=sex, dentition=dentition)
     measurements["U1_L1_Inter_Incisor_Angle"] = _compute_interincisor_angle(landmarks, sex=sex, dentition=dentition)
     measurements["Mandibular_Growth_Angle"] = _compute_face_axis(landmarks, sex=sex, dentition=dentition)
-    measurements["U1_SN_Angle_Repeat"] = _compute_u1_sn_repeat(landmarks, sex=sex, dentition=dentition)
+    measurements["U1_SN_Angle"] = _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
     measurements["Y_Axis_Angle"] = _compute_y_axis_angle(landmarks, sex=sex, dentition=dentition)
     measurements["SN_MP_Angle"] = _compute_sn_mp_angle(landmarks, sex=sex, dentition=dentition)
     measurements["Mandibular_Growth_Type_Angle"] = _compute_mandibular_growth_type_angle(landmarks, sex=sex, dentition=dentition)
@@ -260,8 +259,7 @@ def calculate_measurements(
     measurements["L1_NB_Distance"] = _compute_l1_nb_mm(landmarks, sex=sex, dentition=dentition, spacing=spacing)
     measurements["S_N_Anterior_Cranial_Base_Length"] = _compute_s_n_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
     measurements["Go_Me_Length"] = _compute_go_me_length(landmarks, sex=sex, dentition=dentition, spacing=spacing)
-    measurements["Upper_Anterior_Alveolar_Height"] = _compute_u1_pp(landmarks, sex=sex, dentition=dentition, spacing=spacing)
-    measurements["U1_PP_Upper_Anterior_Alveolar_Height"] = _compute_u1_pp_repeat(landmarks, sex=sex, dentition=dentition, spacing=spacing)
+    measurements["U1_PP_Upper_Anterior_Alveolar_Height"] = _compute_u1_pp(landmarks, sex=sex, dentition=dentition, spacing=spacing)
     measurements["L1_MP_Lower_Anterior_Alveolar_Height"] = _compute_l1_mp_height(landmarks, sex=sex, dentition=dentition, spacing=spacing)
     measurements["U6_PP_Upper_Posterior_Alveolar_Height"] = _compute_u6_pp_height(landmarks, sex=sex, dentition=dentition, spacing=spacing)
     measurements["L6_MP_Lower_Posterior_Alveolar_Height"] = _compute_l6_mp_height(landmarks, sex=sex, dentition=dentition, spacing=spacing)
@@ -505,10 +503,10 @@ def _compute_u1_sn(landmarks, sex: str = "male", dentition: str = "permanent"):
     if angle < 90:
         angle = 180 - angle
     
-    level = _evaluate_by_threshold("UI_SN_Angle", angle, sex, dentition)
+    level = _evaluate_by_threshold("U1_SN_Angle", angle, sex, dentition)
     
-    # 调试日志：记录 UI_SN_Angle 计算结果（用于排查标红问题）
-    logger.info(f"[UI_SN_Angle] 角度: {angle:.2f}°, Level: {level}, 性别: {sex}, 牙期: {dentition}")
+    # 调试日志：记录 U1_SN_Angle 计算结果（用于排查标红问题）
+    logger.info(f"[U1_SN_Angle] 角度: {angle:.2f}°, Level: {level}, 性别: {sex}, 牙期: {dentition}")
     
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
@@ -550,7 +548,7 @@ def _compute_u1_pp(landmarks, sex: str = "male", dentition: str = "permanent", s
 
     dist_px = _safe_cross_distance(pp, u1, ans)
     dist_mm = dist_px * spacing  # 像素转毫米
-    level = _evaluate_by_threshold("Upper_Anterior_Alveolar_Height", dist_mm, sex, dentition)
+    level = _evaluate_by_threshold("U1_PP_Upper_Anterior_Alveolar_Height", dist_mm, sex, dentition)
     return {"value": float(dist_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_u1_na_angle(landmarks, sex: str = "male", dentition: str = "permanent"):
@@ -724,9 +722,6 @@ def _compute_jaw_coordination(measurements):
     lower = measurements.get("SNB_Angle", {}).get("conclusion", 0)
     return {"value": [upper, lower], "unit": "multi", "conclusion": [upper, lower], "status": "ok"}
 
-def _compute_u1_sn_repeat(landmarks, sex: str = "male", dentition: str = "permanent"):
-    """第18项：U1-SN角度重复测量（与UI_SN_Angle完全相同，复用 _compute_u1_sn）"""
-    return _compute_u1_sn(landmarks, sex=sex, dentition=dentition)
 
 def _compute_sn_fh_angle(landmarks):
     """
@@ -786,9 +781,6 @@ def _compute_sn_mp_angle(landmarks, sex: str = "male", dentition: str = "permane
     level = _evaluate_by_threshold("SN_MP_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_u1_pp_repeat(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
-    """第31项：上前牙槽高度重复测量（与Upper_Anterior_Alveolar_Height完全相同）"""
-    return _compute_u1_pp(landmarks, sex=sex, dentition=dentition, spacing=spacing)
 
 def _compute_l1_mp_height(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """第33项：下前牙槽高度 L1切缘到下颌平面（Go-Me）的垂直距离"""
