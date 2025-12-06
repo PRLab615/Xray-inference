@@ -887,3 +887,130 @@ h2 {
     margin-right: 6px;
     color: #bdc3c7;
 }
+
+/* ============================================
+   标签页切换样式
+   ============================================ */
+
+.tab-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #7f8c8d;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+    color: #3498db;
+    background: #f8f9fa;
+}
+
+.tab-btn.active {
+    color: #3498db;
+    border-bottom-color: #3498db;
+    font-weight: 600;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* ============================================
+   比例尺输入字段样式
+   ============================================ */
+
+.pixel-spacing-fields {
+    display: flex;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.pixel-spacing-fields .field-item {
+    flex: 1;
+}
+
+.pixel-spacing-fields input[type="number"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+}
+
+.pixel-spacing-fields input[type="number"]:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+/* ============================================
+   手动可视化样式
+   ============================================ */
+
+#manualJsonText {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: 'Courier New', monospace;
+    resize: vertical;
+    min-height: 200px;
+    transition: border-color 0.3s;
+}
+
+#manualJsonText:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+#manualJsonText::placeholder {
+    color: #bdc3c7;
+}
+
+/* ============================================
+   成功提示弹窗样式
+   ============================================ */
+
+.success-toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #27AE60;
+    color: white;
+    padding: 20px 40px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.success-toast.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.success-toast:not(.show) {
+    transform: translate(-50%, -50%) scale(0.9);
+}

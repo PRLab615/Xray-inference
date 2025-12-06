@@ -169,15 +169,16 @@ class CephPipeline(BasePipeline):
         )
 
         #1
-        print("\n=== [1] Point 模块推理原始输出 (inference_results) ===")
-        pprint.pprint(inference_results, width=120, depth=5)
-        # 如果你只关心关键点坐标和测量值，也可以单独打印：
-        if isinstance(inference_results, dict):
-            print("\n>>> 关键点坐标 (landmarks):")
-            pprint.pprint(inference_results.get("landmarks") or inference_results.get("points"), width=120)
-            print("\n>>> 测量值 (measurements):")
-            pprint.pprint(inference_results.get("measurements"), width=120)
-        print("=" * 60)
+        # 注释掉调试打印，避免刷屏
+        # print("\n=== [1] Point 模块推理原始输出 (inference_results) ===")
+        # pprint.pprint(inference_results, width=120, depth=5)
+        # # 如果你只关心关键点坐标和测量值，也可以单独打印：
+        # if isinstance(inference_results, dict):
+        #     print("\n>>> 关键点坐标 (landmarks):")
+        #     pprint.pprint(inference_results.get("landmarks") or inference_results.get("points"), width=120)
+        #     print("\n>>> 测量值 (measurements):")
+        #     pprint.pprint(inference_results.get("measurements"), width=120)
+        # print("=" * 60)
 
 
         # 报告生成埋点（spacing 已在 inference_results 中）

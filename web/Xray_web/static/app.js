@@ -29,7 +29,8 @@ const appState = {
     konvaLayers: {},           // 图层对象集合
     originalImage: null,       // 原始图片对象
     imageScale: 1.0,           // 图片缩放比例
-    layerVisibility: {}        // 图层显示状态 {layerKey: true/false}
+    layerVisibility: {},       // 图层显示状态 {layerKey: true/false}
+    currentFile: null          // 当前选择的文件对象
 };
 
 // 动态获取当前主机名，支持在任意 IP 的机器上运行
@@ -43,7 +44,8 @@ const CONFIG = {
     FLASK_UPLOAD_URL: `http://${CURRENT_HOST}:5000/upload`,  // Flask 服务器上传接口
     CALLBACK_URL: `http://${CURRENT_HOST}:5000/callback`,
     POLL_INTERVAL: 3000,       // 3秒
-    POLL_TIMEOUT: 360000       // 6分钟
+    POLL_TIMEOUT: 360000,      // 6分钟
+    STROKE_WIDTH: 0.7            // 统一线条宽度（像素）
 };
 
 // 页面加载完成后初始化
@@ -65,6 +67,18 @@ function init() {
     
     // 绑定提交按钮
     document.getElementById('submitBtn').addEventListener('click', onSubmit);
+    
+    // 绑定标签页切换
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const tabName = this.getAttribute('data-tab');
+            switchTab(tabName);
+        });
+    });
+    
+    // 绑定手动可视化按钮
+    document.getElementById('manualVisualizeBtn').addEventListener('click', onManualVisualize);
     
     // 步骤14：设置窗口大小变化处理
     setupWindowResizeHandler();
@@ -89,15 +103,8 @@ function onTaskTypeOrFileChange() {
     const patientInfoSection = document.getElementById('patientInfoSection');
     const submitBtn = document.getElementById('submitBtn');
     
-    // 检测是否是文件变化（重新选择文件）
-    // 如果用户在任何状态下重新选择文件，触发重置（步骤8实现）
-    // if (fileInput.files.length > 0) {
-    //     if (appState.currentTaskId || appState.pollingTimer) {
-    //         console.log('检测到文件变化，重置 UI');
-    //         resetUI();
-    //         return;
-    //     }
-    // }
+    // 保存当前文件到 appState
+    appState.currentFile = file || null;
     
     // 判断是否需要显示患者信息表单
     let shouldShowPatientInfo = false;
@@ -170,6 +177,225 @@ function hideLoading() {
     document.getElementById('loadingIndicator').classList.add('hidden');
 }
 
+/**
+ * 显示成功提示消息
+ * @param {string} message - 提示消息
+ * @param {number} duration - 显示时长（毫秒），默认 3000
+ */
+function showSuccessMessage(message, duration = 3000) {
+    // 创建提示元素
+    const toast = document.createElement('div');
+    toast.className = 'success-toast';
+    toast.textContent = message;
+    
+    // 添加到页面
+    document.body.appendChild(toast);
+    
+    // 触发动画
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    // 自动隐藏
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 300); // 等待动画完成
+    }, duration);
+}
+
+// ============================================
+// 标签页切换和手动可视化功能
+// ============================================
+
+/**
+ * 标签页切换函数
+ * @param {string} tabName - 标签页名称 ('analysis' 或 'manual')
+ */
+function switchTab(tabName) {
+    // 隐藏所有标签页内容
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    
+    // 移除所有标签按钮的 active 状态
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // 显示选中的标签页内容
+    const targetContent = document.getElementById(`tab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`);
+    if (targetContent) {
+        targetContent.classList.add('active');
+    }
+    
+    // 激活对应的标签按钮
+    const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+    if (targetBtn) {
+        targetBtn.classList.add('active');
+    }
+    
+    // 如果切换到手动可视化标签页，清空之前的结果
+    if (tabName === 'manual') {
+        clearCanvas();
+        clearReport();
+        const mainContainer = document.getElementById('mainContainer');
+        if (mainContainer) {
+            mainContainer.classList.add('hidden');
+        }
+    }
+}
+
+/**
+ * 手动可视化处理函数
+ */
+async function onManualVisualize() {
+    const imageFile = document.getElementById('manualImageFile').files[0];
+    const jsonFile = document.getElementById('manualJsonFile').files[0];
+    const jsonText = document.getElementById('manualJsonText').value.trim();
+    
+    // 校验：必须选择图片
+    if (!imageFile) {
+        alert('请先选择图片文件');
+        return;
+    }
+    
+    // 校验：必须提供 JSON（文件或文本）
+    let resultJson = null;
+    if (jsonFile) {
+        try {
+            const text = await jsonFile.text();
+            resultJson = JSON.parse(text);
+        } catch (error) {
+            alert('JSON 文件解析失败：' + error.message);
+            return;
+        }
+    } else if (jsonText) {
+        try {
+            resultJson = JSON.parse(jsonText);
+        } catch (error) {
+            alert('JSON 文本解析失败：' + error.message);
+            return;
+        }
+    } else {
+        alert('请选择 JSON 文件或粘贴 JSON 文本');
+        return;
+    }
+    
+    // 智能处理 JSON 格式：支持完整格式或仅 data 字段
+    if (!resultJson) {
+        alert('JSON 格式错误：无法解析');
+        return;
+    }
+    
+    // 如果输入的是完整的响应格式（包含 data 字段），直接使用
+    if (resultJson.data) {
+        // 已经是完整格式，无需处理
+    } else {
+        // 如果输入的是 data 字段的内容，包装成完整格式
+        console.log('检测到仅 data 字段内容，自动包装为完整格式');
+        resultJson = {
+            taskId: resultJson.taskId || 'manual-' + Date.now(),
+            status: resultJson.status || 'SUCCESS',
+            timestamp: resultJson.timestamp || new Date().toISOString(),
+            metadata: resultJson.metadata || {},
+            data: resultJson, // 将整个输入作为 data 字段
+            error: resultJson.error || null
+        };
+    }
+    
+    // 最终校验：确保有 data 字段
+    if (!resultJson.data) {
+        alert('JSON 格式错误：无法识别 data 字段');
+        return;
+    }
+    
+    // 禁用按钮
+    const btn = document.getElementById('manualVisualizeBtn');
+    btn.disabled = true;
+    
+    try {
+        // 显示加载中
+        showLoading();
+        
+        // 加载图片
+        const img = new Image();
+        img.onerror = function() {
+            hideLoading();
+            alert('图片加载失败');
+            btn.disabled = false;
+        };
+        
+        img.onload = async function() {
+            try {
+                // 从 JSON 中提取任务类型（如果有）
+                let taskType = null;
+                if (resultJson.requestParameters && resultJson.requestParameters.taskType) {
+                    taskType = resultJson.requestParameters.taskType;
+                } else if (resultJson.data) {
+                    // 尝试从数据结构推断任务类型
+                    if (resultJson.data.ToothAnalysis || resultJson.data.JointAndMandible) {
+                        taskType = 'panoramic';
+                    } else if (resultJson.data.CephalometricMeasurements || resultJson.data.LandmarkPositions) {
+                        taskType = 'cephalometric';
+                    } else if (resultJson.data.dentalAgeStage) {
+                        taskType = 'dental_age_stage';
+                    }
+                }
+                
+                if (!taskType) {
+                    alert('无法从 JSON 中识别任务类型，请确保 JSON 格式正确');
+                    hideLoading();
+                    btn.disabled = false;
+                    return;
+                }
+                
+                // 设置任务类型和结果
+                appState.currentTaskType = taskType;
+                appState.currentTaskId = resultJson.taskId || 'manual-' + Date.now();
+                
+                // 构建结果对象（兼容 displayResult 函数）
+                const resultData = {
+                    taskId: resultJson.taskId || appState.currentTaskId,
+                    status: resultJson.status || 'SUCCESS',
+                    timestamp: resultJson.timestamp || new Date().toISOString(),
+                    metadata: resultJson.metadata || {},
+                    data: resultJson.data,
+                    error: resultJson.error || null
+                };
+                
+                // 临时设置图片文件到 imageFile，以便渲染函数可以访问
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(imageFile);
+                document.getElementById('imageFile').files = dataTransfer.files;
+                
+                // 显示结果
+                displayResult(resultData);
+                
+                // 显示成功提示
+                showSuccessMessage('可视化成功！');
+                
+            } catch (error) {
+                console.error('手动可视化错误:', error);
+                alert('可视化失败：' + error.message);
+                hideLoading();
+            } finally {
+                btn.disabled = false;
+            }
+        };
+        
+        img.src = URL.createObjectURL(imageFile);
+        
+    } catch (error) {
+        hideLoading();
+        console.error('手动可视化错误:', error);
+        alert('处理失败：' + error.message);
+        btn.disabled = false;
+    }
+}
+
+
 // ============================================
 // 步骤5：Konva Stage 初始化和工具函数
 // ============================================
@@ -226,6 +452,129 @@ function scaleCoordinates(x, y, scale) {
         x: x * scale,
         y: y * scale
     };
+}
+
+/**
+ * 计算两点距离平方
+ */
+function getSqDist(p1, p2) {
+    var dx = p1.x - p2.x,
+        dy = p1.y - p2.y;
+    return dx * dx + dy * dy;
+}
+
+/**
+ * 计算点到线段的垂直距离平方
+ */
+function getSqSegDist(p, p1, p2) {
+    var x = p1.x,
+        y = p1.y,
+        dx = p2.x - x,
+        dy = p2.y - y;
+
+    if (dx !== 0 || dy !== 0) {
+        var t = ((p.x - x) * dx + (p.y - y) * dy) / (dx * dx + dy * dy);
+        if (t > 1) {
+            x = p2.x;
+            y = p2.y;
+        } else if (t > 0) {
+            x += dx * t;
+            y += dy * t;
+        }
+    }
+
+    dx = p.x - x;
+    dy = p.y - y;
+
+    return dx * dx + dy * dy;
+}
+
+/**
+ * 简化点集 (Ramer-Douglas-Peucker 算法)
+ * @param {Array} points - [{x,y}, {x,y}...] 或 [x,y,x,y...]
+ * @param {Number} tolerance - 容差 (像素单位，例如 1.5 ~ 2.5)
+ * @param {Boolean} isFlat - 输入是否为扁平数组 [x,y,x,y...]
+ * @return {Array} 简化后的数组
+ */
+function simplifyPoints(points, tolerance = 1, isFlat = true) {
+    if (points.length <= 2) return points;
+
+    // 1. 统一格式转换为对象数组 [{x,y}...]
+    let srcPoints = [];
+    if (isFlat) {
+        for (let i = 0; i < points.length; i += 2) {
+            srcPoints.push({ x: points[i], y: points[i + 1] });
+        }
+    } else {
+        srcPoints = points;
+    }
+
+    // RDP 核心逻辑
+    const sqTolerance = tolerance * tolerance;
+    
+    function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+        var maxSqDist = sqTolerance,
+            index = first;
+
+        for (var i = first + 1; i < last; i++) {
+            var sqDist = getSqSegDist(points[i], points[first], points[last]);
+            if (sqDist > maxSqDist) {
+                index = i;
+                maxSqDist = sqDist;
+            }
+        }
+
+        if (maxSqDist > sqTolerance) {
+            if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+            simplified.push(points[index]);
+            if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+        }
+    }
+
+    var simplified = [srcPoints[0]];
+    simplifyDPStep(srcPoints, 0, srcPoints.length - 1, sqTolerance, simplified);
+    simplified.push(srcPoints[srcPoints.length - 1]);
+
+    // 2. 转回扁平数组 [x,y,x,y...] 以供 Konva 使用
+    if (isFlat) {
+        const res = [];
+        for (let i = 0; i < simplified.length; i++) {
+            res.push(simplified[i].x, simplified[i].y);
+        }
+        return res;
+    }
+    return simplified;
+}
+
+/**
+ * 滑动平均平滑 (去除突兀的毛刺)
+ * @param {Array} points - 扁平数组 [x,y, x,y, ...]
+ * @param {Number} windowSize - 窗口大小 (奇数，建议 3 或 5)。值越大越平滑，但细节丢失越多。
+ * @return {Array} 平滑后的数组
+ */
+function movingAverageSmooth(points, windowSize = 3) {
+    if (points.length < 6) return points; // 点太少不处理
+    
+    const len = points.length / 2; // 点的数量
+    const res = [];
+    const offset = Math.floor(windowSize / 2);
+
+    for (let i = 0; i < len; i++) {
+        let sumX = 0;
+        let sumY = 0;
+
+        // 计算窗口内的平均值
+        for (let j = -offset; j <= offset; j++) {
+            // 处理闭合轮廓的索引越界 (循环取点)
+            let idx = (i + j + len) % len; 
+            sumX += points[idx * 2];
+            sumY += points[idx * 2 + 1];
+        }
+
+        res.push(sumX / windowSize, sumY / windowSize);
+    }
+
+    return res;
 }
 
 // 平滑折线：Chaikin 算法（支持闭合多边形）
@@ -311,10 +660,12 @@ function normalizeMaskPolygons(coords, scale) {
 /**
  * 处理任务提交（v3 JSON 协议）
  * 功能：
- * 1. 先上传图片到 Flask Web 服务器，获取 imageUrl
+ * 1. 先上传文件到 Flask Web 服务器，获取 URL
  * 2. 生成 UUID 作为 taskId
- * 3. 构建 JSON 请求体，包含 taskId, taskType, imageUrl, callbackUrl
- * 4. 如果需要患者信息，添加 patientInfo 字段
+ * 3. 构建 JSON 请求体：
+ *    - 图片文件：使用 imageUrl 字段
+ *    - DICOM 文件：使用 dicomUrl 字段（后端从 DICOM 解析患者信息）
+ * 4. 如果是图片且需要患者信息，添加 patientInfo 字段
  * 5. 发送 POST 请求到 AI 后端（JSON 格式）
  * 6. 处理响应：202 成功、4xx 错误、网络错误
  */
@@ -336,9 +687,11 @@ async function onSubmit() {
     const syncMode = document.querySelector('input[name="syncMode"]:checked').value;
     const isSync = syncMode === 'sync';
     
+    console.log('文件类型: 图片');
+    
     try {
-        // 步骤1：先上传图片到 Flask Web 服务器，获取 imageUrl
-        console.log('步骤1：上传图片到 Flask Web 服务器...');
+        // 步骤1：先上传文件到 Flask Web 服务器，获取 URL
+        console.log('步骤1：上传文件到 Flask Web 服务器...');
         const uploadFormData = new FormData();
         uploadFormData.append('file', file);
         
@@ -349,16 +702,16 @@ async function onSubmit() {
         
         if (!uploadResponse.ok) {
             const errorData = await uploadResponse.json();
-            const errorMsg = errorData.error || '图片上传失败';
+            const errorMsg = errorData.error || '文件上传失败';
             alert('错误：' + errorMsg);
-            console.error('图片上传失败:', errorData);
+            console.error('文件上传失败:', errorData);
             submitBtn.disabled = false;
             return;
         }
         
         const uploadResult = await uploadResponse.json();
-        const imageUrl = uploadResult.imageUrl;
-        console.log('图片上传成功，URL:', imageUrl);
+        const fileUrl = uploadResult.imageUrl;
+        console.log('文件上传成功，URL:', fileUrl);
         
         // 步骤2：生成 taskId (UUID v4)
         const taskId = generateUUID();
@@ -368,16 +721,13 @@ async function onSubmit() {
         const taskType = document.getElementById('taskType').value;
         const requestBody = {
             taskId: taskId,
-            taskType: taskType,
-            imageUrl: imageUrl
+            taskType: taskType
         };
         
-        // 如果是异步模式，添加 callbackUrl
-        if (!isSync) {
-            requestBody.callbackUrl = CONFIG.CALLBACK_URL;
-        }
+        // 图片文件：使用 imageUrl
+        requestBody.imageUrl = fileUrl;
         
-        // 如果患者信息表单显示，添加 patientInfo 字段
+        // 如果患者信息表单显示（侧位片图片），添加 patientInfo 字段
         const patientInfoSection = document.getElementById('patientInfoSection');
         if (!patientInfoSection.classList.contains('hidden')) {
             requestBody.patientInfo = {
@@ -385,6 +735,22 @@ async function onSubmit() {
                 DentalAgeStage: document.getElementById('dentalStage').value
             };
             console.log('患者信息:', requestBody.patientInfo);
+        }
+        
+        // 添加比例尺信息（如果用户填写了）
+        const pixelSpacingX = document.getElementById('pixelSpacingX').value;
+        const pixelSpacingY = document.getElementById('pixelSpacingY').value;
+        if (pixelSpacingX || pixelSpacingY) {
+            requestBody.pixelSpacing = {
+                scaleX: pixelSpacingX ? parseFloat(pixelSpacingX) : 0.1,
+                scaleY: pixelSpacingY ? parseFloat(pixelSpacingY) : 0.1
+            };
+            console.log('比例尺信息:', requestBody.pixelSpacing);
+        }
+        
+        // 如果是异步模式，添加 callbackUrl
+        if (!isSync) {
+            requestBody.callbackUrl = CONFIG.CALLBACK_URL;
         }
         
         // 步骤4：发送 JSON 请求到 AI 后端
@@ -853,10 +1219,10 @@ const LANDMARK_FULL_NAMES = {
 };
 
 /**
- * 渲染侧位片结果
+ * 渲染侧位片结果（支持图片和 DICOM）
  * @param {Object} data - 侧位片分析数据
  */
-function renderCephalometric(data) {
+async function renderCephalometric(data) {
     console.log('开始渲染侧位片结果...', data);
     
     // 先显示主容器和报告区域（即使图片还没加载）
@@ -865,118 +1231,98 @@ function renderCephalometric(data) {
         mainContainer.classList.remove('hidden');
     }
     
-        // 生成结构化报告
-        buildCephReport(data);
+    // 生成结构化报告
+    buildCephReport(data);
     
-    // 1. 获取用户上传的图片文件
-    const imageFile = document.getElementById('imageFile').files[0];
-    if (!imageFile) {
-        console.error('未找到图片文件');
-        displayError({ displayMessage: '未找到上传的图片文件' });
+    // 1. 获取用户上传的文件
+    const file = document.getElementById('imageFile').files[0];
+    if (!file) {
+        console.error('未找到文件');
+        displayError({ displayMessage: '未找到上传的文件' });
         return;
     }
     
-    console.log('找到图片文件:', imageFile.name, '大小:', imageFile.size);
+    console.log('找到文件:', file.name, '大小:', file.size);
     
-    // 2. 创建图片对象并加载
-    const img = new Image();
+    // 2. 使用统一的图像加载函数（支持图片和 DICOM）
+    let img;
+    try {
+        // 直接加载图片
+        img = await new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = reject;
+            image.src = URL.createObjectURL(file);
+        });
+    } catch (error) {
+        console.error('文件加载失败:', error);
+        displayError({ displayMessage: '文件加载失败: ' + error.message });
+        return;
+    }
     
-    img.onerror = function() {
-        console.error('图片加载失败');
-        displayError({ displayMessage: '图片加载失败，请检查文件格式' });
-    };
+    console.log('图像加载成功，尺寸:', img.width, 'x', img.height);
     
-    img.onload = function() {
-        console.log('图片加载成功，尺寸:', img.width, 'x', img.height);
-        
-        // 获取容器尺寸，计算缩放比例以适应容器
-        const container = document.getElementById('imageContainer');
-        if (!container) {
-            console.error('图像容器不存在');
-            return;
-        }
-        
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        
-        console.log('容器尺寸:', containerWidth, 'x', containerHeight);
-        
-        if (containerWidth === 0 || containerHeight === 0) {
-            console.warn('容器尺寸为0，使用图片原始尺寸');
-            // 如果容器尺寸为0，使用图片原始尺寸
-            const stage = initKonvaStage('imageContainer', img.width, img.height);
-            if (!stage) {
-                console.error('Konva Stage 初始化失败');
-                return;
-            }
-            
-            const bgLayer = new Konva.Layer();
-            const bgImage = new Konva.Image({
-                x: 0,
-                y: 0,
-                image: img,
-                width: img.width,
-                height: img.height
-            });
-            bgLayer.add(bgImage);
-            stage.add(bgLayer);
-            appState.konvaLayers.background = bgLayer;
-            
-            // 绘制关键点（不缩放）
-            drawLandmarks(data, stage, 1.0);
-            
-            stage.draw();
-            return;
-        }
-        
-        // 计算缩放比例，保持宽高比
+    // 3. 获取容器尺寸，计算缩放比例以适应容器
+    const container = document.getElementById('imageContainer');
+    if (!container) {
+        console.error('图像容器不存在');
+        return;
+    }
+    
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    
+    console.log('容器尺寸:', containerWidth, 'x', containerHeight);
+    
+    // 计算缩放比例
+    let scale = 1.0;
+    let displayWidth = img.width;
+    let displayHeight = img.height;
+    
+    if (containerWidth > 0 && containerHeight > 0) {
         const scaleX = containerWidth / img.width;
         const scaleY = containerHeight / img.height;
-        const scale = Math.min(scaleX, scaleY, 1.0); // 不放大，只缩小
-        
-        const displayWidth = img.width * scale;
-        const displayHeight = img.height * scale;
-        
-        console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
-        
-        // 保存缩放比例
-        appState.imageScale = scale;
-        appState.originalImage = img;
-        
-        // 3. 初始化 Konva Stage（使用显示尺寸）
-        const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
-        if (!stage) {
-            console.error('Konva Stage 初始化失败');
-            return;
-        }
-        
-        // 4. 创建背景图层并添加图片
-        const bgLayer = new Konva.Layer();
-        const bgImage = new Konva.Image({
-            x: 0,
-            y: 0,
-            image: img,
-            width: displayWidth,
-            height: displayHeight
-        });
-        bgLayer.add(bgImage);
-        stage.add(bgLayer);
-        appState.konvaLayers.background = bgLayer;
-        
-        // 5. 绘制关键点
-        drawLandmarks(data, stage, scale);
-        
-        // 绘制画布
-        stage.draw();
-        
-        // 6. 初始化图层控制面板
-        initLayerControlPanel();
-        
-        console.log('侧位片渲染完成');
-    };
+        scale = Math.min(scaleX, scaleY, 1.0); // 不放大，只缩小
+        displayWidth = img.width * scale;
+        displayHeight = img.height * scale;
+    }
     
-    // 开始加载图片
-    img.src = URL.createObjectURL(imageFile);
+    console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
+    
+    // 保存缩放比例
+    appState.imageScale = scale;
+    appState.originalImage = img;
+    
+    // 4. 初始化 Konva Stage
+    const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
+    if (!stage) {
+        console.error('Konva Stage 初始化失败');
+        return;
+    }
+    
+    // 5. 创建背景图层并添加图片
+    const bgLayer = new Konva.Layer();
+    const bgImage = new Konva.Image({
+        x: 0,
+        y: 0,
+        image: img,
+        width: displayWidth,
+        height: displayHeight
+    });
+    bgLayer.add(bgImage);
+    stage.add(bgLayer);
+    appState.konvaLayers.background = bgLayer;
+    
+    // 6. 绘制关键点
+    drawLandmarks(data, stage, scale);
+    
+    // 绘制画布
+    stage.draw();
+    
+    // 7. 初始化图层控制面板
+    initLayerControlPanel();
+    
+    console.log('侧位片渲染完成');
 }
 
 /**
@@ -1012,7 +1358,7 @@ function drawLandmarks(data, stage, scale) {
                 radius: 2,
                 fill: 'red',
                 stroke: '#ff0000',
-                strokeWidth: 1
+                strokeWidth: CONFIG.STROKE_WIDTH
             });
             
             // 绘制标签文本
@@ -1986,10 +2332,10 @@ function isGrowthMeasurement(label) {
 }
 
 /**
- * 渲染全景片结果
+ * 渲染全景片结果（支持图片和 DICOM）
  * @param {Object} data - 全景片分析数据
  */
-function renderPanoramic(data) {
+async function renderPanoramic(data) {
     console.log('开始渲染全景片结果...', data);
     
     // 先显示主容器和报告区域（即使图片还没加载）
@@ -2001,118 +2347,98 @@ function renderPanoramic(data) {
     // 生成结构化报告
     buildPanoReport(data);
     
-    // 1. 获取用户上传的图片文件
-    const imageFile = document.getElementById('imageFile').files[0];
-    if (!imageFile) {
-        console.error('未找到图片文件');
-        displayError({ displayMessage: '未找到上传的图片文件' });
+    // 1. 获取用户上传的文件
+    const file = document.getElementById('imageFile').files[0];
+    if (!file) {
+        console.error('未找到文件');
+        displayError({ displayMessage: '未找到上传的文件' });
         return;
     }
     
-    console.log('找到图片文件:', imageFile.name, '大小:', imageFile.size);
+    console.log('找到文件:', file.name, '大小:', file.size);
     
-    // 2. 创建图片对象并加载
-    const img = new Image();
+    // 2. 使用统一的图像加载函数（支持图片和 DICOM）
+    let img;
+    try {
+        // 直接加载图片
+        img = await new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = reject;
+            image.src = URL.createObjectURL(file);
+        });
+    } catch (error) {
+        console.error('文件加载失败:', error);
+        displayError({ displayMessage: '文件加载失败: ' + error.message });
+        return;
+    }
     
-    img.onerror = function() {
-        console.error('图片加载失败');
-        displayError({ displayMessage: '图片加载失败，请检查文件格式' });
-    };
+    console.log('图像加载成功，尺寸:', img.width, 'x', img.height);
     
-    img.onload = function() {
-        console.log('图片加载成功，尺寸:', img.width, 'x', img.height);
-        
-        // 获取容器尺寸，计算缩放比例以适应容器
-        const container = document.getElementById('imageContainer');
-        if (!container) {
-            console.error('图像容器不存在');
-            return;
-        }
-        
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        
-        console.log('容器尺寸:', containerWidth, 'x', containerHeight);
-        
-        if (containerWidth === 0 || containerHeight === 0) {
-            console.warn('容器尺寸为0，使用图片原始尺寸');
-            // 如果容器尺寸为0，使用图片原始尺寸
-            const stage = initKonvaStage('imageContainer', img.width, img.height);
-            if (!stage) {
-                console.error('Konva Stage 初始化失败');
-                return;
-            }
-            
-            const bgLayer = new Konva.Layer();
-            const bgImage = new Konva.Image({
-                x: 0,
-                y: 0,
-                image: img,
-                width: img.width,
-                height: img.height
-            });
-            bgLayer.add(bgImage);
-            stage.add(bgLayer);
-            appState.konvaLayers.background = bgLayer;
-            
-            // 绘制牙齿分割区域（不缩放）
-            drawToothSegments(data, stage, 1.0);
-            
-            stage.draw();
-            return;
-        }
-        
-        // 计算缩放比例，保持宽高比
+    // 3. 获取容器尺寸，计算缩放比例以适应容器
+    const container = document.getElementById('imageContainer');
+    if (!container) {
+        console.error('图像容器不存在');
+        return;
+    }
+    
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    
+    console.log('容器尺寸:', containerWidth, 'x', containerHeight);
+    
+    // 计算缩放比例
+    let scale = 1.0;
+    let displayWidth = img.width;
+    let displayHeight = img.height;
+    
+    if (containerWidth > 0 && containerHeight > 0) {
         const scaleX = containerWidth / img.width;
         const scaleY = containerHeight / img.height;
-        const scale = Math.min(scaleX, scaleY, 1.0); // 不放大，只缩小
-        
-        const displayWidth = img.width * scale;
-        const displayHeight = img.height * scale;
-        
-        console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
-        
-        // 保存缩放比例
-        appState.imageScale = scale;
-        appState.originalImage = img;
-        
-        // 3. 初始化 Konva Stage（使用显示尺寸）
-        const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
-        if (!stage) {
-            console.error('Konva Stage 初始化失败');
-            return;
-        }
-        
-        // 4. 创建背景图层并添加图片
-        const bgLayer = new Konva.Layer();
-        const bgImage = new Konva.Image({
-            x: 0,
-            y: 0,
-            image: img,
-            width: displayWidth,
-            height: displayHeight
-        });
-        bgLayer.add(bgImage);
-        stage.add(bgLayer);
-        appState.konvaLayers.background = bgLayer;
-        
-        // 5. 绘制牙齿分割区域
-        drawToothSegments(data, stage, scale);
-        
-        // 6. 绘制区域性发现（种植体、密度影等）
-        drawRegionalFindings(data, stage, scale);
-        
-        // 绘制画布
-        stage.draw();
-        
-        // 7. 初始化图层控制面板
-        initLayerControlPanel();
-        
-        console.log('全景片渲染完成');
-    };
+        scale = Math.min(scaleX, scaleY, 1.0); // 不放大，只缩小
+        displayWidth = img.width * scale;
+        displayHeight = img.height * scale;
+    }
     
-    // 开始加载图片
-    img.src = URL.createObjectURL(imageFile);
+    console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
+    
+    // 保存缩放比例
+    appState.imageScale = scale;
+    appState.originalImage = img;
+    
+    // 4. 初始化 Konva Stage
+    const stage = initKonvaStage('imageContainer', displayWidth, displayHeight);
+    if (!stage) {
+        console.error('Konva Stage 初始化失败');
+        return;
+    }
+    
+    // 5. 创建背景图层并添加图片
+    const bgLayer = new Konva.Layer();
+    const bgImage = new Konva.Image({
+        x: 0,
+        y: 0,
+        image: img,
+        width: displayWidth,
+        height: displayHeight
+    });
+    bgLayer.add(bgImage);
+    stage.add(bgLayer);
+    appState.konvaLayers.background = bgLayer;
+    
+    // 6. 绘制牙齿分割区域
+    drawToothSegments(data, stage, scale);
+    
+    // 7. 绘制区域性发现（种植体、密度影等）
+    drawRegionalFindings(data, stage, scale);
+    
+    // 绘制画布
+    stage.draw();
+    
+    // 8. 初始化图层控制面板
+    initLayerControlPanel();
+    
+    console.log('全景片渲染完成');
 }
 
 /**
@@ -2161,19 +2487,35 @@ function drawToothSegments(data, stage, scale) {
                 return;
             }
             
-            // 使用 Chaikin 算法平滑多边形
-            points = smoothPolyline(points, 3);
+            // ----------------------------------------------------
+            // 优化步骤 1: RDP 抽稀 (关键步骤！去除阶梯状像素点)
+            // tolerance = 1.5 ~ 2.5 之间效果最好。
+            // 值越小保留细节越多但锯齿越多，值越大线条越直但可能变形。
+            // ----------------------------------------------------
+            points = simplifyPoints(points, 2.0, true);
+            
+            // ----------------------------------------------------
+            // 优化步骤 2: Chaikin 平滑
+            // 在 RDP 把它变直后，再用 Chaikin 把角变圆
+            // ----------------------------------------------------
+            points = smoothPolyline(points, 3); // 迭代次数 3 次通常足够了
             
             // 创建多边形线条（使用圆润的线条样式）
             const line = new Konva.Line({
                 points: points,
                 closed: true,
-                stroke: 'green',
-                strokeWidth: 2,
+                stroke: '#C084FC',
+                strokeWidth: CONFIG.STROKE_WIDTH,
                 fill: 'transparent',
                 lineCap: 'round',      // 线条端点圆润
                 lineJoin: 'round',     // 线条连接点圆润
-                tension: 0             // 已通过平滑算法，不再使用张力
+                // ----------------------------------------------------
+                // 优化步骤 3: 调整 Tension
+                // 既然使用了 Chaikin 预处理，Tension 应该设为 0 或者很小(0.1)
+                // 否则 Konva 会尝试在已经平滑的点之间再次插值，导致奇怪的扭曲
+                // ----------------------------------------------------
+                tension: 0,
+                strokeScaleEnabled: false // 禁止线条随缩放变粗
             });
             
             // 存储牙齿信息到 line 对象，用于后续 Tooltip
@@ -2240,7 +2582,7 @@ function drawRegionalFindings(data, stage, scale) {
                 width: width,
                 height: height,
                 stroke: 'blue',
-                strokeWidth: 2,
+                strokeWidth: CONFIG.STROKE_WIDTH,
                 fill: 'transparent'
             });
             
@@ -2300,7 +2642,7 @@ function drawRegionalFindings(data, stage, scale) {
                 width: width,
                 height: height,
                 stroke: 'yellow',
-                strokeWidth: 2,
+                strokeWidth: CONFIG.STROKE_WIDTH,
                 dash: [5, 5], // 虚线
                 fill: 'transparent'
             });
@@ -2383,20 +2725,38 @@ function drawRegionalFindings(data, stage, scale) {
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 平滑并绘制
-                    let pts = smoothPolyline(pArr, 3);
+                    // ============================================================
+                    // 针对髁突的 3 步优化处理（与下颌分支一致）
+                    // ============================================================
+                    
+                    // 1. 【去毛刺】滑动平均 (新增步骤)
+                    // windowSize = 5：髁突较大，可以用 5 甚至 7 来强力去除突出的像素点
+                    let pts = movingAverageSmooth(pArr, 5);
+
+                    // 2. 【去阶梯】RDP 抽稀
+                    // tolerance = 2.5：髁突轮廓平缓，可以适当加大容差，让线条更直
+                    pts = simplifyPoints(pts, 2.5, true);
+
+                    // 3. 【变圆润】Chaikin 平滑
+                    // 迭代 3-4 次，让转折处非常圆滑
+                    pts = smoothPolyline(pts, 4);
+
                     const poly = new Konva.Line({
                         points: pts,
                         closed: true,
                         stroke: strokeColor,
-                        strokeWidth: 2.5,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
                         lineCap: 'round',
                         lineJoin: 'round',
-                        tension: 0.15,
+                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
+                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
+                        tension: 0,
                         fill: fillColor,
-                        shadowColor: strokeColor,
-                        shadowBlur: 6,
-                        shadowOpacity: 0.6
+                        // 移除阴影效果，让线条更细、更清晰
+                        // shadowColor: strokeColor,
+                        // shadowBlur: 6,
+                        // shadowOpacity: 0.6,
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
                     });
                     poly.findingType = 'condyle';
                     poly.findingData = info;
@@ -2469,22 +2829,40 @@ function drawRegionalFindings(data, stage, scale) {
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 平滑并绘制
-                    let pts = smoothPolyline(pArr, 3);
+                    // ============================================================
+                    // 针对下颌升支的 3 步优化处理
+                    // ============================================================
+                    
+                    // 1. 【去毛刺】滑动平均 (新增步骤)
+                    // windowSize = 5：下颌骨较大，可以用 5 甚至 7 来强力去除突出的像素点
+                    let pts = movingAverageSmooth(pArr, 5);
+
+                    // 2. 【去阶梯】RDP 抽稀
+                    // tolerance = 2.5：下颌骨轮廓平缓，可以适当加大容差，让线条更直
+                    pts = simplifyPoints(pts, 2.5, true);
+
+                    // 3. 【变圆润】Chaikin 平滑
+                    // 迭代 3-4 次，让转折处非常圆滑
+                    pts = smoothPolyline(pts, 4);
+
                     const poly = new Konva.Line({
                         points: pts,
                         closed: true,
                         stroke: strokeColor,
-                        strokeWidth: 2.5,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
                         lineCap: 'round',
                         lineJoin: 'round',
-                        tension: 0.15,
+                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
+                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
+                        tension: 0,
                         fill: fillColor,
-                        shadowColor: strokeColor,
-                        shadowBlur: 6,
-                        shadowOpacity: 0.6,
+                        // 移除阴影效果，让线条更细、更清晰
+                        // shadowColor: strokeColor,
+                        // shadowBlur: 6,
+                        // shadowOpacity: 0.6,
                         listening: true,  // 确保事件监听启用
-                        perfectDrawEnabled: false  // 优化性能
+                        perfectDrawEnabled: false,  // 优化性能
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
                     });
                     poly.findingType = 'mandible';
                     poly.findingData = mandibleSymmetryInfo;
@@ -2559,51 +2937,59 @@ function drawRegionalFindings(data, stage, scale) {
             // 获取对应侧的诊断信息
             const sinusInfo = sinusInfoMap[side] || null;
             
-            // 选择配色：根据炎症状态决定颜色
-            // 有炎症：橙红色，无炎症：浅蓝色/正常
-            let strokeColor = '#4A90D9';  // 默认蓝色
-            let fillColor = 'rgba(74, 144, 217, 0.25)';
+            // =========== 修改开始 ===========
+            
+            // 默认颜色修改为：鲜艳的浅绿色
+            let strokeColor = '#55efc4';  
+            let fillColor = 'rgba(85, 239, 196, 0.25)'; // 对应的半透明填充颜色
             
             if (sinusInfo) {
                 if (sinusInfo.Inflammation === true) {
-                    // 有炎症：橙红色警示
+                    // 有炎症：保持橙红色警示 (医学上通常需要保留这个区分)
                     strokeColor = '#E67E22';
                     fillColor = 'rgba(230, 126, 34, 0.30)';
                 } else if (sinusInfo.Pneumatization === 3) {
-                    // III型过度气化：黄色警示
+                    // III型过度气化：保持黄色警示
                     strokeColor = '#F1C40F';
                     fillColor = 'rgba(241, 196, 15, 0.25)';
                 } else if (sinusInfo.Pneumatization === 2) {
-                    // II型显著气化：浅黄色提示
+                    // II型显著气化：保持浅黄色提示
                     strokeColor = '#F39C12';
                     fillColor = 'rgba(243, 156, 18, 0.20)';
-                } else if (sinusInfo.Pneumatization <= 1 && sinusInfo.Inflammation === false) {
-                    // 正常：绿色
-                    strokeColor = '#27AE60';
-                    fillColor = 'rgba(39, 174, 96, 0.25)';
+                } else {
+                    // 正常/无炎症：强制使用鲜艳浅绿色
+                    strokeColor = '#55efc4';
+                    fillColor = 'rgba(85, 239, 196, 0.25)';
                 }
             }
+            
+            // =========== 修改结束 ===========
             
             // 归一化坐标，支持多边形/多多边形/矩形
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 平滑并绘制
-                    let pts = smoothPolyline(pArr, 3);
+                    // 记得应用之前的优化：先抽稀(2步) -> 再平滑(3步)
+                    let pts = simplifyPoints(pArr, 2.0, true); // 抽稀
+                    pts = smoothPolyline(pts, 3);              // 平滑
+
                     const poly = new Konva.Line({
                         points: pts,
                         closed: true,
                         stroke: strokeColor,
-                        strokeWidth: 2.5,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
                         lineCap: 'round',
                         lineJoin: 'round',
-                        tension: 0.15,
+                        tension: 0, // 记得设为0
                         fill: fillColor,
-                        shadowColor: strokeColor,
-                        shadowBlur: 6,
-                        shadowOpacity: 0.6,
+                        
+                        // 记得：如果你希望线条锐利，不要加 shadowBlur
+                        // shadowColor: strokeColor,
+                        // shadowBlur: 6,
+                        
                         listening: true,
-                        perfectDrawEnabled: false
+                        perfectDrawEnabled: false,
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
                     });
                     poly.findingType = 'sinus';
                     poly.findingData = sinusInfo;
@@ -2683,7 +3069,7 @@ function createCondyleRect(maskData, scale, side, condyleInfo) {
         width: width,
         height: height,
         stroke: strokeColor,
-        strokeWidth: 2,
+        strokeWidth: CONFIG.STROKE_WIDTH,
         fill: 'transparent'
     });
     

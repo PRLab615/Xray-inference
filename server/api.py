@@ -385,9 +385,22 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
             temp_files.append(image_path)
             
             # 从 DICOM 提取患者信息（如果请求中没有提供）
-            if not patient_info and dicom_info["patient_info"]["gender"]:
-                patient_info = dicom_info["patient_info"]
-                logger.info(f"Patient info extracted from DICOM: {patient_info}")
+            if not patient_info:
+                dicom_gender = dicom_info["patient_info"]["gender"]
+                if dicom_gender:
+                    patient_info = dicom_info["patient_info"]
+                    logger.info(f"Patient info extracted from DICOM: {patient_info}")
+                else:
+                    # 性别无法识别（可能是 "O"/Other 或其他非标准值），默认使用 Male
+                    raw_sex = dicom_info["dicom_metadata"].get("PatientSex", "")
+                    logger.warning(
+                        f"[PatientInfo] DICOM PatientSex='{raw_sex}' is not recognized (expected M/F). "
+                        f"Defaulting to Male. Task: {task_id}"
+                    )
+                    patient_info = {
+                        "gender": "Male",
+                        "DentalAgeStage": dicom_info["patient_info"]["DentalAgeStage"],
+                    }
             
             # 从 DICOM 提取比例尺
             if dicom_info["pixel_spacing"]["available"]:
@@ -637,9 +650,22 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             temp_files.append(image_path)
             
             # 从 DICOM 提取患者信息
-            if not patient_info and dicom_info["patient_info"]["gender"]:
-                patient_info = dicom_info["patient_info"]
-                logger.info(f"Patient info extracted from DICOM: {patient_info}")
+            if not patient_info:
+                dicom_gender = dicom_info["patient_info"]["gender"]
+                if dicom_gender:
+                    patient_info = dicom_info["patient_info"]
+                    logger.info(f"Patient info extracted from DICOM: {patient_info}")
+                else:
+                    # 性别无法识别（可能是 "O"/Other 或其他非标准值），默认使用 Male
+                    raw_sex = dicom_info["dicom_metadata"].get("PatientSex", "")
+                    logger.warning(
+                        f"[PatientInfo] DICOM PatientSex='{raw_sex}' is not recognized (expected M/F). "
+                        f"Defaulting to Male. Task: {request.taskId}"
+                    )
+                    patient_info = {
+                        "gender": "Male",
+                        "DentalAgeStage": dicom_info["patient_info"]["DentalAgeStage"],
+                    }
             
             # 从 DICOM 提取比例尺
             if dicom_info["pixel_spacing"]["available"]:
