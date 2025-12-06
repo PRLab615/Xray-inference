@@ -503,12 +503,28 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         logger.info(f"[Pseudo-Sync] Waiting for result via polling (timeout={timeout}s): {task_id}")
         
         loop = asyncio.get_event_loop()
-        data_dict = await loop.run_in_executor(
+        result = await loop.run_in_executor(
             None,
             lambda: _wait_for_celery_result_polling(celery_result, timeout)
         )
         
         logger.info(f"[Pseudo-Sync] Task completed: {task_id}")
+        
+        # 解析返回结果（可能是 dict 或直接是 data_dict）
+        if isinstance(result, dict) and "data" in result and "is_mock" in result:
+            # 新格式：包含 data 和 is_mock
+            data_dict = result["data"]
+            is_mock = result["is_mock"]
+        else:
+            # 兼容旧格式：直接是 data_dict
+            data_dict = result
+            # 从 pipeline 获取 is_mock 状态（如果可能）
+            try:
+                from server.tasks import get_pipeline
+                pipeline = get_pipeline(request.taskType)
+                is_mock = getattr(pipeline, 'is_mock_mode', False)
+            except Exception:
+                is_mock = False
         
         # 7. 清理临时文件
         for f in temp_files:
@@ -529,7 +545,8 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
             timestamp=datetime.now(timezone.utc).isoformat(),
             metadata=request.metadata,
             data=data_dict,
-            error=None
+            error=None,
+            is_mock=is_mock
         )
     
     except celery.exceptions.TimeoutError:
