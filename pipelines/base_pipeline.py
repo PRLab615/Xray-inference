@@ -25,6 +25,7 @@ class BasePipeline(ABC):
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline_type = "base"  # 子类需覆盖
+        self.is_mock_mode = False  # Mock模式标志：当模型加载失败时启用
         self.logger.info(f"{self.__class__.__name__} initialized")
     
     @abstractmethod

@@ -128,6 +128,8 @@ class PanoPipeline(BasePipeline):
 
     def _initialize_modules(self):
         """初始化所有模块，从配置中读取参数"""
+        from tools.weight_fetcher import WeightFetchError
+        
         try:
             # 1. 髁突分割模块 (condyle_seg)
             condyle_seg_cfg = self._get_module_config('condyle_seg')
@@ -191,7 +193,13 @@ class PanoPipeline(BasePipeline):
             logger.info("  ✓ RootTipDensity Detection module loaded")
 
 
+        except (WeightFetchError, FileNotFoundError) as e:
+            # 权重加载失败：本地缓存没有且S3连接失败
+            logger.error(f"Failed to load model weights: {e}")
+            logger.warning("Entering MOCK MODE: Will return example JSON data for all inference requests")
+            self.is_mock_mode = True
         except Exception as e:
+            # 其他初始化错误仍然抛出（不通过错误消息判断，避免误判）
             logger.error(f"Failed to initialize some modules: {e}")
             raise
 
@@ -229,7 +237,22 @@ class PanoPipeline(BasePipeline):
         Note:
             - 各子模块内部负责图像加载
             - 与 CephPipeline 保持一致的设计模式
+            - 如果处于mock模式，直接返回示例JSON
         """
+        # Mock模式：返回示例JSON
+        if self.is_mock_mode:
+            from server.utils.mock_data_loader import load_example_json
+            logger.warning("Pipeline is in MOCK MODE, returning example JSON data")
+            example_data = load_example_json('panoramic')
+            if example_data:
+                # 示例JSON可能包含完整的响应结构，需要提取data字段
+                if 'data' in example_data:
+                    return example_data['data']
+                return example_data
+            else:
+                logger.error("Failed to load example JSON, returning empty dict")
+                return {}
+        
         # 从 kwargs 获取 pixel_spacing（兼容旧调用方式）
         pixel_spacing = pixel_spacing or kwargs.get("pixel_spacing")
         # 重置计时器

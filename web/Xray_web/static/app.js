@@ -926,6 +926,12 @@ function displayResult(resultJson) {
     // 隐藏加载指示器
     hideLoading();
     
+    // 检查是否为 mock 数据
+    if (resultJson.is_mock === true) {
+        alert('后端无模型权重，本次结果为示例json');
+        console.log('检测到 mock 数据，已弹窗提示用户');
+    }
+    
     // 重置 UI（清空之前的画布和报告）
     clearCanvas();
     clearReport();
@@ -1101,6 +1107,40 @@ function renderDentalAgeStage(data) {
         `;
         
         reportContent.innerHTML = html;
+        
+        // 添加完整 JSON 数据输出（可展开/折叠），与全景和侧位保持一致
+        const jsonSection = createReportSection('完整数据 (JSON)');
+        const jsonToggle = document.createElement('button');
+        jsonToggle.className = 'json-toggle-btn';
+        jsonToggle.textContent = '展开 JSON 数据';
+        jsonToggle.onclick = function() {
+            const jsonContent = jsonSection.querySelector('.json-content');
+            if (jsonContent) {
+                if (jsonContent.style.display === 'none') {
+                    jsonContent.style.display = 'block';
+                    jsonToggle.textContent = '折叠 JSON 数据';
+                } else {
+                    jsonContent.style.display = 'none';
+                    jsonToggle.textContent = '展开 JSON 数据';
+                }
+            }
+        };
+        jsonSection.appendChild(jsonToggle);
+        
+        const jsonContent = document.createElement('pre');
+        jsonContent.className = 'json-content';
+        jsonContent.style.display = 'none';
+        jsonContent.style.whiteSpace = 'pre-wrap';
+        jsonContent.style.wordWrap = 'break-word';
+        jsonContent.style.fontSize = '11px';
+        jsonContent.style.backgroundColor = '#f5f5f5';
+        jsonContent.style.padding = '10px';
+        jsonContent.style.borderRadius = '4px';
+        jsonContent.style.overflowX = 'auto';
+        jsonContent.textContent = JSON.stringify(data, null, 2);
+        jsonSection.appendChild(jsonContent);
+        
+        reportContent.appendChild(jsonSection);
     }
     
     // 加载并显示原图
@@ -1234,31 +1274,36 @@ async function renderCephalometric(data) {
     // 生成结构化报告
     buildCephReport(data);
     
-    // 1. 获取用户上传的文件
-    const file = document.getElementById('imageFile').files[0];
-    if (!file) {
-        console.error('未找到文件');
-        displayError({ displayMessage: '未找到上传的文件' });
-        return;
-    }
+    // ================= 修改开始：优先使用缓存的原始图片 =================
+    // 1. 优先使用缓存的原始图片，否则从文件加载
+    let img = appState.originalImage;
     
-    console.log('找到文件:', file.name, '大小:', file.size);
-    
-    // 2. 使用统一的图像加载函数（支持图片和 DICOM）
-    let img;
-    try {
-        // 直接加载图片
-        img = await new Promise((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => resolve(image);
-            image.onerror = reject;
-            image.src = URL.createObjectURL(file);
-        });
-    } catch (error) {
-        console.error('文件加载失败:', error);
-        displayError({ displayMessage: '文件加载失败: ' + error.message });
-        return;
+    if (!img) {
+        const file = document.getElementById('imageFile').files[0];
+        if (!file) {
+            console.error('未找到文件');
+            // 只有在没有缓存且没有文件时才报错
+            if (!appState.originalImage) {
+                displayError({ displayMessage: '未找到上传的文件' });
+                return;
+            }
+        } else {
+            console.log('找到文件:', file.name, '大小:', file.size);
+            try {
+                img = await new Promise((resolve, reject) => {
+                    const image = new Image();
+                    image.onload = () => resolve(image);
+                    image.onerror = reject;
+                    image.src = URL.createObjectURL(file);
+                });
+            } catch (error) {
+                console.error('文件加载失败:', error);
+                displayError({ displayMessage: '文件加载失败' });
+                return;
+            }
+        }
     }
+    // ================= 修改结束 =================
     
     console.log('图像加载成功，尺寸:', img.width, 'x', img.height);
     
@@ -2347,31 +2392,36 @@ async function renderPanoramic(data) {
     // 生成结构化报告
     buildPanoReport(data);
     
-    // 1. 获取用户上传的文件
-    const file = document.getElementById('imageFile').files[0];
-    if (!file) {
-        console.error('未找到文件');
-        displayError({ displayMessage: '未找到上传的文件' });
-        return;
-    }
+    // ================= 修改开始：优先使用缓存的原始图片 =================
+    // 1. 优先使用缓存的原始图片，否则从文件加载
+    let img = appState.originalImage;
     
-    console.log('找到文件:', file.name, '大小:', file.size);
-    
-    // 2. 使用统一的图像加载函数（支持图片和 DICOM）
-    let img;
-    try {
-        // 直接加载图片
-        img = await new Promise((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => resolve(image);
-            image.onerror = reject;
-            image.src = URL.createObjectURL(file);
-        });
-    } catch (error) {
-        console.error('文件加载失败:', error);
-        displayError({ displayMessage: '文件加载失败: ' + error.message });
-        return;
+    if (!img) {
+        const file = document.getElementById('imageFile').files[0];
+        if (!file) {
+            // 如果也没有文件输入，且没有缓存，则无法渲染
+            console.error('未找到文件');
+            if (!appState.originalImage) {
+                displayError({ displayMessage: '未找到上传的文件' });
+                return;
+            }
+        } else {
+            console.log('找到文件:', file.name, '大小:', file.size);
+            try {
+                img = await new Promise((resolve, reject) => {
+                    const image = new Image();
+                    image.onload = () => resolve(image);
+                    image.onerror = reject;
+                    image.src = URL.createObjectURL(file);
+                });
+            } catch (error) {
+                console.error('文件加载失败:', error);
+                displayError({ displayMessage: '文件加载失败' });
+                return;
+            }
+        }
     }
+    // ================= 修改结束 =================
     
     console.log('图像加载成功，尺寸:', img.width, 'x', img.height);
     
@@ -4110,50 +4160,49 @@ function validateResultData(resultJson) {
  * 处理窗口大小变化时的响应式表现
  * 添加窗口 resize 事件监听
  */
+/**
+ * 处理窗口大小变化时的响应式表现
+ * 修复版：先销毁旧画布，让容器回缩，再测量渲染
+ */
 function setupWindowResizeHandler() {
     let resizeTimer = null;
     
     window.addEventListener('resize', function() {
-        // 防抖：避免频繁重新计算
         if (resizeTimer) {
             clearTimeout(resizeTimer);
         }
         
         resizeTimer = setTimeout(function() {
-            // 如果当前有 Konva Stage，需要重新调整大小
-            if (appState.konvaStage && appState.originalImage) {
-                console.log('窗口大小变化，调整 Canvas 尺寸');
+            const hasData = appState.cachedResult && appState.cachedResult.data;
+            const hasImage = appState.originalImage;
+            const taskType = appState.currentTaskType;
+
+            if (hasData && hasImage && taskType) {
+                console.log('窗口大小改变，准备重绘...');
+                
+                //先销毁当前的 Stage 并清空容器
+                // 这样 div 就会失去支撑，回缩到 CSS 布局定义的正确大小
+                if (appState.konvaStage) {
+                    appState.konvaStage.destroy();
+                    appState.konvaStage = null;
+                }
                 
                 const container = document.getElementById('imageContainer');
                 if (container) {
-                    const containerWidth = container.clientWidth;
-                    const containerHeight = container.clientHeight;
-                    
-                    if (containerWidth > 0 && containerHeight > 0) {
-                        // 计算新的缩放比例
-                        const img = appState.originalImage;
-                        const scaleX = containerWidth / img.width;
-                        const scaleY = containerHeight / img.height;
-                        const newScale = Math.min(scaleX, scaleY, 1.0);
-                        
-                        // 如果缩放比例变化，重新调整 Stage 大小
-                        if (Math.abs(newScale - appState.imageScale) > 0.01) {
-                            const displayWidth = img.width * newScale;
-                            const displayHeight = img.height * newScale;
-                            
-                            appState.konvaStage.width(displayWidth);
-                            appState.konvaStage.height(displayHeight);
-                            appState.imageScale = newScale;
-                            
-                            // 重新绘制
-                            appState.konvaStage.draw();
-                            
-                            console.log('Canvas 尺寸已调整:', displayWidth, 'x', displayHeight);
-                        }
+                    container.innerHTML = ''; // 确保彻底清空
+                }
+
+
+                // 2. 此时 container.clientWidth 已经是正确的回缩后的大小了
+                if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+                    if (taskType === 'cephalometric') {
+                        renderCephalometric(appState.cachedResult.data);
+                    } else if (taskType === 'panoramic') {
+                        renderPanoramic(appState.cachedResult.data);
                     }
                 }
             }
-        }, 300); // 300ms 防抖延迟
+        }, 200); // 防抖时间
     });
 }
 

@@ -318,6 +318,7 @@ class CallbackPayload(BaseModel):
         requestParameters: 原始请求参数
         data: 成功时的结果数据（nullable）
         error: 失败时的错误信息（nullable）
+        is_mock: 是否为 mock 数据（当模型权重加载失败时返回示例数据）
     """
     taskId: str
     status: str
@@ -326,6 +327,7 @@ class CallbackPayload(BaseModel):
     requestParameters: RequestParameters
     data: Optional[Dict[str, Any]] = None
     error: Optional[ErrorDetail] = None
+    is_mock: bool = False
 
 
 class SyncAnalyzeRequest(BaseModel):
@@ -432,10 +434,12 @@ class SyncAnalyzeResponse(BaseModel):
         metadata: 回显客户端 metadata
         data: 成功时的结果数据（nullable）
         error: 失败时的错误信息（nullable）
+        is_mock: 是否为 mock 数据（当模型权重加载失败时返回示例数据）
     """
     taskId: str
     status: str
     timestamp: str
+    is_mock: bool = False
     metadata: Optional[Dict[str, Any]] = None
     data: Optional[Dict[str, Any]] = None
     error: Optional[ErrorDetail] = None

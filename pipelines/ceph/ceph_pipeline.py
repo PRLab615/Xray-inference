@@ -79,6 +79,8 @@ class CephPipeline(BasePipeline):
             - 不需要的模块直接从配置中移除（或注释掉）
             - 不使用 enabled 参数，简化配置逻辑
         """
+        from tools.weight_fetcher import WeightFetchError
+        
         for module_name, module_cfg in modules_config.items():
             if not isinstance(module_cfg, dict):
                 self.logger.warning(f"Invalid config for module '{module_name}', skipping")
@@ -94,15 +96,25 @@ class CephPipeline(BasePipeline):
                     self.logger.warning(f"Module 'seg' not implemented yet, skipping")
                 else:
                     self.logger.warning(f"Unknown module '{module_name}', skipping")
+            except (WeightFetchError, FileNotFoundError) as e:
+                # 权重加载失败：本地缓存没有且S3连接失败
+                self.logger.error(f"Failed to load model weights for module '{module_name}': {e}")
+                self.logger.warning("Entering MOCK MODE: Will return example JSON data for all inference requests")
+                self.is_mock_mode = True
+                break  # 权重加载失败，停止初始化其他模块
             except Exception as e:
+                # 其他初始化错误仍然抛出（不通过错误消息判断，避免误判）
                 self.logger.error(f"Failed to initialize module '{module_name}': {e}", exc_info=True)
                 raise
         
-        # 检查是否至少初始化了一个模块
-        if not self.modules:
+        # 检查是否至少初始化了一个模块（除非处于mock模式）
+        if not self.modules and not self.is_mock_mode:
             raise ValueError("No modules were successfully initialized for CephPipeline")
         
-        self.logger.info(f"CephPipeline initialized with modules: {list(self.modules.keys())}")
+        if self.is_mock_mode:
+            self.logger.info("CephPipeline initialized in MOCK MODE")
+        else:
+            self.logger.info(f"CephPipeline initialized with modules: {list(self.modules.keys())}")
     
     def _init_point_module(self, config: Dict[str, Any]) -> CephInferenceEngine:
         """
@@ -143,6 +155,20 @@ class CephPipeline(BasePipeline):
         Returns:
             dict: 符合规范的完整 data 字段
         """
+        # Mock模式：返回示例JSON
+        if self.is_mock_mode:
+            from server.utils.mock_data_loader import load_example_json
+            self.logger.warning("Pipeline is in MOCK MODE, returning example JSON data")
+            example_data = load_example_json('cephalometric')
+            if example_data:
+                # 示例JSON可能包含完整的响应结构，需要提取data字段
+                if 'data' in example_data:
+                    return example_data['data']
+                return example_data
+            else:
+                self.logger.error("Failed to load example JSON, returning empty dict")
+                return {}
+        
         # 重置计时器
         timer.reset()
         
