@@ -11,6 +11,14 @@
         <h1>X-Ray AI 分析可视化</h1>
         <p class="subtitle">用于验证 AI 异步分析接口的完整流程</p>
         
+        <!-- 标签页切换 -->
+        <div class="tab-container">
+            <button class="tab-btn active" data-tab="analysis">AI 分析</button>
+            <button class="tab-btn" data-tab="manual">手动可视化</button>
+        </div>
+        
+        <!-- AI 分析标签页 -->
+        <div class="tab-content active" id="tabAnalysis">
         <!-- 表单区域（保留 MVP 的表单结构） -->
         <div class="form-container">
             <!-- 任务类型选择 -->
@@ -42,8 +50,24 @@
             <!-- 文件选择 -->
             <div class="form-group">
                 <label for="imageFile">选择文件：</label>
-                <input type="file" id="imageFile" accept=".jpg,.jpeg,.png,.dcm">
-                <p class="hint">支持格式：.jpg, .png, .dcm</p>
+                <input type="file" id="imageFile" accept=".jpg,.jpeg,.png">
+                <p class="hint">支持格式：.jpg, .png</p>
+            </div>
+            
+            <!-- 比例尺设置（可选） -->
+            <div class="form-group">
+                <label>比例尺设置（可选）：</label>
+                <div class="pixel-spacing-fields">
+                    <div class="field-item">
+                        <label for="pixelSpacingX">X 方向 (mm/pixel)：</label>
+                        <input type="number" id="pixelSpacingX" step="0.001" min="0" placeholder="0.1">
+                    </div>
+                    <div class="field-item">
+                        <label for="pixelSpacingY">Y 方向 (mm/pixel)：</label>
+                        <input type="number" id="pixelSpacingY" step="0.001" min="0" placeholder="0.1">
+                    </div>
+                </div>
+                <p class="hint">留空则使用默认值 0.1 mm/pixel，或由后端从 DICOM 解析</p>
             </div>
             
             <!-- 患者信息表单（动态显示） -->
@@ -72,6 +96,35 @@
             <!-- 提交按钮 -->
             <div class="form-group">
                 <button id="submitBtn" class="btn-primary">提交分析任务</button>
+            </div>
+        </div>
+        </div>
+        
+        <!-- 手动可视化标签页 -->
+        <div class="tab-content" id="tabManual">
+            <div class="form-container">
+                <div class="form-group">
+                    <label for="manualImageFile">选择图片：</label>
+                    <input type="file" id="manualImageFile" accept=".jpg,.jpeg,.png">
+                    <p class="hint">支持格式：.jpg, .png</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="manualJsonFile">选择 JSON 结果文件：</label>
+                    <input type="file" id="manualJsonFile" accept=".json">
+                    <p class="hint">选择之前保存的 AI 分析结果 JSON 文件</p>
+                </div>
+                
+                <div class="form-group">
+                    <label>或直接粘贴 JSON：</label>
+                    <textarea id="manualJsonText" rows="10" placeholder='支持两种格式：
+1. 完整格式：{"taskId": "...", "status": "SUCCESS", "data": {...}}
+2. 仅 data 字段：{"ToothAnalysis": [...], "JointAndMandible": {...}}'></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <button id="manualVisualizeBtn" class="btn-primary">开始可视化</button>
+                </div>
             </div>
         </div>
         

@@ -118,7 +118,8 @@ except Exception:
 
 @celery_app.task(name='server.tasks.analyze_task', bind=True)
 def analyze_task(self, task_id: str, task_type: str, image_path: str, 
-                 image_url: str = None, patient_info=None, callback_url=None, metadata=None):
+                 image_url: str = None, patient_info=None, pixel_spacing=None,
+                 callback_url=None, metadata=None):
     """
     统一的推理任务（v4 架构：支持伪同步和纯异步）
     
@@ -129,6 +130,7 @@ def analyze_task(self, task_id: str, task_type: str, image_path: str,
         image_path: 图像文件路径
         image_url: 原始图像 URL（可选，纯异步回调时使用）
         patient_info: 患者信息（可选，侧位片必需）
+        pixel_spacing: 像素间距/比例尺信息（可选，从 DICOM 或请求中获取）
         callback_url: 回调 URL（可选）
             - None：伪同步模式（直接返回结果）
             - 有值：纯异步模式（发送回调）
@@ -155,9 +157,9 @@ def analyze_task(self, task_id: str, task_type: str, image_path: str,
         
         # 2. 执行推理
         if task_type == 'panoramic':
-            data_dict = pipeline.run(image_path=image_path)
+            data_dict = pipeline.run(image_path=image_path, pixel_spacing=pixel_spacing)
         elif task_type == 'cephalometric':
-            data_dict = pipeline.run(image_path=image_path, patient_info=patient_info)
+            data_dict = pipeline.run(image_path=image_path, patient_info=patient_info, pixel_spacing=pixel_spacing)
         elif task_type == 'dental_age_stage':
             data_dict = pipeline.run(image_path=image_path)
         else:

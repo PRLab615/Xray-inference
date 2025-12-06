@@ -125,6 +125,7 @@ class CephPipeline(BasePipeline):
         self,
         image_path: str,
         patient_info: Optional[Dict[str, str]] = None,
+        pixel_spacing: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
@@ -133,6 +134,10 @@ class CephPipeline(BasePipeline):
         Args:
             image_path: 图像文件路径
             patient_info: 患者信息（必需）
+            pixel_spacing: 像素间距/比例尺信息（可选）
+                - scale_x: 水平方向 1像素 = 多少mm
+                - scale_y: 垂直方向 1像素 = 多少mm
+                - source: 数据来源（"dicom" 或 "request"）
             **kwargs: 其他参数
             
         Returns:
@@ -142,6 +147,8 @@ class CephPipeline(BasePipeline):
         timer.reset()
         
         patient_info = patient_info or kwargs.get("patient_info")
+        pixel_spacing = pixel_spacing or kwargs.get("pixel_spacing")
+        
         if not patient_info:
             raise ValueError("patient_info is required for CephPipeline.run")
 
@@ -155,21 +162,26 @@ class CephPipeline(BasePipeline):
         
         point_engine = self.modules['point']
         # 内部已埋点 ceph_point.pre/inference/post/measurement
-        inference_results = point_engine.run(image_path=image_path, patient_info=patient_info)
+        inference_results = point_engine.run(
+            image_path=image_path, 
+            patient_info=patient_info,
+            pixel_spacing=pixel_spacing
+        )
 
         #1
-        print("\n=== [1] Point 模块推理原始输出 (inference_results) ===")
-        pprint.pprint(inference_results, width=120, depth=5)
-        # 如果你只关心关键点坐标和测量值，也可以单独打印：
-        if isinstance(inference_results, dict):
-            print("\n>>> 关键点坐标 (landmarks):")
-            pprint.pprint(inference_results.get("landmarks") or inference_results.get("points"), width=120)
-            print("\n>>> 测量值 (measurements):")
-            pprint.pprint(inference_results.get("measurements"), width=120)
-        print("=" * 60)
+        # 注释掉调试打印，避免刷屏
+        # print("\n=== [1] Point 模块推理原始输出 (inference_results) ===")
+        # pprint.pprint(inference_results, width=120, depth=5)
+        # # 如果你只关心关键点坐标和测量值，也可以单独打印：
+        # if isinstance(inference_results, dict):
+        #     print("\n>>> 关键点坐标 (landmarks):")
+        #     pprint.pprint(inference_results.get("landmarks") or inference_results.get("points"), width=120)
+        #     print("\n>>> 测量值 (measurements):")
+        #     pprint.pprint(inference_results.get("measurements"), width=120)
+        # print("=" * 60)
 
 
-        # 报告生成埋点
+        # 报告生成埋点（spacing 已在 inference_results 中）
         with timer.record("report.generation"):
             result = generate_standard_output(inference_results, patient_info)
         # 2
