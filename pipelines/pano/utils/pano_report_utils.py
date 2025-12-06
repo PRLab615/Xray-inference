@@ -40,6 +40,28 @@ DECIDUOUS_TEETH_FDI = [
     "81", "82", "83", "84", "85"   # 下颌右侧乳牙
 ]
 
+# 属性到中文描述映射（用于 ToothAnalysis.Properties 格式化）
+ATTRIBUTE_DESCRIPTION_MAP = {
+    "area": "病灶区域",
+    "carious_lesion": "龋坏",
+    "curved_short_root": "牙根形态弯曲短小",
+    "embedded_tooth": "埋伏牙",
+    "erupted": "已萌出",
+    "impacted": "阻生",
+    "implant": "种植体病灶",
+    "not_visible": "不可见",
+    "periodontal": "牙周病灶",
+    "rct_treated": "根管治疗",
+    "residual_crown": "残冠",
+    "residual_root": "残根",
+    "restored_tooth": "修复牙",
+    "retained_primary_tooth": "滞留乳牙",
+    "root_absorption": "牙根吸收",
+    "to_be_erupted": "待萌出",
+    "tooth_germ": "牙胚",
+    "wisdom_tooth_impaction": "智齿阻生",
+}
+
 
 # =============================================================================
 # 1. 核心对外接口
@@ -47,7 +69,8 @@ DECIDUOUS_TEETH_FDI = [
 
 def generate_standard_output(
         metadata: Dict[str, Any],
-        inference_results: Dict[str, Any]
+        inference_results: Dict[str, Any],
+        pixel_spacing: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
     主组装函数：接收所有模块结果，生成最终 JSON
@@ -86,8 +109,28 @@ def generate_standard_output(
     rootTipDensity_res = inference_results.get("rootTipDensity", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
+    # 处理 ImageSpacing（像素间距/比例尺）
+    # API 层（server/api.py）是唯一的默认值来源，此处不再设置默认值
+    if not pixel_spacing or not pixel_spacing.get("scale_x"):
+        # 如果走到这里，说明调用方存在 bug（API 层应该保证有值）
+        raise ValueError(
+            "[PixelSpacing] pixel_spacing is required but not provided. "
+            "This is likely a bug in the calling code. "
+            "API layer (server/api.py) should guarantee pixel_spacing is always set."
+        )
+    
+    spacing_x = pixel_spacing["scale_x"]
+    spacing_y = pixel_spacing.get("scale_y", spacing_x)
+    spacing_source = pixel_spacing.get("source", "unknown")
+    logger.info(f"[PixelSpacing] Using value from {spacing_source}: X={spacing_x:.4f}, Y={spacing_y:.4f} mm/pixel")
+    
     report = {
         "Metadata": _format_metadata(metadata),
+        "ImageSpacing": {  # 图像像素间距信息 - 用于空间测量计算
+            "X": spacing_x,
+            "Y": spacing_y,
+            "Unit": "mm/pixel"
+        },
         "AnatomyResults": [],  # 将从 condyle_seg 填充
         "JointAndMandible": _get_joint_mandible_default(),
         "MaxillarySinus": _get_maxillary_sinus_mock(),  # 真实数据：从 sinus 模块填充（如果有）
@@ -584,7 +627,21 @@ def format_teeth_report(
             continue
 
         # 构建属性列表：优先使用 Pipeline 已经绑定好的属性
-        properties = list(tooth_attributes_map.get(fdi, []))
+        # 将属性名称转换为符合规范的对象格式: {"Value": str, "Description": str, "Confidence": float}
+        raw_properties = tooth_attributes_map.get(fdi, [])
+        properties = []
+        for attr_name in raw_properties:
+            # 如果已经是字典格式，直接使用
+            if isinstance(attr_name, dict):
+                properties.append(attr_name)
+            else:
+                # 转换字符串为标准格式
+                description = ATTRIBUTE_DESCRIPTION_MAP.get(attr_name, attr_name)
+                properties.append({
+                    "Value": attr_name,
+                    "Description": description,
+                    "Confidence": 0.85  # 默认置信度，后续可从模型输出获取
+                })
 
         # 提取轮廓坐标：使用YOLO直接输出的segments（格式: [N, num_points, 2]）
         # 目标格式: [[x, y], [x, y], ...] 符合前端期望和规范

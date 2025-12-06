@@ -1,16 +1,19 @@
 version: '3.8'
 
-# 默认配置：Linux 生产环境
-# 使用 host 网络模式，性能最优，配置最简单
+# Windows/Mac 开发环境配置
+# 使用桥接网络 + 端口映射（因为 host 网络模式在 Windows/Mac 上不工作）
 #
-# Windows/Mac 用户请使用: docker-compose -f docker-compose.windows.yml up -d
+# 使用方法: docker-compose -f docker-compose.windows.yml up -d
 
 services:
   # Redis 服务
   redis:
     image: redis:7-alpine
     container_name: xray_redis
-    network_mode: "host"
+    networks:
+      - xray-network
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -27,15 +30,22 @@ services:
       network: host
     container_name: xray_api
     command: python main_api.py
-    network_mode: "host"
+    networks:
+      - xray-network
+    ports:
+      - "18000:18000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
       - ./models:/app/models
       - ./tmp:/app/tmp
     environment:
-      - REDIS_HOST=localhost
+      - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
+      # Docker 桥接网络 URL 重写：将宿主机地址转换为 Docker 服务名
+      - URL_REWRITE_RULES=127.0.0.1:5000->frontend:5000,localhost:5000->frontend:5000
     depends_on:
       - redis
     restart: unless-stopped
@@ -47,7 +57,8 @@ services:
       network: host
     container_name: xray_worker
     command: python main_worker.py
-    network_mode: "host"
+    networks:
+      - xray-network
     
     # GPU 配置：允许容器访问宿主机的所有 GPU
     deploy:
@@ -55,15 +66,18 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all  # 使用所有可用GPU，可改为 count: 1 只使用1个GPU
+              count: all
               capabilities: [gpu]
+    
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     
     volumes:
       - .:/app
       - ./models:/app/models
       - ./tmp:/app/tmp
     environment:
-      - REDIS_HOST=localhost
+      - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
     depends_on:
@@ -77,7 +91,10 @@ services:
       network: host
     container_name: xray_frontend
     command: python web/Xray_web/app.py
-    network_mode: "host"
+    networks:
+      - xray-network
+    ports:
+      - "5000:5000"
     volumes:
       - .:/app
     restart: unless-stopped
@@ -89,23 +106,27 @@ services:
       network: host
     container_name: xray_callback_test
     command: python test_callback_server.py
-    network_mode: "host"
+    networks:
+      - xray-network
+    ports:
+      - "8080:8080"
     volumes:
       - .:/app
     profiles:
       - test
 
-  # 测试执行服务 (用于运行测试脚本)
+  # 测试执行服务
   test:
     build:
       context: .
       network: host
     container_name: xray_test
-    network_mode: "host"
+    networks:
+      - xray-network
     volumes:
       - .:/app
     environment:
-      - REDIS_HOST=localhost
+      - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
     depends_on:
@@ -114,5 +135,12 @@ services:
       - test
     command: tail -f /dev/null
 
+networks:
+  xray-network:
+    driver: bridge
+
 volumes:
   redis_data:
+
+
+

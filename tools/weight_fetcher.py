@@ -14,7 +14,24 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError, 
+    BotoCoreError, 
+    EndpointConnectionError, 
+    ConnectionClosedError,
+    NoCredentialsError,
+    PartialCredentialsError
+)
+
+# 捕获底层网络库的异常
+try:
+    import requests
+    from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout, RequestException
+except ImportError:
+    # requests 可能未安装，但不影响主要功能
+    RequestsConnectionError = None
+    Timeout = None
+    RequestException = None
 
 try:
     import torch  # 可选：供 load_state_dict_from_s3 使用
@@ -69,13 +86,49 @@ def ensure_weight_file(s3_relative_path: str, *, force_download: bool = False) -
         client = get_s3_client()
         try:
             client.download_file(S3_BUCKET_NAME, sanitized_key, str(local_path))
-        except ClientError as exc:  # pragma: no cover - 依赖真实 S3 返回
-            error_code = exc.response.get('Error', {}).get('Code')
+        except (ClientError, BotoCoreError, EndpointConnectionError, ConnectionClosedError, 
+                NoCredentialsError, PartialCredentialsError) as exc:
+            # 捕获所有 boto3/botocore 相关的连接和下载错误
+            error_code = None
+            if isinstance(exc, ClientError):
+                error_code = exc.response.get('Error', {}).get('Code')
+            
             message = (
-                f"S3 download failed (bucket={S3_BUCKET_NAME}, key={sanitized_key}, "
-                f"code={error_code}): {exc}"
+                f"S3 download failed (bucket={S3_BUCKET_NAME}, key={sanitized_key}"
+                + (f", code={error_code}" if error_code else "")
+                + f"): {exc}"
             )
             raise WeightFetchError(message) from exc
+        except Exception as exc:
+            # 捕获底层网络库的异常（requests, urllib3 等）
+            # 检查异常类型而不是错误消息，避免误判
+            exc_type = type(exc).__name__
+            exc_module = type(exc).__module__
+            
+            # 检查是否是网络/连接相关的异常
+            is_network_error = (
+                # requests 异常
+                (RequestsConnectionError and isinstance(exc, RequestsConnectionError)) or
+                (Timeout and isinstance(exc, Timeout)) or
+                (RequestException and isinstance(exc, RequestException)) or
+                # urllib3 异常
+                'urllib3' in exc_module or
+                'urllib' in exc_module or
+                # socket 异常
+                'socket' in exc_module or
+                # 其他常见的网络异常类型
+                'Connection' in exc_type or
+                'Timeout' in exc_type or
+                'Network' in exc_type
+            )
+            
+            if is_network_error:
+                message = (
+                    f"S3 download failed (bucket={S3_BUCKET_NAME}, key={sanitized_key}): {exc}"
+                )
+                raise WeightFetchError(message) from exc
+            # 其他未知错误直接抛出（可能是代码逻辑错误等）
+            raise
 
     return str(local_path.resolve())
 

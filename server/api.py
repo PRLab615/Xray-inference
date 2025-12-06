@@ -29,6 +29,81 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# 全局默认比例尺常量
+# =============================================================================
+# 含义：1 像素 = 0.1 毫米（即 10 像素/毫米）
+# 这是医学影像的常见默认值，适用于大多数口腔 X 光片
+# 
+# 使用场景：
+#   1. 普通图片模式（imageUrl）且用户未提供 pixelSpacing
+#   2. DICOM 模式但解析比例尺失败时
+#
+# 注意：此常量是全局唯一的默认值来源，下游模块不应再定义独立的默认值
+DEFAULT_PIXEL_SPACING_MM = 0.1
+
+
+def _resolve_pixel_spacing_for_recalculate(
+    request_pixel_spacing,
+    data_image_spacing: dict,
+    task_id: str,
+    task_type: str
+) -> dict:
+    """
+    为重算接口解析 pixel_spacing（统一处理优先级逻辑）
+    
+    优先级：请求 pixelSpacing > data.ImageSpacing > 默认值
+    
+    Args:
+        request_pixel_spacing: 请求中的 PixelSpacingInfo 对象（可能为 None）
+        data_image_spacing: data 字段中的 ImageSpacing 字典（可能为 None）
+        task_id: 任务 ID（用于日志）
+        task_type: 任务类型（"pano" 或 "ceph"，用于日志）
+    
+    Returns:
+        dict: 格式为 {"scale_x": float, "scale_y": float, "source": str}
+    """
+    # 优先级 1：请求中的 pixelSpacing
+    if request_pixel_spacing:
+        pixel_spacing = {
+            "scale_x": request_pixel_spacing.scaleX,
+            "scale_y": request_pixel_spacing.scaleY or request_pixel_spacing.scaleX,
+            "source": "request",
+        }
+        logger.info(
+            f"[{task_type.upper()} Recalculate] [PixelSpacing] Using value from request: "
+            f"X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel, "
+            f"taskId={task_id}"
+        )
+        return pixel_spacing
+    
+    # 优先级 2：data 中的 ImageSpacing
+    if data_image_spacing and data_image_spacing.get("X"):
+        pixel_spacing = {
+            "scale_x": data_image_spacing["X"],
+            "scale_y": data_image_spacing.get("Y", data_image_spacing["X"]),
+            "source": "data",
+        }
+        logger.info(
+            f"[{task_type.upper()} Recalculate] [PixelSpacing] Using value from data.ImageSpacing: "
+            f"X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel, "
+            f"taskId={task_id}"
+        )
+        return pixel_spacing
+    
+    # 优先级 3：默认值
+    pixel_spacing = {
+        "scale_x": DEFAULT_PIXEL_SPACING_MM,
+        "scale_y": DEFAULT_PIXEL_SPACING_MM,
+        "source": "default",
+    }
+    logger.info(
+        f"[{task_type.upper()} Recalculate] [PixelSpacing] No pixelSpacing in request or data, "
+        f"using default: {DEFAULT_PIXEL_SPACING_MM} mm/pixel, taskId={task_id}"
+    )
+    return pixel_spacing
+
+
 def create_app() -> FastAPI:
     """
     创建 FastAPI 应用实例
@@ -173,16 +248,58 @@ async def startup_event():
 
 # ==================== 核心 API 接口 ====================
 
+def _wait_for_celery_result_polling(celery_result, timeout, poll_interval=0.2):
+    """
+    使用轮询方式等待 Celery 结果（替代 pub/sub）
+    
+    Celery 的 AsyncResult.get() 默认使用 Redis pub/sub，在高并发下
+    多个线程同时调用会导致连接冲突（I/O operation on closed file）。
+    
+    此函数使用轮询 ready()/successful() 来检查任务状态，
+    这些方法使用简单的 Redis GET 操作，更加可靠。
+    
+    Args:
+        celery_result: Celery AsyncResult 对象
+        timeout: 超时时间（秒）
+        poll_interval: 轮询间隔（秒），默认 0.2s
+    
+    Returns:
+        任务结果
+        
+    Raises:
+        celery.exceptions.TimeoutError: 超时
+        Exception: 任务执行失败时抛出原始异常
+    """
+    import celery.exceptions
+    
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        if celery_result.ready():
+            # 任务完成（成功或失败）
+            if celery_result.successful():
+                return celery_result.result
+            else:
+                # 任务失败，获取并抛出异常
+                # 注意：这里 get() 只是获取已完成的结果，不会阻塞
+                celery_result.get(propagate=True)
+        time.sleep(poll_interval)
+    
+    # 超时
+    raise celery.exceptions.TimeoutError(f"Task did not complete within {timeout} seconds")
+
+
 @app.post("/api/v1/analyze", status_code=200)
 async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     """
     伪同步推理接口（v4 架构）
     
     工作流程:
-        1. 下载图像
-        2. 提交任务到 Celery 队列（P2 执行推理）
-        3. P1 等待结果（使用 run_in_executor 避免阻塞事件循环）
-        4. 返回完整结果
+        1. 下载图像（支持 imageUrl 或 dicomUrl）
+        2. 如果是 DICOM，转换为 JPG 并提取患者信息和比例尺
+        3. 提交任务到 Celery 队列（P2 执行推理）
+        4. P1 等待结果（使用 run_in_executor 避免阻塞事件循环）
+        5. 返回完整结果
     
     优势:
         - 客户端体验：同步（一次请求，一次响应）
@@ -191,17 +308,20 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         - 协程挂起：使用 run_in_executor 包装阻塞调用，不阻塞事件循环
     
     技术细节:
-        - celery_result.get() 是阻塞调用，不能直接在 async def 中使用
+        - 使用轮询方式（而非 pub/sub）等待 Celery 结果
+        - 轮询更可靠，避免高并发下 Redis 连接冲突
         - 使用 asyncio.get_event_loop().run_in_executor() 将其转为 awaitable
         - 这样等待时不会阻塞事件循环，P1 可以处理其他请求
     
     Args:
         request: 同步分析请求（JSON body，Pydantic 自动验证）
             - taskType: 任务类型（panoramic/cephalometric）
-            - imageUrl: 图像 URL（HTTP/HTTPS）
-            - taskId: 任务 ID（可选，服务端自动生成）
+            - imageUrl: 图像 URL（HTTP/HTTPS），与 dicomUrl 二选一
+            - dicomUrl: DICOM 文件 URL（HTTP/HTTPS），与 imageUrl 二选一
+            - taskId: 任务 ID（必填）
             - metadata: 客户端自定义元数据（可选）
-            - patientInfo: 患者信息（cephalometric 必需）
+            - patientInfo: 患者信息（cephalometric 必需，但 dicomUrl 模式可从 DICOM 解析）
+            - pixelSpacing: 比例尺信息（可选，用于非 DICOM 图像）
         
     Returns:
         SyncAnalyzeResponse: 包含 taskId, status, timestamp, data/error 的响应
@@ -212,6 +332,7 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         HTTPException(500): 服务器内部错误
     """
     from server.tasks import analyze_task
+    from tools.dicom_utils import extract_dicom_info_for_inference
     import celery.exceptions
     import asyncio
     
@@ -229,7 +350,6 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         )
     
     # 在 Redis 中设置临时标记，表示任务正在处理（防止并发重复提交）
-    # 同步接口不持久化结果，但需要标记 taskId 已被使用
     try:
         _persistence.save_task(task_id, {
             "taskId": task_id,
@@ -239,86 +359,201 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
         })
     except Exception as e:
         logger.error(f"Failed to mark task as processing: {task_id}, {e}")
-        # 如果 Redis 操作失败，仍然继续处理，但记录警告
     
     logger.info(f"[Pseudo-Sync] Request received: taskId={task_id}, taskType={request.taskType}")
     
-    # 2. 下载图像
-    file_ext = '.jpg'
-    image_filename = f"{task_id}{file_ext}"
-    image_path = os.path.join(_upload_dir, image_filename)
+    # 2. 下载图像（支持 imageUrl 或 dicomUrl）
+    image_path = None
+    dicom_path = None
+    patient_info = request.patientInfo.model_dump() if request.patientInfo else None
+    pixel_spacing = None
+    temp_files = []  # 记录需要清理的临时文件
     
     try:
-        _image_downloader.download_image(request.imageUrl, image_path)
-        logger.info(f"Image downloaded: {image_path}")
+        if request.dicomUrl:
+            # DICOM 模式：下载 DICOM -> 转换 JPG -> 提取患者信息和比例尺
+            dicom_filename = f"{task_id}.dcm"
+            dicom_path = os.path.join(_upload_dir, dicom_filename)
+            temp_files.append(dicom_path)
+            
+            _image_downloader.download_dicom(request.dicomUrl, dicom_path)
+            logger.info(f"DICOM downloaded: {dicom_path}")
+            
+            # 转换 DICOM 并提取信息
+            dicom_info = extract_dicom_info_for_inference(dicom_path, out_dir=_upload_dir)
+            image_path = dicom_info["image_path"]
+            temp_files.append(image_path)
+            
+            # 从 DICOM 提取患者信息（如果请求中没有提供）
+            if not patient_info:
+                dicom_gender = dicom_info["patient_info"]["gender"]
+                if dicom_gender:
+                    patient_info = dicom_info["patient_info"]
+                    logger.info(f"Patient info extracted from DICOM: {patient_info}")
+                else:
+                    # 性别无法识别（可能是 "O"/Other 或其他非标准值），默认使用 Male
+                    raw_sex = dicom_info["dicom_metadata"].get("PatientSex", "")
+                    logger.warning(
+                        f"[PatientInfo] DICOM PatientSex='{raw_sex}' is not recognized (expected M/F). "
+                        f"Defaulting to Male. Task: {task_id}"
+                    )
+                    patient_info = {
+                        "gender": "Male",
+                        "DentalAgeStage": dicom_info["patient_info"]["DentalAgeStage"],
+                    }
+            
+            # 从 DICOM 提取比例尺
+            if dicom_info["pixel_spacing"]["available"]:
+                pixel_spacing = {
+                    "scale_x": dicom_info["pixel_spacing"]["scale_x"],
+                    "scale_y": dicom_info["pixel_spacing"]["scale_y"],
+                    "source": "dicom",
+                }
+                logger.info(f"[PixelSpacing] Extracted from DICOM: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # DICOM 解析比例尺失败，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default_dicom_fallback",
+                }
+                logger.warning(
+                    f"[PixelSpacing] DICOM pixel spacing not available or invalid. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel. "
+                    f"DICOM file: {dicom_path}. "
+                    f"This may affect measurement accuracy. Consider providing pixelSpacing in request."
+                )
+        else:
+            # 普通图像模式
+            file_ext = '.jpg'
+            image_filename = f"{task_id}{file_ext}"
+            image_path = os.path.join(_upload_dir, image_filename)
+            temp_files.append(image_path)
+            
+            _image_downloader.download_image(request.imageUrl, image_path)
+            logger.info(f"Image downloaded: {image_path}")
+            
+            # 使用请求中的比例尺，若未提供则使用默认值
+            if request.pixelSpacing:
+                pixel_spacing = {
+                    "scale_x": request.pixelSpacing.scaleX,
+                    "scale_y": request.pixelSpacing.scaleY or request.pixelSpacing.scaleX,
+                    "source": "request",
+                }
+                logger.info(f"[PixelSpacing] From request: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # 普通图片未提供比例尺，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default",
+                }
+                logger.info(
+                    f"[PixelSpacing] No pixelSpacing provided in request. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel"
+                )
     except Exception as e:
-        logger.error(f"Image download failed: {e}")
+        logger.error(f"Image/DICOM download failed: {e}")
+        # 清理临时文件
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=11004,
-                message=f"Cannot download image from '{request.imageUrl}'",
+                message=f"Cannot download image/DICOM from '{request.dicomUrl or request.imageUrl}'",
                 detail=str(e)
             ).model_dump()
         )
     
-    # 3. 构造任务参数（伪同步：callback_url=None）
+    # 3. 验证侧位片必须有患者信息
+    if request.taskType == 'cephalometric' and not patient_info:
+        # 清理临时文件
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message="patientInfo is required for cephalometric tasks",
+                detail="Cannot extract valid patient info from DICOM. Please provide patientInfo manually."
+            ).model_dump()
+        )
+    
+    # 4. 构造任务参数（伪同步：callback_url=None）
     task_params = {
         "task_id": task_id,
         "task_type": request.taskType,
         "image_path": image_path,
-        "patient_info": request.patientInfo.model_dump() if request.patientInfo else None,
-        "callback_url": None,  # 伪同步：不需要回调
+        "patient_info": patient_info,
+        "pixel_spacing": pixel_spacing,  # 新增：比例尺信息
+        "callback_url": None,
         "metadata": request.metadata or {},
     }
     
-    # 4. 提交到 Celery 队列
+    # 5. 提交到 Celery 队列
     logger.info(f"[Pseudo-Sync] Submitting task to Celery: {task_id}")
     celery_result = analyze_task.apply_async(kwargs=task_params)
     
-    # 5. 【关键】等待 P2 完成（伪同步，使用 run_in_executor 避免阻塞事件循环）
+    # 6. 等待 P2 完成
     try:
-        # 设置超时（可配置，默认 30 秒）
-        timeout = 30  # 可从 config.yaml 读取
-        logger.info(f"[Pseudo-Sync] Waiting for result (timeout={timeout}s): {task_id}")
+        timeout = 30
+        logger.info(f"[Pseudo-Sync] Waiting for result via polling (timeout={timeout}s): {task_id}")
         
-        # 使用 run_in_executor 将阻塞的 get() 转为 awaitable
-        # 这样等待时不会阻塞事件循环，P1 可以处理其他请求
         loop = asyncio.get_event_loop()
-        data_dict = await loop.run_in_executor(
-            None,  # 使用默认的 ThreadPoolExecutor
-            lambda: celery_result.get(timeout=timeout)
+        result = await loop.run_in_executor(
+            None,
+            lambda: _wait_for_celery_result_polling(celery_result, timeout)
         )
         
         logger.info(f"[Pseudo-Sync] Task completed: {task_id}")
         
-        # 6. 清理临时文件
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up temp file: {image_path}")
+        # 解析返回结果（可能是 dict 或直接是 data_dict）
+        if isinstance(result, dict) and "data" in result and "is_mock" in result:
+            # 新格式：包含 data 和 is_mock
+            data_dict = result["data"]
+            is_mock = result["is_mock"]
+        else:
+            # 兼容旧格式：直接是 data_dict
+            data_dict = result
+            # 从 pipeline 获取 is_mock 状态（如果可能）
+            try:
+                from server.tasks import get_pipeline
+                pipeline = get_pipeline(request.taskType)
+                is_mock = getattr(pipeline, 'is_mock_mode', False)
+            except Exception:
+                is_mock = False
         
-        # 7. 清理 Redis 中的临时标记（同步接口不持久化结果）
+        # 7. 清理临时文件
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+                logger.info(f"Cleaned up temp file: {f}")
+        
+        # 8. 清理 Redis 中的临时标记
         try:
             _persistence.delete_task(task_id)
         except Exception as e:
             logger.warning(f"Failed to clean up task marker: {task_id}, {e}")
         
-        # 8. 返回结果
+        # 9. 返回结果
         return SyncAnalyzeResponse(
             taskId=task_id,
             status="SUCCESS",
             timestamp=datetime.now(timezone.utc).isoformat(),
             metadata=request.metadata,
             data=data_dict,
-            error=None
+            error=None,
+            is_mock=is_mock
         )
     
     except celery.exceptions.TimeoutError:
         logger.error(f"[Pseudo-Sync] Task timeout: {task_id}")
-        # 清理临时文件
-        if os.path.exists(image_path):
-            os.remove(image_path)
-        # 清理 Redis 中的临时标记
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         try:
             _persistence.delete_task(task_id)
         except Exception as e:
@@ -334,10 +569,9 @@ async def analyze(request: SyncAnalyzeRequest) -> SyncAnalyzeResponse:
     
     except Exception as e:
         logger.error(f"[Pseudo-Sync] Task execution failed: {task_id}, {e}", exc_info=True)
-        # 清理临时文件
-        if os.path.exists(image_path):
-            os.remove(image_path)
-        # 清理 Redis 中的临时标记
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         try:
             _persistence.delete_task(task_id)
         except Exception as e2:
@@ -365,10 +599,12 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         request: 分析请求（JSON body，Pydantic 自动验证）
             - taskId: 任务唯一标识（UUID v4 格式）
             - taskType: 任务类型（panoramic/cephalometric）
-            - imageUrl: 图像 URL（HTTP/HTTPS）
+            - imageUrl: 图像 URL（HTTP/HTTPS），与 dicomUrl 二选一
+            - dicomUrl: DICOM 文件 URL（HTTP/HTTPS），与 imageUrl 二选一
             - callbackUrl: 回调 URL（HTTP/HTTPS）
             - metadata: 客户端自定义元数据（可选）
-            - patientInfo: 患者信息（cephalometric 必需）
+            - patientInfo: 患者信息（cephalometric 必需，但 dicomUrl 模式可从 DICOM 解析）
+            - pixelSpacing: 比例尺信息（可选，用于非 DICOM 图像）
         
     Returns:
         AnalyzeResponse: 包含 taskId, status, submittedAt, metadata 的响应
@@ -379,17 +615,19 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
         HTTPException(500): 服务器内部错误（Redis/Celery）
         
     工作流程:
-        1. Pydantic 自动验证请求参数（taskId、taskType、imageUrl 等）
+        1. Pydantic 自动验证请求参数（taskId、taskType、imageUrl/dicomUrl 等）
         2. 检查 taskId 是否已存在（防止重复提交）
-        3. 从 imageUrl 下载图像文件
-        4. 保存任务元数据到 Redis
-        5. 将任务推入 Celery 队列
-        6. 返回 202 Accepted 响应
+        3. 下载图像/DICOM 文件
+        4. 如果是 DICOM，转换为 JPG 并提取患者信息和比例尺
+        5. 保存任务元数据到 Redis
+        6. 将任务推入 Celery 队列
+        7. 返回 202 Accepted 响应
     """
-    # 延迟导入 analyze_task 避免循环导入
     from server.tasks import analyze_task
+    from tools.dicom_utils import extract_dicom_info_for_inference
     
-    logger.info(f"Received async request: taskId={request.taskId}, taskType={request.taskType}, imageUrl={request.imageUrl}")
+    logger.info(f"Received async request: taskId={request.taskId}, taskType={request.taskType}, "
+                f"imageUrl={request.imageUrl}, dicomUrl={request.dicomUrl}")
     
     # 1. 检查 taskId 是否已存在
     if _persistence.task_exists(request.taskId):
@@ -403,56 +641,163 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             ).model_dump()
         )
     
-    # 2. 下载图像
-    file_ext = '.jpg'
-    image_filename = f"{request.taskId}{file_ext}"
-    image_path = os.path.join(_upload_dir, image_filename)
+    # 2. 下载图像（支持 imageUrl 或 dicomUrl）
+    image_path = None
+    dicom_path = None
+    patient_info = request.patientInfo.model_dump() if request.patientInfo else None
+    pixel_spacing = None
+    temp_files = []  # 记录需要清理的临时文件
+    image_source = "url"
+    source_url = request.imageUrl or request.dicomUrl
     
     try:
-        _image_downloader.download_image(request.imageUrl, image_path)
-        logger.info(f"Image downloaded: {request.imageUrl} -> {image_path}")
+        if request.dicomUrl:
+            # DICOM 模式
+            image_source = "dicom"
+            dicom_filename = f"{request.taskId}.dcm"
+            dicom_path = os.path.join(_upload_dir, dicom_filename)
+            temp_files.append(dicom_path)
+            
+            _image_downloader.download_dicom(request.dicomUrl, dicom_path)
+            logger.info(f"DICOM downloaded: {dicom_path}")
+            
+            # 转换 DICOM 并提取信息
+            dicom_info = extract_dicom_info_for_inference(dicom_path, out_dir=_upload_dir)
+            image_path = dicom_info["image_path"]
+            temp_files.append(image_path)
+            
+            # 从 DICOM 提取患者信息
+            if not patient_info:
+                dicom_gender = dicom_info["patient_info"]["gender"]
+                if dicom_gender:
+                    patient_info = dicom_info["patient_info"]
+                    logger.info(f"Patient info extracted from DICOM: {patient_info}")
+                else:
+                    # 性别无法识别（可能是 "O"/Other 或其他非标准值），默认使用 Male
+                    raw_sex = dicom_info["dicom_metadata"].get("PatientSex", "")
+                    logger.warning(
+                        f"[PatientInfo] DICOM PatientSex='{raw_sex}' is not recognized (expected M/F). "
+                        f"Defaulting to Male. Task: {request.taskId}"
+                    )
+                    patient_info = {
+                        "gender": "Male",
+                        "DentalAgeStage": dicom_info["patient_info"]["DentalAgeStage"],
+                    }
+            
+            # 从 DICOM 提取比例尺
+            if dicom_info["pixel_spacing"]["available"]:
+                pixel_spacing = {
+                    "scale_x": dicom_info["pixel_spacing"]["scale_x"],
+                    "scale_y": dicom_info["pixel_spacing"]["scale_y"],
+                    "source": "dicom",
+                }
+                logger.info(f"[PixelSpacing] Extracted from DICOM: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # DICOM 解析比例尺失败，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default_dicom_fallback",
+                }
+                logger.warning(
+                    f"[PixelSpacing] DICOM pixel spacing not available or invalid. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel. "
+                    f"DICOM file: {dicom_path}. "
+                    f"This may affect measurement accuracy. Consider providing pixelSpacing in request."
+                )
+        else:
+            # 普通图像模式
+            file_ext = '.jpg'
+            image_filename = f"{request.taskId}{file_ext}"
+            image_path = os.path.join(_upload_dir, image_filename)
+            temp_files.append(image_path)
+            
+            _image_downloader.download_image(request.imageUrl, image_path)
+            logger.info(f"Image downloaded: {request.imageUrl} -> {image_path}")
+            
+            # 使用请求中的比例尺，若未提供则使用默认值
+            if request.pixelSpacing:
+                pixel_spacing = {
+                    "scale_x": request.pixelSpacing.scaleX,
+                    "scale_y": request.pixelSpacing.scaleY or request.pixelSpacing.scaleX,
+                    "source": "request",
+                }
+                logger.info(f"[PixelSpacing] From request: X={pixel_spacing['scale_x']:.4f}, Y={pixel_spacing['scale_y']:.4f} mm/pixel")
+            else:
+                # 普通图片未提供比例尺，使用默认值
+                pixel_spacing = {
+                    "scale_x": DEFAULT_PIXEL_SPACING_MM,
+                    "scale_y": DEFAULT_PIXEL_SPACING_MM,
+                    "source": "default",
+                }
+                logger.info(
+                    f"[PixelSpacing] No pixelSpacing provided in request. "
+                    f"Using default value: {DEFAULT_PIXEL_SPACING_MM} mm/pixel"
+                )
     except ValueError as e:
-        logger.error(f"Image validation failed: {e}")
+        logger.error(f"Image/DICOM validation failed: {e}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=11004,
-                message=f"Cannot download image from '{request.imageUrl}'",
+                message=f"Cannot download image/DICOM from '{source_url}'",
                 detail=str(e)
             ).model_dump()
         )
     except Exception as e:
-        logger.error(f"Image download failed: {e}")
+        logger.error(f"Image/DICOM download failed: {e}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=11004,
-                message=f"Cannot download image from '{request.imageUrl}'",
+                message=f"Cannot download image/DICOM from '{source_url}'",
                 detail=str(e)
             ).model_dump()
         )
     
-    # 3. 构造任务元数据
+    # 3. 验证侧位片必须有患者信息
+    if request.taskType == 'cephalometric' and not patient_info:
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message="patientInfo is required for cephalometric tasks",
+                detail="Cannot extract valid patient info from DICOM. Please provide patientInfo manually."
+            ).model_dump()
+        )
+    
+    # 4. 构造任务元数据
     submitted_at = time.time()
     metadata_v3 = {
         "taskId": request.taskId,
         "taskType": request.taskType,
         "imageUrl": request.imageUrl,
+        "dicomUrl": request.dicomUrl,
         "imagePath": image_path,
         "callbackUrl": request.callbackUrl,
         "metadata": request.metadata or {},
-        "patientInfo": request.patientInfo.model_dump() if request.patientInfo else None,
+        "patientInfo": patient_info,
+        "pixelSpacing": pixel_spacing,
         "submittedAt": submitted_at,
-        "imageSource": "url"
+        "imageSource": image_source
     }
     
-    # 4. 保存到 Redis
+    # 5. 保存到 Redis
     success = _persistence.save_task(request.taskId, metadata_v3)
     if not success:
-        # 清理已下载的图像
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up image file: {image_path}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+                logger.info(f"Cleaned up file: {f}")
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse(
@@ -462,25 +807,26 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             ).model_dump()
         )
     
-    # 5. 异步任务入队（v4：使用统一任务参数，所有信息通过 Celery 传递）
+    # 6. 异步任务入队
     try:
         task_params = {
             "task_id": request.taskId,
             "task_type": request.taskType,
             "image_path": image_path,
-            "image_url": request.imageUrl,  # v4 新增：通过任务参数传递，不依赖 Redis
-            "patient_info": request.patientInfo.model_dump() if request.patientInfo else None,
-            "callback_url": request.callbackUrl,  # 纯异步：需要回调
+            "image_url": source_url,
+            "patient_info": patient_info,
+            "pixel_spacing": pixel_spacing,  # 新增：比例尺信息
+            "callback_url": request.callbackUrl,
             "metadata": request.metadata or {},
         }
         task_result = analyze_task.apply_async(kwargs=task_params)
         logger.info(f"Task queued: {request.taskId}, celery_id={task_result.id}")
     except Exception as e:
-        # 回滚：删除 Redis 记录和图像文件
         _persistence.delete_task(request.taskId)
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up image file: {image_path}")
+        for f in temp_files:
+            if os.path.exists(f):
+                os.remove(f)
+                logger.info(f"Cleaned up file: {f}")
         logger.error(f"Failed to queue task: {e}")
         raise HTTPException(
             status_code=500,
@@ -491,7 +837,7 @@ def analyze_async(request: AnalyzeRequest) -> AnalyzeResponse:
             ).model_dump()
         )
     
-    # 6. 返回 202 响应
+    # 7. 返回 202 响应
     return AnalyzeResponse(
         taskId=request.taskId,
         status="QUEUED",
@@ -512,81 +858,84 @@ def recalculate_pano_measurements(request: PanoRecalculateRequest) -> Recalculat
         跳过模型推理，重新计算所有衍生数据（对称性判断、缺牙推导、描述文本等），
         返回完整的全景片报告。
     
-    技术细节:
-        - 在 P1 中实现（不在 P2）
-        - 使用 def 而非 async def，因为报告生成是同步 CPU 密集型任务
-        - FastAPI 会自动在线程池中运行，不会阻塞事件循环
+    因果关系：
+        "因"字段（客户端传入，服务端使用）：
+        - Metadata
+        - AnatomyResults[*].SegmentationMask（髁突/下颌升支/上颌窦的多边形坐标）
+        - MaxillarySinus[*].Inflammation, TypeClassification（模型直推）
+        - ToothAnalysis[*].FDI, SegmentationMask, Properties, Confidence
+        - JointAndMandible.CondyleAssessment.*.Morphology
+        - ImplantAnalysis.Items[*].BBox, Confidence
+        - ThirdMolarSummary[*].Impactions（模型直推）
+        - PeriodontalCondition（模型直推）
+        - RootTipDensityAnalysis.Items[*]
+        
+        "果"字段（服务端重算，客户端传值将被忽略）：
+        - CondyleAssessment.OverallSymmetry（髁突对称性）
+        - RamusSymmetry, GonialAngleSymmetry（下颌升支/下颌角对称性）
+        - MaxillarySinus[*].Pneumatization, RootEntryToothFDI
+        - MissingTeeth（缺牙推导）
+        - ThirdMolarSummary[*].Level
+        - ImplantAnalysis.TotalCount, QuadrantCounts
+        - RootTipDensityAnalysis.TotalCount, QuadrantCounts
+        - 所有 Detail 字段
     
     Args:
-        request: 重算请求（对齐接口定义）
+        request: 重算请求
             - taskId: 任务唯一标识，仅用于日志追踪
             - data: 完整的全景片推理结果 JSON（即 example_pano_result.json 格式）
+            - pixelSpacing: 像素间距/比例尺（可选）
     
     Returns:
         RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
-        
-    Raises:
-        HTTPException(400): 参数验证失败
-        HTTPException(500): 报告生成失败
-    
-    工作流程（当前实现）:
-        1. 验证请求参数
-        2. 暂时直接返回 data（不做处理）
-        3. 后续实现：提取"因"字段，重新计算"果"字段
-    
-    注意:
-        - 当前暂时直接返回，因为需要所有推理模块的后处理写完才能集成
-        - 输入是推理的格式，输出返回的也是推理的格式，所以直接返回就是正确的格式
     """
+    from pipelines.pano.utils.pano_recalculate import recalculate_pano_report
+    
     logger.info(f"[Pano Recalculate] Request received: taskId={request.taskId}")
     
-    try:
-        # 1. 校验 taskId（schema 已校验 UUID 格式，这里再次确认）
-        if not request.taskId:
-            raise ValueError("taskId is required")
-        
-        # 2. 校验 data 不为空
-        if not request.data:
-            raise ValueError("data is required and cannot be empty")
-        
-        # TODO: 后续实现重算逻辑
-        # 3. 从 request.data 中提取"因"字段（基础几何数据）
-        # 4. 重新计算"果"字段（对称性判断、缺牙推导、描述文本等）
-        # 5. 返回完整的全景片报告
-        
-        # 当前实现：直接返回 data（因为输入输出格式一致）
-        logger.info(f"[Pano Recalculate] Directly returning data (recalculation logic to be implemented): taskId={request.taskId}")
-        
-        return RecalculateResponse(
-            taskId=request.taskId,
-            status="SUCCESS",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            metadata=None,  # 接口定义中 metadata 可选
-            data=request.data,  # 直接返回，格式与推理接口一致
-            error=None
-        )
-    
-    except ValueError as e:
-        # 参数验证错误，返回 400
-        logger.warning(f"[Pano Recalculate] Validation failed: {e}")
+    # 1. 校验 taskId
+    if not request.taskId:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=10001,
-                message=f"Invalid parameter: {e}",
-                detail=str(e)
+                message="Invalid parameter: taskId is required",
+                detail="taskId is required"
             ).model_dump()
         )
-    except Exception as e:
-        logger.error(f"[Pano Recalculate] Failed: {e}", exc_info=True)
+    
+    # 2. 校验 data 不为空
+    if not request.data:
         raise HTTPException(
-            status_code=500,
+            status_code=400,
             detail=ErrorResponse(
-                code=12001,
-                message="AI model execution failed",
-                detail=str(e)
+                code=10001,
+                message="Invalid parameter: data is required and cannot be empty",
+                detail="data is required and cannot be empty"
             ).model_dump()
         )
+    
+    # 3. 解析 pixelSpacing（优先级：请求 > data.ImageSpacing > 默认值）
+    pixel_spacing = _resolve_pixel_spacing_for_recalculate(
+        request_pixel_spacing=request.pixelSpacing,
+        data_image_spacing=request.data.get("ImageSpacing"),
+        task_id=request.taskId,
+        task_type="pano"
+    )
+    
+    # 4. 调用重算逻辑
+    logger.info(f"[Pano Recalculate] Starting recalculation: taskId={request.taskId}")
+    recalculated_data = recalculate_pano_report(request.data, pixel_spacing=pixel_spacing)
+    logger.info(f"[Pano Recalculate] Recalculation completed: taskId={request.taskId}")
+    
+    return RecalculateResponse(
+        taskId=request.taskId,
+        status="SUCCESS",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        metadata=None,  # 接口定义中 metadata 可选
+        data=recalculated_data,
+        error=None
+    )
 
 
 @app.post("/api/v1/measurements/ceph/recalculate", status_code=200)
@@ -598,94 +947,113 @@ def recalculate_ceph_measurements(request: CephRecalculateRequest) -> Recalculat
         接收客户端修改后的完整推理结果（关键点坐标 + 颈椎分割），
         重新计算所有测量值，生成完整的侧位片报告。
     
-    技术细节:
-        - 在 P1 中实现（不在 P2）
-        - 使用 def 而非 async def，因为测量计算和报告生成是同步 CPU 密集型任务
-        - FastAPI 会自动在线程池中运行，不会阻塞事件循环
+    因果关系：
+        "因"字段（客户端传入，服务端使用）：
+        - ImageSpacing (X, Y, Unit)
+        - PatientInformation.Gender, DentalAgeStage
+        - LandmarkPositions.Landmarks[*] (Label, X, Y, Confidence, Status)
+        - Cervical_Vertebral_Maturity_Stage (Coordinates, SerializedMask, Level, Confidence)
+        
+        "果"字段（服务端重算，客户端传值将被忽略）：
+        - VisibilityMetrics, MissingPointHandling, StatisticalFields
+        - LandmarkPositions 统计字段
+        - 除 Cervical_Vertebral_Maturity_Stage 外的所有测量值及其 Level
     
     Args:
-        request: 重算请求（对齐接口定义）
+        request: 重算请求
             - taskId: 任务唯一标识，仅用于日志追踪
-            - data: 完整的侧位片推理结果 JSON（即 example_ceph_result.json 格式）
+            - data: 完整的侧位片推理结果 JSON
+            - pixelSpacing: 像素间距/比例尺（可选）
     
     Returns:
-        RecalculateResponse: 包含重算后的完整报告（格式与推理接口一致）
-        
-    Raises:
-        HTTPException(400): 参数验证失败
-        HTTPException(500): 报告生成失败
-    
-    工作流程（当前实现）:
-        1. 验证请求参数
-        2. 暂时直接返回 data（不做处理）
-        3. 后续实现：提取"因"字段，重新计算"果"字段
-    
-    注意:
-        - 当前暂时直接返回，因为需要所有推理模块的后处理写完才能集成
-        - 输入是推理的格式，输出返回的也是推理的格式，所以直接返回就是正确的格式
+        RecalculateResponse: 包含重算后的完整报告
     """
+    from pipelines.ceph.utils.ceph_recalculate import recalculate_ceph_report
+    
     logger.info(f"[Ceph Recalculate] Request received: taskId={request.taskId}")
     
-    try:
-        # 1. 校验 taskId（schema 已校验 UUID 格式，这里再次确认）
-        if not request.taskId:
-            raise ValueError("taskId is required")
-        
-        # 2. 校验 data 不为空
-        if not request.data:
-            raise ValueError("data is required and cannot be empty")
-        
-        # 3. 校验 patientInfo（侧位片必填，schema 已校验，这里再次确认）
-        if not request.patientInfo:
-            raise ValueError("patientInfo is required for cephalometric recalculation")
-        
-        # 4. 校验 Gender（schema 已校验，这里再次确认）
-        gender = request.patientInfo.gender
-        if gender not in ["Male", "Female"]:
-            raise ValueError(f"patientInfo.gender must be 'Male' or 'Female', got '{gender}'")
-        
-        # 5. 校验 DentalAgeStage（schema 已校验，这里再次确认）
-        dental_age_stage = request.patientInfo.DentalAgeStage
-        if dental_age_stage not in ["Permanent", "Mixed"]:
-            raise ValueError(f"patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'")
-        
-        logger.info(f"[Ceph Recalculate] Validation passed: taskId={request.taskId}, gender={gender}, dentalAgeStage={dental_age_stage}")
-        
-        # TODO: 后续实现重算逻辑
-        # 6. 从 request.data 中提取"因"字段（关键点坐标、颈椎分割等）
-        # 7. 重新计算"果"字段（所有测量值、测量值Level等）
-        # 8. 返回完整的侧位片报告
-        
-        # 当前实现：直接返回 data（因为输入输出格式一致）
-        logger.info(f"[Ceph Recalculate] Directly returning data (recalculation logic to be implemented): taskId={request.taskId}")
-        
-        return RecalculateResponse(
-            taskId=request.taskId,
-            status="SUCCESS",
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            metadata=None,  # 接口定义中 metadata 可选
-            data=request.data,  # 直接返回，格式与推理接口一致
-            error=None
-        )
-    
-    except ValueError as e:
-        # 参数验证错误，返回 400
-        logger.warning(f"[Ceph Recalculate] Validation failed: {e}")
+    # 1. 校验 taskId
+    if not request.taskId:
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse(
                 code=10001,
-                message=f"Invalid parameter: {e}",
-                detail=str(e)
+                message="Invalid parameter: taskId is required",
+                detail="taskId is required"
             ).model_dump()
         )
-    except Exception as e:
-        logger.error(f"[Ceph Recalculate] Failed: {e}", exc_info=True)
+    
+    # 2. 校验 data 不为空
+    if not request.data:
         raise HTTPException(
-            status_code=500,
+            status_code=400,
             detail=ErrorResponse(
-                code=12001,
-                message="AI model execution failed",
-                detail=str(e)
+                code=10001,
+                message="Invalid parameter: data is required and cannot be empty",
+                detail="data is required and cannot be empty"
             ).model_dump()
         )
+    
+    # 3. 校验 patientInfo（侧位片必填）
+    if not request.patientInfo:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message="Invalid parameter: patientInfo is required for cephalometric recalculation",
+                detail="patientInfo is required for cephalometric recalculation"
+            ).model_dump()
+        )
+    
+    # 4. 校验 Gender
+    gender = request.patientInfo.gender
+    if gender not in ["Male", "Female"]:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message=f"Invalid parameter: patientInfo.gender must be 'Male' or 'Female', got '{gender}'",
+                detail=f"patientInfo.gender must be 'Male' or 'Female', got '{gender}'"
+            ).model_dump()
+        )
+    
+    # 5. 校验 DentalAgeStage
+    dental_age_stage = request.patientInfo.DentalAgeStage
+    if dental_age_stage not in ["Permanent", "Mixed"]:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                code=10001,
+                message=f"Invalid parameter: patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'",
+                detail=f"patientInfo.DentalAgeStage must be 'Permanent' or 'Mixed', got '{dental_age_stage}'"
+            ).model_dump()
+        )
+    
+    logger.info(f"[Ceph Recalculate] Validation passed: taskId={request.taskId}, gender={gender}, dentalAgeStage={dental_age_stage}")
+    
+    # 6. 解析 pixelSpacing（优先级：请求 > data.ImageSpacing > 默认值）
+    pixel_spacing = _resolve_pixel_spacing_for_recalculate(
+        request_pixel_spacing=request.pixelSpacing,
+        data_image_spacing=request.data.get("ImageSpacing"),
+        task_id=request.taskId,
+        task_type="ceph"
+    )
+    
+    # 7. 调用重算逻辑
+    recalculated_data = recalculate_ceph_report(
+        input_data=request.data,
+        gender=gender,
+        dental_age_stage=dental_age_stage,
+        pixel_spacing=pixel_spacing,
+    )
+    
+    logger.info(f"[Ceph Recalculate] Recalculation completed: taskId={request.taskId}")
+    
+    return RecalculateResponse(
+        taskId=request.taskId,
+        status="SUCCESS",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        metadata=None,
+        data=recalculated_data,
+        error=None
+    )

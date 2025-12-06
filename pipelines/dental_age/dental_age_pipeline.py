@@ -50,9 +50,20 @@ class DentalAgePipeline(BasePipeline):
         # 过滤掉 'description' 等非模块参数（config.yaml 中的文档字段）
         filtered_config = {k: v for k, v in teeth_config.items() if k != 'description'}
         
-        self.teeth_seg = TeethSegmentationModule(**filtered_config)
-        
-        logger.info(f"DentalAgePipeline initialized with teeth_seg config: {filtered_config}")
+        try:
+            self.teeth_seg = TeethSegmentationModule(**filtered_config)
+            logger.info(f"DentalAgePipeline initialized with teeth_seg config: {filtered_config}")
+        except Exception as e:
+            from tools.weight_fetcher import WeightFetchError
+            if isinstance(e, (WeightFetchError, FileNotFoundError)):
+                # 权重加载失败：本地缓存没有且S3连接失败
+                logger.error(f"Failed to load model weights: {e}")
+                logger.warning("Entering MOCK MODE: Will return example JSON data for all inference requests")
+                self.is_mock_mode = True
+                self.teeth_seg = None
+            else:
+                # 其他初始化错误仍然抛出（不通过错误消息判断，避免误判）
+                raise
     
     def run(self, image_path: str, **kwargs) -> dict:
         """
@@ -82,6 +93,20 @@ class DentalAgePipeline(BasePipeline):
             4. 判断是否包含乳牙
             5. 返回牙列类型和详细分析
         """
+        # Mock模式：返回示例JSON
+        if self.is_mock_mode:
+            from server.utils.mock_data_loader import load_example_json
+            logger.warning("Pipeline is in MOCK MODE, returning example JSON data")
+            example_data = load_example_json('dental_age_stage')
+            if example_data:
+                # 示例JSON可能包含完整的响应结构，需要提取data字段
+                if 'data' in example_data:
+                    return example_data['data']
+                return example_data
+            else:
+                logger.error("Failed to load example JSON, returning empty dict")
+                return {}
+        
         logger.info(f"Running dental age stage detection for: {image_path}")
         
         # 1. 加载图像

@@ -83,7 +83,25 @@ def _preload_pipelines() -> None:
             continue
 
         logger.info("Preloading %s pipeline with kwargs=%s", task_type, init_kwargs)
-        _PIPELINE_CACHE[task_type] = builder(**init_kwargs)
+        try:
+            pipeline = builder(**init_kwargs)
+            _PIPELINE_CACHE[task_type] = pipeline
+            # 检查是否处于mock模式
+            if hasattr(pipeline, 'is_mock_mode') and pipeline.is_mock_mode:
+                logger.warning(
+                    "Pipeline %s initialized in MOCK MODE (model weights not available)",
+                    task_type
+                )
+        except Exception as e:
+            # Pipeline初始化失败（非权重加载失败），记录错误但不阻止Worker启动
+            # 权重加载失败已在Pipeline内部处理，会设置mock模式
+            logger.error(
+                "Failed to preload pipeline %s: %s. "
+                "It will be created on first use (may enter mock mode if weights unavailable).",
+                task_type,
+                e
+            )
+            # 不将失败的Pipeline加入缓存，让get_pipeline在首次使用时尝试创建
 
     _PIPELINES_INITIALIZED = True
 
@@ -104,9 +122,21 @@ def get_pipeline(task_type: str):
         task_type,
         init_kwargs
     )
-    pipeline = builder(**init_kwargs)
-    _PIPELINE_CACHE[task_type] = pipeline
-    return pipeline
+    try:
+        pipeline = builder(**init_kwargs)
+        _PIPELINE_CACHE[task_type] = pipeline
+        # 检查是否处于mock模式
+        if hasattr(pipeline, 'is_mock_mode') and pipeline.is_mock_mode:
+            logger.warning(
+                "Pipeline %s loaded in MOCK MODE (model weights not available)",
+                task_type
+            )
+        return pipeline
+    except Exception as e:
+        # Pipeline初始化失败（非权重加载失败），抛出异常
+        # 权重加载失败已在Pipeline内部处理，会设置mock模式，不会抛出异常
+        logger.error(f"Failed to create pipeline {task_type}: {e}")
+        raise
 
 
 try:
@@ -118,7 +148,8 @@ except Exception:
 
 @celery_app.task(name='server.tasks.analyze_task', bind=True)
 def analyze_task(self, task_id: str, task_type: str, image_path: str, 
-                 image_url: str = None, patient_info=None, callback_url=None, metadata=None):
+                 image_url: str = None, patient_info=None, pixel_spacing=None,
+                 callback_url=None, metadata=None):
     """
     统一的推理任务（v4 架构：支持伪同步和纯异步）
     
@@ -129,6 +160,7 @@ def analyze_task(self, task_id: str, task_type: str, image_path: str,
         image_path: 图像文件路径
         image_url: 原始图像 URL（可选，纯异步回调时使用）
         patient_info: 患者信息（可选，侧位片必需）
+        pixel_spacing: 像素间距/比例尺信息（可选，从 DICOM 或请求中获取）
         callback_url: 回调 URL（可选）
             - None：伪同步模式（直接返回结果）
             - 有值：纯异步模式（发送回调）
@@ -155,15 +187,18 @@ def analyze_task(self, task_id: str, task_type: str, image_path: str,
         
         # 2. 执行推理
         if task_type == 'panoramic':
-            data_dict = pipeline.run(image_path=image_path)
+            data_dict = pipeline.run(image_path=image_path, pixel_spacing=pixel_spacing)
         elif task_type == 'cephalometric':
-            data_dict = pipeline.run(image_path=image_path, patient_info=patient_info)
+            data_dict = pipeline.run(image_path=image_path, patient_info=patient_info, pixel_spacing=pixel_spacing)
         elif task_type == 'dental_age_stage':
             data_dict = pipeline.run(image_path=image_path)
         else:
             raise ValueError(f"Unknown task_type: {task_type}")
         
         logger.info(f"[Worker] Task completed: {task_id}")
+        
+        # 获取 is_mock 状态
+        is_mock = getattr(pipeline, 'is_mock_mode', False)
         
         # 3. 根据 callback_url 决定行为
         if callback_url:
@@ -183,15 +218,19 @@ def analyze_task(self, task_id: str, task_type: str, image_path: str,
                     "imageUrl": image_url or ""  # v4：通过任务参数传递
                 },
                 "data": data_dict,
-                "error": None
+                "error": None,
+                "is_mock": is_mock
             }
             
             success = callback_mgr.send_callback(callback_url, payload)
             logger.info(f"[Worker] Callback sent: {callback_url}, success={success}")
             return None  # 纯异步不返回结果
         else:
-            # 伪同步：直接返回结果
-            return data_dict
+            # 伪同步：返回包含 data 和 is_mock 的字典
+            return {
+                "data": data_dict,
+                "is_mock": is_mock
+            }
     
     except Exception as e:
         logger.error(f"[Worker] Task failed: {task_id}, {e}", exc_info=True)

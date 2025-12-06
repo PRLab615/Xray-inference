@@ -244,12 +244,28 @@ class CephInferenceEngine:
         self.default_spacing = default_spacing
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def run(self, image_path: str, patient_info: Dict[str, str]) -> Dict[str, Any]:
+    def run(
+        self, 
+        image_path: str, 
+        patient_info: Dict[str, str],
+        pixel_spacing: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Complete cephalometric workflow: preprocess -> detect -> compute measurements.
         （不负责 JSON 规范化，交给 pipeline 处理）
         
-        ⚠️ 重要：请在 patient_info 中提供 PixelSpacing 以确保测量准确性
+        Args:
+            image_path: 图像文件路径
+            patient_info: 患者信息（gender, DentalAgeStage, 可选 PixelSpacing）
+            pixel_spacing: 外部传入的像素间距/比例尺信息（可选，优先级最高）
+                - scale_x: 水平方向 1像素 = 多少mm
+                - scale_y: 垂直方向 1像素 = 多少mm
+                - source: 数据来源（"dicom" 或 "request"）
+        
+        比例尺优先级（从高到低）：
+            1. pixel_spacing 参数（来自 DICOM 自动解析或请求参数）
+            2. patient_info["PixelSpacing"]（原有方式，手动传入）
+            3. self.default_spacing（默认值 0.1 mm/px，可能不准确）
         """
         self._validate_patient_info(patient_info)
         self.logger.info("Running Ceph inference on %s", image_path)
@@ -258,7 +274,16 @@ class CephInferenceEngine:
         landmark_result = self.detector.predict(image_path)
         
         # ===== 步骤 2: 确定 Spacing（像素间距）=====
-        spacing = self._get_spacing(patient_info, landmark_result)
+        # 优先级：pixel_spacing 参数 > patient_info["PixelSpacing"] > 默认值
+        if pixel_spacing and pixel_spacing.get("scale_x"):
+            # 最高优先级：外部传入的 pixel_spacing（来自 DICOM 或请求参数）
+            spacing = pixel_spacing["scale_x"]
+            spacing_source = pixel_spacing.get("source", "external")
+            self.logger.info(f"Using pixel spacing from {spacing_source}: {spacing:.4f} mm/px")
+        else:
+            # 回退到原有逻辑：patient_info["PixelSpacing"] 或默认值
+            spacing = self._get_spacing(patient_info, landmark_result)
+            spacing_source = "patient_info" if patient_info.get("PixelSpacing") else "default"
         
         # 从 patient_info 获取性别和牙列期
         sex = patient_info.get("gender", "Male").lower()
