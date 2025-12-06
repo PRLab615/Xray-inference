@@ -1101,6 +1101,40 @@ function renderDentalAgeStage(data) {
         `;
         
         reportContent.innerHTML = html;
+        
+        // 添加完整 JSON 数据输出（可展开/折叠），与全景和侧位保持一致
+        const jsonSection = createReportSection('完整数据 (JSON)');
+        const jsonToggle = document.createElement('button');
+        jsonToggle.className = 'json-toggle-btn';
+        jsonToggle.textContent = '展开 JSON 数据';
+        jsonToggle.onclick = function() {
+            const jsonContent = jsonSection.querySelector('.json-content');
+            if (jsonContent) {
+                if (jsonContent.style.display === 'none') {
+                    jsonContent.style.display = 'block';
+                    jsonToggle.textContent = '折叠 JSON 数据';
+                } else {
+                    jsonContent.style.display = 'none';
+                    jsonToggle.textContent = '展开 JSON 数据';
+                }
+            }
+        };
+        jsonSection.appendChild(jsonToggle);
+        
+        const jsonContent = document.createElement('pre');
+        jsonContent.className = 'json-content';
+        jsonContent.style.display = 'none';
+        jsonContent.style.whiteSpace = 'pre-wrap';
+        jsonContent.style.wordWrap = 'break-word';
+        jsonContent.style.fontSize = '11px';
+        jsonContent.style.backgroundColor = '#f5f5f5';
+        jsonContent.style.padding = '10px';
+        jsonContent.style.borderRadius = '4px';
+        jsonContent.style.overflowX = 'auto';
+        jsonContent.textContent = JSON.stringify(data, null, 2);
+        jsonSection.appendChild(jsonContent);
+        
+        reportContent.appendChild(jsonSection);
     }
     
     // 加载并显示原图
