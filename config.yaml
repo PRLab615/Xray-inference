@@ -151,15 +151,12 @@ pipelines:
         conf: 0.25
         iou: 0.6
         max_det: 1
-      # seg:  # 未实现的模块直接注释掉，而不是用 enabled: false
-      #   description: "轮廓/结构分割模型（预留）"
-      #   weights_key: "weights/cephalometric/seg/best.pt"
-      #   weights_force_download: false
-      #   device: "0"
-      #   input_size: 1024
-      #   conf: 0.35
-      #   iou: 0.5
-      #   classes: []
+      cvm: 
+        description: "颈椎成熟度"
+        weights_key: "weights/cephalometric/CVM.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
   
   dental_age_stage:              # v4 新增：牙期检测
     preload: true                # Worker 启动时即初始化
