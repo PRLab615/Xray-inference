@@ -1361,10 +1361,13 @@ async function renderCephalometric(data) {
     // 6. 绘制关键点
     drawLandmarks(data, stage, scale);
     
+    // 7. 绘制 CVM 边界框
+    drawCVMBox(data, stage, scale);
+    
     // 绘制画布
     stage.draw();
     
-    // 7. 初始化图层控制面板
+    // 8. 初始化图层控制面板
     initLayerControlPanel();
     
     console.log('侧位片渲染完成');
@@ -1457,9 +1460,170 @@ function drawLandmarks(data, stage, scale) {
     appState.konvaLayers.landmarks = landmarkLayer;
 }
 
+/**
+ * 绘制 CVM 边界框（颈椎成熟度检测区域）
+ * @param {Object} data - 侧位片分析数据
+ * @param {Konva.Stage} stage - Konva Stage 实例
+ * @param {number} scale - 缩放比例
+ */
+function drawCVMBox(data, stage, scale) {
+    // 查找 CVM 测量项
+    if (!data.CephalometricMeasurements || !data.CephalometricMeasurements.AllMeasurements) {
+        console.log('未找到测量数据，跳过 CVM 边界框绘制');
+        return;
+    }
+    
+    const measurements = data.CephalometricMeasurements.AllMeasurements;
+    const cvmMeasurement = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
+    
+    if (!cvmMeasurement || !cvmMeasurement.Coordinates || cvmMeasurement.Coordinates.length === 0) {
+        console.log('未找到 CVM 测量数据或 Coordinates 为空，跳过 CVM 边界框绘制');
+        return;
+    }
+    
+    const coordinates = cvmMeasurement.Coordinates;
+    const level = cvmMeasurement.Level || 0;
+    const confidence = cvmMeasurement.Confidence || 0.0;
+    
+    console.log('绘制 CVM 边界框，Level:', level, 'Confidence:', confidence, 'Coordinates:', coordinates);
+    
+    // 创建 CVM 图层
+    const cvmLayer = new Konva.Layer();
+    
+    // 将坐标数组转换为 Konva.Line 需要的格式（一维数组）
+    // Coordinates 格式：[[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+    const points = [];
+    coordinates.forEach(coord => {
+        if (coord && coord.length >= 2) {
+            const x = coord[0] * scale;
+            const y = coord[1] * scale;
+            points.push(x, y);
+        }
+    });
+    
+    if (points.length < 6) { // 至少需要 3 个点（6 个值）
+        console.warn('CVM Coordinates 点数不足，跳过绘制');
+        return;
+    }
+    
+    // 绘制边界框（使用闭合的多边形）
+    // 使用柔和的绿色（降低饱和度）
+    const cvmBox = new Konva.Line({
+        points: points,
+        closed: true,
+        stroke: '#7cb342', // 柔和的绿色边框（降低饱和度）
+        strokeWidth: 2,
+        lineCap: 'round',
+        lineJoin: 'round',
+        fill: 'rgba(124, 179, 66, 0.1)', // 半透明柔和绿色填充
+        strokeScaleEnabled: false // 禁止线条随缩放变粗
+    });
+    
+    // 添加标签文本（只显示 CS 阶段）
+    const labelText = `CS${level}`;
+    const text = new Konva.Text({
+        x: points[0] + 5, // 在第一个点附近显示
+        y: points[1] - 15,
+        text: labelText,
+        fontSize: 12,
+        fontFamily: 'Arial',
+        fill: '#7cb342', // 柔和的绿色
+        padding: 2,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        align: 'left'
+    });
+    
+    // 添加鼠标悬停提示
+    cvmBox.on('mouseenter', function(e) {
+        showCVMTooltip(this, { level, confidence, coordinates }, e);
+    });
+    cvmBox.on('mouseleave', function() {
+        hideTooltip();
+    });
+    text.on('mouseenter', function(e) {
+        showCVMTooltip(cvmBox, { level, confidence, coordinates }, e);
+    });
+    text.on('mouseleave', function() {
+        hideTooltip();
+    });
+    
+    // 添加点击切换图层显示/隐藏功能
+    addClickToggleToNode(cvmBox, 'cvm');
+    addClickToggleToNode(text, 'cvm');
+    
+    cvmLayer.add(cvmBox);
+    cvmLayer.add(text);
+    stage.add(cvmLayer);
+    appState.konvaLayers.cvm = cvmLayer;
+    
+    console.log('CVM 边界框绘制完成');
+}
+
 // ============================================
 // 步骤8：侧位片 Tooltip 交互
 // ============================================
+
+/**
+ * 显示 CVM Tooltip
+ * @param {Konva.Node} node - Konva 节点（Line 或 Text）
+ * @param {Object} cvmData - CVM 数据 {level, confidence, coordinates}
+ * @param {Object} event - Konva 事件对象
+ */
+function showCVMTooltip(node, cvmData, event) {
+    // 移除已存在的 Tooltip
+    hideTooltip();
+    
+    const { level } = cvmData;
+    
+    // 创建 Tooltip 元素
+    const tooltip = document.createElement('div');
+    tooltip.id = 'cvmTooltip';
+    tooltip.className = 'tooltip';
+    
+    // 构建 Tooltip 内容（只显示中文阶段）
+    let content = `CS${level}阶段`;
+    
+    tooltip.innerHTML = content;
+    
+    // 获取 Stage 的位置
+    const stage = node.getStage();
+    const stageBox = stage.container().getBoundingClientRect();
+    
+    // 获取节点在 Stage 中的位置
+    const nodePos = node.getAbsolutePosition();
+    
+    // 计算 Tooltip 位置（相对于页面）
+    const tooltipX = stageBox.left + nodePos.x + 15;
+    const tooltipY = stageBox.top + nodePos.y - 10;
+    
+    // 设置 Tooltip 位置
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+    
+    // 添加到页面
+    document.body.appendChild(tooltip);
+    
+    // 调整位置，确保不超出视口
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    if (tooltipRect.right > viewportWidth) {
+        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
+    }
+    
+    if (tooltipRect.bottom > viewportHeight) {
+        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
+    }
+    
+    if (tooltipRect.left < 0) {
+        tooltip.style.left = '10px';
+    }
+    
+    if (tooltipRect.top < 0) {
+        tooltip.style.top = '10px';
+    }
+}
 
 /**
  * 显示关键点 Tooltip
@@ -1545,6 +1709,10 @@ function hideTooltip() {
     const findingTooltip = document.getElementById('findingTooltip');
     if (findingTooltip) {
         findingTooltip.remove();
+    }
+    const cvmTooltip = document.getElementById('cvmTooltip');
+    if (cvmTooltip) {
+        cvmTooltip.remove();
     }
 }
 
@@ -1944,8 +2112,11 @@ function createMeasurementItem(measurement) {
                          (Array.isArray(measurement.Level) && measurement.Level.length === 1 && measurement.Level[0] === -1);
     
     // 判断是否为异常（修复：正确处理数组类型的 Level）
+    // 生长发育评估不需要标红，因为不存在不正常的发育
+    const isGrowth = isGrowthMeasurement(measurement.Label);
     let isAbnormal = false;
-    if (!isUndetected && measurement.Level !== undefined) {
+    
+    if (!isUndetected && measurement.Level !== undefined && !isGrowth) {
         if (Array.isArray(measurement.Level)) {
             // 数组类型：所有元素都是 0 才算正常，否则异常
             isAbnormal = !measurement.Level.every(level => level === 0);
@@ -4400,6 +4571,7 @@ function addReportCardHoverEffects() {
 const LAYER_CONFIG = {
     // 侧位片图层
     landmarks: { name: '关键点', taskType: 'cephalometric' },
+    cvm: { name: '颈椎成熟度', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
     implants: { name: '种植体', taskType: 'panoramic' },

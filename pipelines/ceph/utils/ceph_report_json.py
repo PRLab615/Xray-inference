@@ -264,7 +264,7 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
     - 比率测量：{"Label": "...", "Ratio": ..., "Level": int, "Confidence": ...}
     - 多选类型：{"Label": "...", "Type": "MultiSelect", "Level": [int], "Confidence": ...}
     - 气道测量：{"Label": "...", "PNS-UPW": ..., ..., "Level": bool, "Confidence": ...}
-    - 颈椎成熟度：{"Label": "...", "Coordinates": [...], "SerializedMask": "...", "Level": int, "Confidence": ...}
+    - 颈椎成熟度：{"Label": "...", "Coordinates": [...], "Level": int, "Confidence": ...}
     
     未检测标识：
     - 当 payload 为空或缺少 value 时，Level=-1 表示未检测到
@@ -340,7 +340,6 @@ def _build_cervical_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "Label": name,
         "Coordinates": coordinates if not is_undetected else [],
-        "SerializedMask": serialized_mask if not is_undetected else "",
         "Level": int(level) if level is not None else UNDETECTED_LEVEL,
         "Confidence": round(float(confidence), 2),
     }

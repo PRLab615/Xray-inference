@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Cephalometric pipeline implementation that conforms to BasePipeline."""
-
-from __future__ import annotations
 import pprint
 import json
 import os
@@ -14,16 +12,17 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 from pipelines.base_pipeline import BasePipeline  # type: ignore
 from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type: ignore
+from pipelines.ceph.modules.CVM.cvm_model import CVMInferenceEngine  # type: ignore
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
 from tools.timer import timer
 
 
-DEFAULT_PATIENT_INFO = {
-    "gender": "Female",
-    "DentalAgeStage": "Permanent",
-}
-DEFAULT_IMAGE_PATH = r"D:\git-615\Teeth\Cepath\150_fig\151.jpg"
-DEFAULT_OUTPUT_NAME = "ceph_output.json"
+# DEFAULT_PATIENT_INFO = {
+#     "gender": "Female",
+#     "DentalAgeStage": "Permanent",
+# }
+# DEFAULT_IMAGE_PATH = r"/app/example/151.jpg"
+# DEFAULT_OUTPUT_NAME = "ceph_output.json"
 
 
 class CephPipeline(BasePipeline):
@@ -91,6 +90,9 @@ class CephPipeline(BasePipeline):
                 if module_name == 'point':
                     self.modules['point'] = self._init_point_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'point'")
+                elif module_name == 'cvm':
+                    self.modules['cvm'] = self._init_cvm_module(module_cfg)
+                    self.logger.info(f"Successfully initialized module 'cvm'")
                 elif module_name == 'seg':
                     # TODO: 实现 seg 模块初始化
                     self.logger.warning(f"Module 'seg' not implemented yet, skipping")
@@ -132,6 +134,23 @@ class CephPipeline(BasePipeline):
         
         self.logger.info(f"Initializing point module with kwargs: {init_kwargs}")
         return CephInferenceEngine(**init_kwargs)
+
+    def _init_cvm_module(self, config: Dict[str, Any]) -> CVMInferenceEngine:
+        """
+        初始化 CVM 模块（颈椎成熟度检测）
+        
+        Args:
+            config: CVM 模块的配置字典
+            
+        Returns:
+            CVMInferenceEngine: 初始化好的 CVM 模块实例
+        """
+        # 提取配置参数，排除元数据字段（非构造参数）
+        exclude_keys = {'description'}
+        init_kwargs = {k: v for k, v in config.items() if k not in exclude_keys}
+        
+        self.logger.info(f"Initializing CVM module with kwargs: {init_kwargs}")
+        return CVMInferenceEngine(**init_kwargs)
 
     def run(
         self,
@@ -181,11 +200,12 @@ class CephPipeline(BasePipeline):
         self._log_step("开始侧位片推理", f"image_path={image_path}")
         self._load_image(image_path)
 
-        # 使用 point 模块执行推理
-        # 如果未来有多个模块，可以在这里协调它们的输出
+        # ===== 步骤 1: Point 模块推理（关键点检测）=====
+        # Point 模块是必需的，用于检测头影测量关键点和计算测量值
         if 'point' not in self.modules:
             raise RuntimeError("Point module not initialized, cannot run inference")
         
+        self.logger.info("执行 Point 模块推理（关键点检测）...")
         point_engine = self.modules['point']
         # 内部已埋点 ceph_point.pre/inference/post/measurement
         inference_results = point_engine.run(
@@ -193,6 +213,37 @@ class CephPipeline(BasePipeline):
             patient_info=patient_info,
             pixel_spacing=pixel_spacing
         )
+        self.logger.info("Point 模块推理完成")
+
+        # ===== 步骤 2: CVM 模块推理（颈椎成熟度检测）=====
+        # CVM 模块是可选的，如果已初始化则执行推理并合并结果
+        if 'cvm' in self.modules:
+            self.logger.info("执行 CVM 模块推理（颈椎成熟度检测）...")
+            cvm_engine = self.modules['cvm']
+            # 内部已埋点 ceph_cvm.pre/inference/post
+            cvm_result = cvm_engine.run(image_path=image_path)
+            
+            # 将 CVM 结果转换为测量项格式并合并到 measurements 中
+            cvm_measurement = {
+                "coordinates": cvm_result.get("coordinates", []),
+                "conclusion": cvm_result.get("level", 0),  # CS阶段 (1-6) 或 0
+                "confidence": cvm_result.get("confidence", 0.0),
+                "serialized_mask": cvm_result.get("serialized_mask", ""),
+            }
+            
+            # 确保 measurements 字典存在
+            if "measurements" not in inference_results:
+                inference_results["measurements"] = {}
+            
+            # 添加 CVM 测量项
+            inference_results["measurements"]["Cervical_Vertebral_Maturity_Stage"] = cvm_measurement
+            self.logger.info(
+                "CVM 模块推理完成，结果已合并到 measurements: level=%d, confidence=%.4f", 
+                cvm_result.get("level", 0), 
+                cvm_result.get("confidence", 0.0)
+            )
+        else:
+            self.logger.info("CVM 模块未初始化，跳过颈椎成熟度检测")
 
         #1
         # 注释掉调试打印，避免刷屏
@@ -207,10 +258,11 @@ class CephPipeline(BasePipeline):
         # print("=" * 60)
 
 
-        # 报告生成埋点（spacing 已在 inference_results 中）
+        # ===== 步骤 3: 生成标准 JSON 输出 =====
+        # 将推理结果格式化为符合规范的 JSON 格式
+        # spacing 已在 inference_results 中
         with timer.record("report.generation"):
             result = generate_standard_output(inference_results, patient_info)
-        # 2
 
 
 
@@ -225,7 +277,31 @@ class CephPipeline(BasePipeline):
 
 
 # if __name__ == "__main__":
-#     pipeline = CephPipeline()
+#     # 从 config.yaml 加载配置
+#     import yaml
+#     from pathlib import Path
+#
+#     # 加载配置文件
+#     config_path = Path(__file__).resolve().parents[2] / "config.yaml"
+#     if not config_path.exists():
+#         raise FileNotFoundError(f"配置文件不存在: {config_path}")
+#
+#     with open(config_path, 'r', encoding='utf-8') as f:
+#         config = yaml.safe_load(f)
+#
+#     # 获取侧位片 pipeline 的模块配置
+#     cephalometric_config = config.get("pipelines", {}).get("cephalometric", {})
+#     modules_config = cephalometric_config.get("modules", {})
+#
+#     if not modules_config:
+#         raise ValueError("config.yaml 中未找到 pipelines.cephalometric.modules 配置")
+#
+#     print("从 config.yaml 加载的模块配置:")
+#     for module_name, module_cfg in modules_config.items():
+#         print(f"  - {module_name}: {module_cfg.get('description', 'N/A')}")
+#
+#     # 初始化 pipeline
+#     pipeline = CephPipeline(modules=modules_config)
 #     patient = DEFAULT_PATIENT_INFO
 #
 #     if not os.path.exists(DEFAULT_IMAGE_PATH):
@@ -235,9 +311,28 @@ class CephPipeline(BasePipeline):
 #
 #     data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
 #
-#     output_path = Path(__file__).with_name(DEFAULT_OUTPUT_NAME)
+#     # 输出 JSON 到指定目录
+#     output_dir = Path(r"D:\git-615\Teeth\Xray-inference\example")
+#     output_path = output_dir / DEFAULT_OUTPUT_NAME
+#     output_dir.mkdir(parents=True, exist_ok=True)
+#
 #     with output_path.open("w", encoding="utf-8") as fp:
 #         json.dump(data, fp, ensure_ascii=False, indent=2)
 #
-#     print(f"Ceph inference finished. JSON saved to: {output_path}")
+#     print(f"\n✅ Ceph inference finished. JSON saved to: {output_path}")
 #
+#     # 检查 CVM 结果是否在输出中
+#     if "CephalometricMeasurements" in data:
+#         measurements = data["CephalometricMeasurements"].get("AllMeasurements", [])
+#         cvm_measurement = next(
+#             (m for m in measurements if m.get("Label") == "Cervical_Vertebral_Maturity_Stage"),
+#             None
+#         )
+#         if cvm_measurement:
+#             print(f"\n✅ CVM 结果已包含在输出中:")
+#             print(f"   Level: {cvm_measurement.get('Level')}")
+#             print(f"   Confidence: {cvm_measurement.get('Confidence')}")
+#             print(f"   Coordinates: {cvm_measurement.get('Coordinates')}")
+#         else:
+#             print("\n⚠️  CVM 结果未在输出中找到（可能 CVM 模块未初始化或推理失败）")
+
