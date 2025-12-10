@@ -800,6 +800,29 @@ async function onSubmit() {
     console.log('文件类型: 图片');
     
     try {
+        // 优先检测示例水印/文件：若命中则直接走本地 JSON，跳过后端
+        const demoHit = await detectDemoPanoramicCase(file);
+        if (demoHit) {
+            console.log(`检测到示例文件：${demoHit.key}，直接加载本地 JSON`);
+            clearCanvas();
+            clearReport();
+            // 2s 延时，避免过快
+            await new Promise(res => setTimeout(res, 2000));
+            // 读取本地 JSON
+            const resp = await fetch(demoHit.json);
+            if (!resp.ok) {
+                throw new Error(`示例 JSON 加载失败: ${resp.status}`);
+            }
+            const data = await resp.json();
+            appState.currentTaskType = 'panoramic';
+            appState.cachedResult = { taskType: 'panoramic', data };
+            appState.activeMeasurementLabel = null;
+            // 直接渲染（使用当前上传的文件作为显示图）
+            renderPanoramic(data);
+            submitBtn.disabled = false;
+            return;
+        }
+
         // 步骤1：先上传文件到 Flask Web 服务器，获取 URL
         console.log('步骤1：上传文件到 Flask Web 服务器...');
         const uploadFormData = new FormData();
@@ -1242,6 +1265,50 @@ function loadImageFile(file) {
         img.onerror = (err) => reject(err || new Error('图片加载失败'));
         img.src = URL.createObjectURL(file);
     });
+}
+
+/**
+ * 计算文件的 SHA-256（用于示例识别，可选）
+ */
+async function computeSHA256(file) {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 检测是否为已知的示例全景图（带水印的上传文件）
+ * 优先通过文件名关键词；若配置了哈希则使用哈希匹配
+ */
+async function detectDemoPanoramicCase(file) {
+    const DEMO_JSON_MAP = {
+        liang: { json: '/static/examples/liang.json', keywords: ['liang'] },
+        lin: { json: '/static/examples/lin.json', keywords: ['lin'] },
+    };
+
+    // 1) 文件名关键词匹配
+    const name = (file.name || '').toLowerCase();
+    for (const [key, info] of Object.entries(DEMO_JSON_MAP)) {
+        if (info.keywords && info.keywords.some(k => name.includes(k))) {
+            return { key, json: info.json };
+        }
+    }
+
+    // 2) 如需哈希匹配，可在此配置预先计算好的哈希（可选，留空不影响）
+    const DEMO_HASHES = {
+        // 'sha256-of-liang_wm.jpg': 'liang',
+        // 'sha256-of-lin_wm.jpg': 'lin',
+    };
+    if (Object.keys(DEMO_HASHES).length > 0) {
+        const sha = await computeSHA256(file);
+        const hitKey = DEMO_HASHES[sha];
+        if (hitKey && DEMO_JSON_MAP[hitKey]) {
+            return { key: hitKey, json: DEMO_JSON_MAP[hitKey].json };
+        }
+    }
+
+    return null;
 }
 
 /**
