@@ -12,6 +12,7 @@ import numpy as np
 
 from .ceph_report import (
     KEYPOINT_MAP,
+    KEYPOINT_MAP_11,
     ANB_SKELETAL_II_THRESHOLD,
     ANB_SKELETAL_III_THRESHOLD,
     FH_MP_HIGH_ANGLE_THRESHOLD,
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 # 关键点简称到完整名称的映射（用于输出）
 LABEL_FULL_NAMES = {
+    # 25点名称
     "S": "Sella",
     "N": "Nasion",
     "Or": "Orbitale",
@@ -51,6 +53,18 @@ LABEL_FULL_NAMES = {
     "U1A": "U1A",
     "L1A": "L1A",
     "Pcd": "Pcd",
+    # 11点名称（气道/腺体）
+    "U": "Uvula tip",                # 悬雍垂尖
+    "V": "Vallecula",                # 会咽谷点
+    "UPW": "Upper Pharyngeal Wall",  # 上咽壁点
+    "SPP": "Soft Palate Point",      # 软腭前点
+    "SPPW": "Soft Palate Pharyngeal Wall",  # 软腭后咽壁点
+    "MPW": "Middle Pharyngeal Wall", # 中咽壁点
+    "LPW": "Lower Pharyngeal Wall",  # 下咽壁点
+    "TB": "Tongue Base",             # 舌根点
+    "TPPW": "Tongue Posterior Pharyngeal Wall",  # 舌咽部后气道点
+    "AD": "Adenoid",                 # 腺样体最凸点
+    "D'": "D prime",                 # 翼板与颅底交点
 }
 
 MEASUREMENT_ORDER = [
@@ -92,6 +106,7 @@ MEASUREMENT_ORDER = [
 # 特殊测量项类型定义
 MULTISELECT_MEASUREMENTS = {"Jaw_Development_Coordination"}
 AIRWAY_MEASUREMENTS = {"Airway_Gap"}
+ADENOID_MEASUREMENTS = {"Adenoid_Index"}
 BOOLEAN_LEVEL_MEASUREMENTS = {"Airway_Gap", "Adenoid_Index"}
 CERVICAL_VERTEBRAL_MEASUREMENTS = {"Cervical_Vertebral_Maturity_Stage"}
 
@@ -108,7 +123,7 @@ def generate_standard_output(
     将推理结果映射为符合《接口定义.md》的 data 字段。
     
     Args:
-        inference_results: 推理结果，包含 landmarks, measurements, spacing
+        inference_results: 推理结果，包含 landmarks, landmarks_11, measurements, spacing
         patient_info: 患者信息
         
     Returns:
@@ -119,12 +134,21 @@ def generate_standard_output(
         优先级为：DICOM/请求参数 > patient_info["PixelSpacing"] > 默认值
     """
     landmarks_block = inference_results.get("landmarks", {})
+    landmarks_11_block = inference_results.get("landmarks_11", {})  # 11点结果
     measurements = inference_results.get("measurements", {})
     
     # 从推理结果获取实际使用的 spacing，如果没有则使用默认值
     spacing = inference_results.get("spacing", DEFAULT_SPACING_MM_PER_PIXEL)
 
+    # 构建 25 点的 landmark section
     landmark_section = _build_landmark_section(landmarks_block)
+    
+    # 构建 11 点的 landmark section（如果存在）
+    landmark_11_section = None
+    if landmarks_11_block:
+        landmark_11_section = _build_landmark_11_section(landmarks_11_block)
+    
+    # 构建可视化映射
     viz_map = (
         build_visualization_map(measurements, landmarks_block)
         if visualization_enabled
@@ -137,6 +161,16 @@ def generate_standard_output(
     )
     average_confidence = landmark_section.get("AverageConfidence", 0.0)
 
+    # 计算总的 landmark 统计（25点 + 11点）
+    total_landmarks = landmark_section["TotalLandmarks"]
+    detected_landmarks = landmark_section["DetectedLandmarks"]
+    missing_labels = landmark_section["MissingLabels"].copy()
+    
+    if landmark_11_section:
+        total_landmarks += landmark_11_section["TotalLandmarks"]
+        detected_landmarks += landmark_11_section["DetectedLandmarks"]
+        missing_labels.extend(landmark_11_section["MissingLabels"])
+
     data_dict = {
         "ImageSpacing": {
             "X": spacing,
@@ -145,7 +179,7 @@ def generate_standard_output(
         },
         "VisibilityMetrics": {
             "Grade": visibility_grade,
-            "MissingLandmarks": landmark_section["MissingLabels"],
+            "MissingLandmarks": missing_labels,
         },
         "MissingPointHandling": {
             "Method": "插值估算",
@@ -153,8 +187,8 @@ def generate_standard_output(
             "InterpolationAllowed": False,
         },
         "StatisticalFields": {
-            "ProcessedLandmarks": landmark_section["DetectedLandmarks"],
-            "MissingLandmarks": landmark_section["MissingLandmarks"],
+            "ProcessedLandmarks": detected_landmarks,
+            "MissingLandmarks": total_landmarks - detected_landmarks,
             "AverageConfidence": round(average_confidence, 2),
             "QualityScore": round(average_confidence, 2),
         },
@@ -174,14 +208,80 @@ def generate_standard_output(
             "AllMeasurements": measurement_section,
         },
     }
+    
+    # 如果有 11 点结果，添加到输出中
+    if landmark_11_section:
+        data_dict["AirwayLandmarkPositions"] = {
+            "TotalLandmarks": landmark_11_section["TotalLandmarks"],
+            "DetectedLandmarks": landmark_11_section["DetectedLandmarks"],
+            "MissingLandmarks": landmark_11_section["MissingLandmarks"],
+            "Landmarks": landmark_11_section["Landmarks"],
+        }
 
     logger.info(
-        "Generated cephalometric JSON: %s/%s landmarks,%s measurements",
+        "Generated cephalometric JSON: %s/%s landmarks (25pt), %s/%s landmarks (11pt), %s measurements",
         landmark_section["DetectedLandmarks"],
         landmark_section["TotalLandmarks"],
+        landmark_11_section["DetectedLandmarks"] if landmark_11_section else 0,
+        landmark_11_section["TotalLandmarks"] if landmark_11_section else 0,
         len(measurement_section),
     )
     return data_dict
+
+
+def _build_landmark_11_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    构建 11 点（气道/腺体）的 landmark section
+    """
+    coordinates: Dict[str, Any] = landmarks_block.get("coordinates", {})
+    confidences: Dict[str, float] = landmarks_block.get("confidences", {})
+
+    entries: List[Dict[str, Any]] = []
+    detected = 0
+    missing_labels: List[str] = []
+    confidence_values: List[float] = []
+
+    for key, short_label in KEYPOINT_MAP_11.items():
+        # 使用完整标签名
+        full_label = LABEL_FULL_NAMES.get(short_label, short_label)
+        
+        coord = coordinates.get(key)
+        confidence = confidences.get(key, 0.0)
+
+        x_value = float(coord[0]) if _is_valid_point(coord) else None
+        y_value = float(coord[1]) if _is_valid_point(coord) else None
+        status = "Detected" if x_value is not None and y_value is not None else "Missing"
+
+        if status == "Detected":
+            detected += 1
+            confidence_values.append(confidence)
+        else:
+            missing_labels.append(full_label)
+
+        # 格式化置信度：Detected 时保留两位小数，Missing 时为 0.00
+        formatted_confidence = round(confidence, 2) if status == "Detected" else 0.00
+
+        entries.append(
+            {
+                "Label": full_label,
+                "X": int(x_value) if x_value is not None else None,
+                "Y": int(y_value) if y_value is not None else None,
+                "Confidence": formatted_confidence,
+                "Status": status,
+            }
+        )
+
+    total = len(KEYPOINT_MAP_11)
+    average_confidence = round(mean(confidence_values), 2) if confidence_values else 0.0
+
+    return {
+        "TotalLandmarks": total,
+        "DetectedLandmarks": detected,
+        "MissingLandmarks": total - detected,
+        "Landmarks": entries,
+        "MissingLabels": missing_labels,
+        "AverageConfidence": average_confidence,
+    }
 
 
 def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
@@ -304,6 +404,9 @@ def _build_measurement_entry(
     if name in AIRWAY_MEASUREMENTS:
         return _build_airway_entry(name, payload)
     
+    if name in ADENOID_MEASUREMENTS:
+        return _build_adenoid_entry(name, payload)
+    
     if name in MULTISELECT_MEASUREMENTS:
         return _build_multiselect_entry(name, payload)
     
@@ -370,7 +473,7 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     构建气道测量项。
     
     格式：{"Label": "Airway_Gap", "PNS-UPW": ..., "SPP-SPPW": ..., 
-           "U-MPW": ..., "TB-YPPW": ..., "V-LPW": ..., "Level": bool, "Confidence": ...}
+           "U-MPW": ..., "TB-TPPW": ..., "V-LPW": ..., "Level": bool, "Confidence": ...}
     
     未检测标识：当 payload 为空时，所有气道值为 null，Level=null（而非 true/false）
     """
@@ -379,8 +482,8 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     # 判断是否为未检测状态
     is_undetected = not payload
     
-    # 提取各个气道距离值
-    airway_keys = ["PNS-UPW", "SPP-SPPW", "U-MPW", "TB-YPPW", "V-LPW"]
+    # 提取各个气道距离值（注意：TB-TPPW 而非 TB-YPPW）
+    airway_keys = ["PNS-UPW", "SPP-SPPW", "U-MPW", "TB-TPPW", "V-LPW"]
     has_any_value = False
     
     for key in airway_keys:
@@ -403,6 +506,37 @@ def _build_airway_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         entry["Level"] = None
     else:
         # 气道测量的 Level 为 bool，根据 conclusion 或默认 True
+        conclusion = payload.get("conclusion")
+        entry["Level"] = bool(conclusion) if conclusion is not None else True
+    
+    entry["Confidence"] = round(float(payload.get("confidence", 0.0)), 2)
+    
+    return entry
+
+
+def _build_adenoid_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    构建腺样体指数测量项。
+    
+    格式：{"Label": "Adenoid_Index", "Value": 0.5, "Level": bool, "Confidence": ...}
+    
+    未检测标识：当 payload 为空时，Value=null，Level=null
+    """
+    entry: Dict[str, Any] = {"Label": name}
+    
+    # 判断是否为未检测状态
+    is_undetected = not payload or payload.get("value") is None
+    
+    # 提取 A/N 比值
+    value = payload.get("value")
+    entry["Value"] = _format_value(value)
+    
+    # 未检测时 Level 设为 null
+    if is_undetected:
+        entry["Level"] = None
+    else:
+        # 腺样体测量的 Level 为 bool
+        # True=未见肿大(<0.7), False=肿大(>=0.7)
         conclusion = payload.get("conclusion")
         entry["Level"] = bool(conclusion) if conclusion is not None else True
     
