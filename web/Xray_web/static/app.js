@@ -109,9 +109,14 @@ function init() {
             switchTab(tabName);
         });
     });
+    // 默认展示 AI 分析
+    switchTab('aiTab');
     
     // 绑定手动可视化按钮
-    document.getElementById('manualVisualizeBtn').addEventListener('click', onManualVisualize);
+    const manualBtn = document.getElementById('manualVisualizeBtn');
+    if (manualBtn) {
+        manualBtn.addEventListener('click', onManualVisualize);
+    }
     
     // 测量可视化控制
     const prevBtn = document.getElementById('prevMeasurement');
@@ -1085,6 +1090,70 @@ function displayResult(resultJson) {
 }
 
 /**
+ * 手动可视化：上传图片 + JSON，本地渲染（支持全景/侧位）
+ */
+async function onManualVisualize() {
+    const taskSelect = document.getElementById('manualTaskType');
+    const imageInput = document.getElementById('manualImageFile');
+    const jsonInput = document.getElementById('manualJsonFile');
+    const jsonTextArea = document.getElementById('manualJsonText');
+
+    if (!taskSelect || !imageInput || !jsonInput || !jsonTextArea) {
+        console.warn('手动可视化控件不存在，跳过');
+        return;
+    }
+
+    const taskType = taskSelect.value || 'cephalometric';
+    const imageFile = imageInput.files[0];
+
+    if (!imageFile) {
+        alert('请先上传图片文件');
+        return;
+    }
+
+    let data;
+    try {
+        data = await loadManualJson(jsonInput.files[0], jsonTextArea.value);
+    } catch (err) {
+        console.error('手动可视化 JSON 解析失败', err);
+        alert('JSON 解析失败，请检查格式');
+        return;
+    }
+
+    if (!data) {
+        alert('请上传或粘贴 JSON 数据');
+        return;
+    }
+
+    let img;
+    try {
+        img = await loadImageFile(imageFile);
+    } catch (err) {
+        console.error('手动可视化图片加载失败', err);
+        alert('图片加载失败，请检查文件格式');
+        return;
+    }
+
+    // 重置画布与报告
+    clearCanvas();
+    clearReport();
+
+    // 缓存状态并按任务类型渲染
+    appState.originalImage = img;
+    appState.cachedResult = { taskType, data };
+    appState.currentTaskType = taskType;
+    appState.imageScale = 1.0;
+
+    if (taskType === 'cephalometric') {
+        renderCephalometric(data);
+    } else if (taskType === 'panoramic') {
+        renderPanoramic(data);
+    } else {
+        alert('未知任务类型，请选择全景或侧位');
+    }
+}
+
+/**
  * 显示错误信息
  * @param {Object} error - 错误对象
  */
@@ -1146,6 +1215,75 @@ function clearReport() {
     if (reportContent) {
         reportContent.innerHTML = '';
     }
+}
+
+/**
+ * 读取手动可视化 JSON（优先文件，其次文本）
+ */
+async function loadManualJson(file, text) {
+    if (file) {
+        const content = await file.text();
+        return JSON.parse(content);
+    }
+    const trimmed = (text || '').trim();
+    if (trimmed) {
+        return JSON.parse(trimmed);
+    }
+    return null;
+}
+
+/**
+ * 从文件加载图片，返回 Image 对象
+ */
+function loadImageFile(file) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = (err) => reject(err || new Error('图片加载失败'));
+        img.src = URL.createObjectURL(file);
+    });
+}
+
+/**
+ * 创建“复制 JSON”按钮
+ */
+function createCopyJsonButton(jsonContent) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'json-toggle-btn';
+    copyBtn.textContent = '复制 JSON';
+    copyBtn.style.marginLeft = '8px';
+    copyBtn.onclick = async function() {
+        try {
+            await navigator.clipboard.writeText(jsonContent.textContent);
+            alert('JSON 已复制到剪贴板');
+        } catch (e) {
+            console.error('复制 JSON 失败', e);
+            alert('复制失败，请手动复制');
+        }
+    };
+    return copyBtn;
+}
+
+/**
+ * 标签页切换：aiTab / manualTab
+ */
+function switchTab(tabName) {
+    const panels = document.querySelectorAll('.tab-panel');
+    const buttons = document.querySelectorAll('.tab-btn');
+    panels.forEach(p => {
+        if (p.id === tabName) {
+            p.classList.remove('hidden');
+        } else {
+            p.classList.add('hidden');
+        }
+    });
+    buttons.forEach(b => {
+        if (b.getAttribute('data-tab') === tabName) {
+            b.classList.add('active');
+        } else {
+            b.classList.remove('active');
+        }
+    });
 }
 
 /**
@@ -1249,6 +1387,8 @@ function renderDentalAgeStage(data) {
         jsonContent.style.overflowX = 'auto';
         jsonContent.textContent = JSON.stringify(data, null, 2);
         jsonSection.appendChild(jsonContent);
+
+        jsonSection.appendChild(createCopyJsonButton(jsonContent));
         
         reportContent.appendChild(jsonSection);
     }
@@ -2197,6 +2337,7 @@ function buildCephReport(data) {
     jsonContent.style.overflowX = 'auto';
     jsonContent.textContent = JSON.stringify(data, null, 2);
     jsonSection.appendChild(jsonContent);
+    jsonSection.appendChild(createCopyJsonButton(jsonContent));
     
     container.appendChild(jsonSection);
 }
