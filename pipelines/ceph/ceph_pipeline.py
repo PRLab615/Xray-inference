@@ -12,8 +12,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 from pipelines.base_pipeline import BasePipeline  # type: ignore
 from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type: ignore
+from pipelines.ceph.modules.point_11.point_11_model import Point11Model  # type: ignore
 from pipelines.ceph.modules.CVM.cvm_model import CVMInferenceEngine  # type: ignore
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
+from pipelines.ceph.utils.ceph_report import calculate_airway_measurements, calculate_adenoid_ratio  # type: ignore
 from tools.timer import timer
 
 
@@ -21,7 +23,8 @@ from tools.timer import timer
 #     "gender": "Female",
 #     "DentalAgeStage": "Permanent",
 # }
-# DEFAULT_IMAGE_PATH = r"/app/example/151.jpg"
+# # DEFAULT_IMAGE_PATH = r"D:\git-615\Teeth\Xray-inference\example\example_ceph_img.jpg"
+# DEFAULT_IMAGE_PATH = r"/app/example/example_ceph_img.jpg"
 # DEFAULT_OUTPUT_NAME = "ceph_output.json"
 
 
@@ -90,6 +93,9 @@ class CephPipeline(BasePipeline):
                 if module_name == 'point':
                     self.modules['point'] = self._init_point_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'point'")
+                elif module_name == 'point_11':
+                    self.modules['point_11'] = self._init_point_11_module(module_cfg)
+                    self.logger.info(f"Successfully initialized module 'point_11'")
                 elif module_name == 'cvm':
                     self.modules['cvm'] = self._init_cvm_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'cvm'")
@@ -152,6 +158,23 @@ class CephPipeline(BasePipeline):
         self.logger.info(f"Initializing CVM module with kwargs: {init_kwargs}")
         return CVMInferenceEngine(**init_kwargs)
 
+    def _init_point_11_module(self, config: Dict[str, Any]) -> Point11Model:
+        """
+        初始化 point_11 模块（气道/腺体 11 点位标志点检测）
+        
+        Args:
+            config: point_11 模块的配置字典
+            
+        Returns:
+            Point11Model: 初始化好的 point_11 模块实例
+        """
+        # 提取配置参数，排除元数据字段（非构造参数）
+        exclude_keys = {'description'}
+        init_kwargs = {k: v for k, v in config.items() if k not in exclude_keys}
+        
+        self.logger.info(f"Initializing point_11 module with kwargs: {init_kwargs}")
+        return Point11Model(**init_kwargs)
+
     def run(
         self,
         image_path: str,
@@ -200,12 +223,12 @@ class CephPipeline(BasePipeline):
         self._log_step("开始侧位片推理", f"image_path={image_path}")
         self._load_image(image_path)
 
-        # ===== 步骤 1: Point 模块推理（关键点检测）=====
+        # ===== 步骤 1: Point 模块推理（25点关键点检测）=====
         # Point 模块是必需的，用于检测头影测量关键点和计算测量值
         if 'point' not in self.modules:
             raise RuntimeError("Point module not initialized, cannot run inference")
         
-        self.logger.info("执行 Point 模块推理（关键点检测）...")
+        self.logger.info("执行 Point 模块推理（25点关键点检测）...")
         point_engine = self.modules['point']
         # 内部已埋点 ceph_point.pre/inference/post/measurement
         inference_results = point_engine.run(
@@ -215,7 +238,58 @@ class CephPipeline(BasePipeline):
         )
         self.logger.info("Point 模块推理完成")
 
-        # ===== 步骤 2: CVM 模块推理（颈椎成熟度检测）=====
+        # ===== 步骤 2: Point_11 模块推理（气道/腺体 11 点位检测）=====
+        # Point_11 模块是可选的，用于检测气道和腺体相关标志点
+        if 'point_11' in self.modules:
+            self.logger.info("执行 Point_11 模块推理（气道/腺体 11 点位检测）...")
+            point_11_model = self.modules['point_11']
+            # 内部已埋点 ceph_point11.pre/inference/post
+            point_11_result = point_11_model.predict(image_path=image_path)
+            
+            # 将 11 点结果合并到 inference_results 中
+            point_11_dict = Point11Model.landmark_result_to_dict(point_11_result)
+            
+            # 合并坐标到 landmarks
+            if "landmarks" not in inference_results:
+                inference_results["landmarks"] = {}
+            if "landmarks_11" not in inference_results:
+                inference_results["landmarks_11"] = point_11_dict
+            
+            # 计算气道测量（需要 25 点和 11 点坐标 + spacing）
+            spacing = inference_results.get("spacing", 0.1)
+            landmarks_25 = inference_results.get("landmarks", {}).get("coordinates", {})
+            landmarks_11 = point_11_dict.get("coordinates", {})
+            
+            with timer.record("ceph_point11.airway_measurement"):
+                airway_result = calculate_airway_measurements(
+                    landmarks_25=landmarks_25,
+                    landmarks_11=landmarks_11,
+                    spacing=spacing
+                )
+                adenoid_result = calculate_adenoid_ratio(
+                    landmarks_25=landmarks_25,
+                    landmarks_11=landmarks_11,
+                    spacing=spacing
+                )
+            
+            # 确保 measurements 字典存在
+            if "measurements" not in inference_results:
+                inference_results["measurements"] = {}
+            
+            # 添加气道和腺体测量项
+            inference_results["measurements"]["Airway_Gap"] = airway_result
+            inference_results["measurements"]["Adenoid_Index"] = adenoid_result
+            
+            self.logger.info(
+                "Point_11 模块推理完成: %d/11 点位检测成功, 气道测量=%s, 腺样体指数=%.2f",
+                len(point_11_result.detected),
+                "正常" if airway_result.get("conclusion", False) else "不足",
+                adenoid_result.get("value", 0.0)
+            )
+        else:
+            self.logger.info("Point_11 模块未初始化，跳过气道/腺体检测")
+
+        # ===== 步骤 4: CVM 模块推理（颈椎成熟度检测）=====
         # CVM 模块是可选的，如果已初始化则执行推理并合并结果
         if 'cvm' in self.modules:
             self.logger.info("执行 CVM 模块推理（颈椎成熟度检测）...")
@@ -258,7 +332,7 @@ class CephPipeline(BasePipeline):
         # print("=" * 60)
 
 
-        # ===== 步骤 3: 生成标准 JSON 输出 =====
+        # ===== 步骤 5: 生成标准 JSON 输出 =====
         # 将推理结果格式化为符合规范的 JSON 格式
         # spacing 已在 inference_results 中
         with timer.record("report.generation"):
@@ -312,7 +386,7 @@ class CephPipeline(BasePipeline):
 #     data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
 #
 #     # 输出 JSON 到指定目录
-#     output_dir = Path(r"D:\git-615\Teeth\Xray-inference\example")
+#     output_dir = Path(r"/app/example/")
 #     output_path = output_dir / DEFAULT_OUTPUT_NAME
 #     output_dir.mkdir(parents=True, exist_ok=True)
 #

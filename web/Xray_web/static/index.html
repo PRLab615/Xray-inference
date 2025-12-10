@@ -11,14 +11,7 @@
         <h1>X-Ray AI 分析可视化</h1>
         <p class="subtitle">用于验证 AI 异步分析接口的完整流程</p>
         
-        <!-- 标签页切换 -->
-        <div class="tab-container">
-            <button class="tab-btn active" data-tab="analysis">AI 分析</button>
-            <button class="tab-btn" data-tab="manual">手动可视化</button>
-        </div>
-        
-        <!-- AI 分析标签页 -->
-        <div class="tab-content active" id="tabAnalysis">
+        <!-- AI 分析 -->
         <!-- 表单区域（保留 MVP 的表单结构） -->
         <div class="form-container">
             <!-- 任务类型选择 -->
@@ -98,35 +91,7 @@
                 <button id="submitBtn" class="btn-primary">提交分析任务</button>
             </div>
         </div>
-        </div>
-        
-        <!-- 手动可视化标签页 -->
-        <div class="tab-content" id="tabManual">
-            <div class="form-container">
-                <div class="form-group">
-                    <label for="manualImageFile">选择图片：</label>
-                    <input type="file" id="manualImageFile" accept=".jpg,.jpeg,.png">
-                    <p class="hint">支持格式：.jpg, .png</p>
-                </div>
-                
-                <div class="form-group">
-                    <label for="manualJsonFile">选择 JSON 结果文件：</label>
-                    <input type="file" id="manualJsonFile" accept=".json">
-                    <p class="hint">选择之前保存的 AI 分析结果 JSON 文件</p>
-                </div>
-                
-                <div class="form-group">
-                    <label>或直接粘贴 JSON：</label>
-                    <textarea id="manualJsonText" rows="10" placeholder='支持两种格式：
-1. 完整格式：{"taskId": "...", "status": "SUCCESS", "data": {...}}
-2. 仅 data 字段：{"ToothAnalysis": [...], "JointAndMandible": {...}}'></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <button id="manualVisualizeBtn" class="btn-primary">开始可视化</button>
-                </div>
-            </div>
-        </div>
+        </div> <!-- end form-container -->
         
         <!-- 双栏布局容器 -->
         <div class="main-container hidden" id="mainContainer">
@@ -144,10 +109,41 @@
                         <div class="layer-control-buttons">
                             <button class="btn-layer-control" id="hideAllBtn">全部隐藏</button>
                             <button class="btn-layer-control" id="showAllBtn">全部显示</button>
+                            <button class="btn-layer-control" id="showAllMeasurementsBtn">显示所有测量线</button>
                         </div>
                     </div>
                     <div class="layer-list" id="layerList">
                         <!-- 图层列表将在这里动态生成 -->
+                    </div>
+                </div>
+
+                <!-- 测量可视化工具栏 -->
+                <div class="measurement-tools hidden" id="measurementTools">
+                    <div class="legend">
+                        <div class="legend-title">图例</div>
+                        <div class="legend-items">
+                            <div class="legend-item">
+                                <span class="legend-line solid reference"></span>
+                                <span class="legend-label">参考线（实线）</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line dashed reference"></span>
+                                <span class="legend-label">参考线（虚线）</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line solid measurement"></span>
+                                <span class="legend-label">测量线（实线）</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-line dashed measurement"></span>
+                                <span class="legend-label">测量线（虚线）</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="measurement-actions">
+                        <button class="btn-layer-control" id="prevMeasurement">上一条</button>
+                        <button class="btn-layer-control" id="nextMeasurement">下一条</button>
+                        <button class="btn-layer-control" id="clearMeasurement">清空测量线</button>
                     </div>
                 </div>
 

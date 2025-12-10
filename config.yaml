@@ -143,8 +143,17 @@ pipelines:
     preload: true                # Worker 启动时即初始化侧位片 Pipeline
     modules:
       point:
-        description: "标志点检测模型"
+        description: "标志点检测模型（25点）"
         weights_key: "weights/cephalometric/25point_best.pt"
+        weights_force_download: false
+        device: "0"
+        image_size: 1024
+        conf: 0.25
+        iou: 0.6
+        max_det: 1
+      point_11:
+        description: "气道/腺体标志点检测模型（11点）"
+        weights_key: "weights/cephalometric/TODO_point_11.pt"  # TODO: 待填写实际权重路径
         weights_force_download: false
         device: "0"
         image_size: 1024

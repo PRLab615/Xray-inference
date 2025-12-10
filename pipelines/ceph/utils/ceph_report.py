@@ -37,6 +37,35 @@ KEYPOINT_MAP = {
     "P25": "Pcd"    # Posterior Condylion - 髁突后点（关键：位于S点后方）
 }
 
+# 气道/腺体 11 点位名称映射
+# 参考文档：腺体气道集成与后处理说明.md
+KEYPOINT_MAP_11 = {
+    "U": "U",        # 悬雍垂尖
+    "V": "V",        # 会咽谷点
+    "UPW": "UPW",    # 上咽壁点
+    "SPP": "SPP",    # 软腭前点
+    "SPPW": "SPPW",  # 软腭后咽壁点
+    "MPW": "MPW",    # 中咽壁点
+    "LPW": "LPW",    # 下咽壁点
+    "TB": "TB",      # 舌根点
+    "TPPW": "TPPW",  # 舌咽部后气道点
+    "AD": "AD",      # 腺样体最凸点
+    "Dprime": "D'",  # 翼板与颅底交点
+}
+
+# 气道测量正常值参考（单位：mm）
+# 参考文档：腺体气道集成与后处理说明.md
+AIRWAY_NORMAL_VALUES = {
+    "PNS-UPW": (28.4, 3.0),    # 鼻咽段：28.4 ± 3.0 mm
+    "SPP-SPPW": (13.2, 2.6),   # 口咽段（腭咽段）：13.2 ± 2.6 mm
+    "U-MPW": (11.6, 2.9),      # 口咽段（腭咽段）：11.6 ± 2.9 mm
+    "TB-TPPW": (13.3, 3.2),    # 口咽段（舌咽段）：13.3 ± 3.2 mm
+    "V-LPW": (18.7, 3.7),      # 喉咽段：18.7 ± 3.7 mm
+}
+
+# 腺样体 A/N 比值阈值
+ADENOID_AN_THRESHOLD = 0.7  # A/N < 0.7 为正常
+
 ANB_SKELETAL_II_THRESHOLD = 6.0
 ANB_SKELETAL_III_THRESHOLD = 2.0
 FH_MP_HIGH_ANGLE_THRESHOLD = 33.0
@@ -1052,3 +1081,219 @@ def _safe_cross_distance(vec_line: np.ndarray, point: np.ndarray, ref_point: np.
 
     norm = np.linalg.norm(a)
     return cross_abs / norm if norm > 1e-8 else 0.0
+
+
+# ==============================================================================
+# 气道和腺体测量函数
+# 参考文档：腺体气道集成与后处理说明.md
+# ==============================================================================
+
+def calculate_airway_measurements(
+    landmarks_25: Dict[str, np.ndarray],
+    landmarks_11: Dict[str, np.ndarray],
+    spacing: float = DEFAULT_SPACING_MM_PER_PIXEL,
+) -> Dict[str, Any]:
+    """
+    计算 5 个气道前后径测量值
+    
+    测量项目：
+        1. PNS-UPW: 后鼻棘点到上咽壁点的距离（鼻咽段）
+        2. SPP-SPPW: 软腭后缘到咽后壁的距离（口咽段-腭咽段）
+        3. U-MPW: 悬雍垂尖到中咽壁的距离（口咽段-腭咽段）
+        4. TB-TPPW: 舌根后部到咽后壁的距离（口咽段-舌咽段）
+        5. V-LPW: 会厌谷点到下咽壁的距离（喉咽段）
+    
+    Args:
+        landmarks_25: 25点坐标字典（需要 PNS=P13）
+        landmarks_11: 11点坐标字典（U, V, UPW, SPP, SPPW, MPW, LPW, TB, TPPW）
+        spacing: 像素间距 (mm/pixel)
+    
+    Returns:
+        气道测量结果字典，包含各项距离和综合判断
+    """
+    result = {
+        "PNS-UPW": None,
+        "SPP-SPPW": None,
+        "U-MPW": None,
+        "TB-TPPW": None,
+        "V-LPW": None,
+        "value": None,  # 综合值（可选）
+        "unit": "mm",
+        "conclusion": None,  # True=正常, False=不足
+        "confidence": 0.0,
+        "status": "ok",
+    }
+    
+    confidence_values = []
+    all_normal = True
+    any_measured = False
+    
+    # 获取 25 点中的 PNS
+    pns = landmarks_25.get("P13")  # PNS - 后鼻棘
+    
+    # 1. PNS-UPW: 后鼻棘点到上咽壁点的距离
+    upw = landmarks_11.get("UPW")
+    if _is_valid_point(pns) and _is_valid_point(upw):
+        dist_px = np.linalg.norm(np.array(pns) - np.array(upw))
+        dist_mm = float(dist_px * spacing)
+        result["PNS-UPW"] = round(dist_mm, 2)
+        any_measured = True
+        # 检查是否正常（正常值：28.4 ± 3.0 mm）
+        mean, std = AIRWAY_NORMAL_VALUES["PNS-UPW"]
+        if dist_mm < mean - std:
+            all_normal = False
+    
+    # 2. SPP-SPPW: 软腭后缘到咽后壁的距离
+    spp = landmarks_11.get("SPP")
+    sppw = landmarks_11.get("SPPW")
+    if _is_valid_point(spp) and _is_valid_point(sppw):
+        dist_px = np.linalg.norm(np.array(spp) - np.array(sppw))
+        dist_mm = float(dist_px * spacing)
+        result["SPP-SPPW"] = round(dist_mm, 2)
+        any_measured = True
+        mean, std = AIRWAY_NORMAL_VALUES["SPP-SPPW"]
+        if dist_mm < mean - std:
+            all_normal = False
+    
+    # 3. U-MPW: 悬雍垂尖到中咽壁的距离
+    u = landmarks_11.get("U")
+    mpw = landmarks_11.get("MPW")
+    if _is_valid_point(u) and _is_valid_point(mpw):
+        dist_px = np.linalg.norm(np.array(u) - np.array(mpw))
+        dist_mm = float(dist_px * spacing)
+        result["U-MPW"] = round(dist_mm, 2)
+        any_measured = True
+        mean, std = AIRWAY_NORMAL_VALUES["U-MPW"]
+        if dist_mm < mean - std:
+            all_normal = False
+    
+    # 4. TB-TPPW: 舌根后部到咽后壁的距离
+    tb = landmarks_11.get("TB")
+    tppw = landmarks_11.get("TPPW")
+    if _is_valid_point(tb) and _is_valid_point(tppw):
+        dist_px = np.linalg.norm(np.array(tb) - np.array(tppw))
+        dist_mm = float(dist_px * spacing)
+        result["TB-TPPW"] = round(dist_mm, 2)
+        any_measured = True
+        mean, std = AIRWAY_NORMAL_VALUES["TB-TPPW"]
+        if dist_mm < mean - std:
+            all_normal = False
+    
+    # 5. V-LPW: 会厌谷点到下咽壁的距离
+    v = landmarks_11.get("V")
+    lpw = landmarks_11.get("LPW")
+    if _is_valid_point(v) and _is_valid_point(lpw):
+        dist_px = np.linalg.norm(np.array(v) - np.array(lpw))
+        dist_mm = float(dist_px * spacing)
+        result["V-LPW"] = round(dist_mm, 2)
+        any_measured = True
+        mean, std = AIRWAY_NORMAL_VALUES["V-LPW"]
+        if dist_mm < mean - std:
+            all_normal = False
+    
+    # 计算综合结论
+    if any_measured:
+        result["conclusion"] = all_normal  # True=正常, False=不足
+        # 计算置信度（基于检测到的点数）
+        detected_count = sum(1 for k in ["PNS-UPW", "SPP-SPPW", "U-MPW", "TB-TPPW", "V-LPW"] if result[k] is not None)
+        result["confidence"] = round(detected_count / 5.0, 2)
+    else:
+        result["status"] = "missing_landmarks"
+        result["conclusion"] = None
+    
+    logger.info(f"[气道测量] PNS-UPW={result['PNS-UPW']}, SPP-SPPW={result['SPP-SPPW']}, "
+                f"U-MPW={result['U-MPW']}, TB-TPPW={result['TB-TPPW']}, V-LPW={result['V-LPW']}, "
+                f"结论={'正常' if result['conclusion'] else '不足' if result['conclusion'] is not None else '未检测'}")
+    
+    return result
+
+
+def calculate_adenoid_ratio(
+    landmarks_25: Dict[str, np.ndarray],
+    landmarks_11: Dict[str, np.ndarray],
+    spacing: float = DEFAULT_SPACING_MM_PER_PIXEL,
+) -> Dict[str, Any]:
+    """
+    计算腺样体 A/N 比值
+    
+    计算方法：
+        A = 腺样体最凸点(AD)到 Ba-Ar 连线的垂直距离
+        N = 后鼻棘(PNS)到 D' 点的距离
+        A/N 比值 = A / N
+    
+    判断标准：
+        A/N < 0.7: 腺样体正常，未引起病理性气道阻塞
+        A/N >= 0.7: 腺样体肥大，可能导致气道阻塞
+    
+    Args:
+        landmarks_25: 25点坐标字典（需要 PNS=P13, Ba=P23, Ar=P15）
+        landmarks_11: 11点坐标字典（需要 AD, Dprime）
+        spacing: 像素间距 (mm/pixel)
+    
+    Returns:
+        腺样体测量结果字典
+    """
+    result = {
+        "value": None,  # A/N 比值
+        "A_mm": None,   # A 值（腺样体厚度）
+        "N_mm": None,   # N 值（鼻咽深度）
+        "unit": "ratio",
+        "conclusion": None,  # True=未见肿大(<0.7), False=肿大(>=0.7)
+        "confidence": 0.0,
+        "status": "ok",
+    }
+    
+    # 获取所需点位
+    pns = landmarks_25.get("P13")  # PNS - 后鼻棘
+    ba = landmarks_25.get("P23")   # Ba - 颅底点
+    ar = landmarks_25.get("P15")   # Ar - 关节点
+    ad = landmarks_11.get("AD")    # AD - 腺样体最凸点
+    dprime = landmarks_11.get("Dprime")  # D' - 翼板与颅底交点
+    
+    # 检查必需点位
+    required_points = [("PNS", pns), ("Ba", ba), ("Ar", ar), ("AD", ad), ("Dprime", dprime)]
+    missing = [name for name, pt in required_points if not _is_valid_point(pt)]
+    
+    if missing:
+        result["status"] = "missing_landmarks"
+        result["missing"] = missing
+        logger.warning(f"[腺样体测量] 缺少点位: {missing}")
+        return result
+    
+    # 转换为 numpy 数组
+    pns = np.array(pns)
+    ba = np.array(ba)
+    ar = np.array(ar)
+    ad = np.array(ad)
+    dprime = np.array(dprime)
+    
+    # 计算 A 值：AD 到 Ba-Ar 连线的垂直距离
+    ba_ar_vec = ar - ba
+    a_px = _safe_cross_distance(ba_ar_vec, ad, ba)
+    a_mm = float(a_px * spacing)
+    
+    # 计算 N 值：PNS 到 D' 的距离
+    n_px = np.linalg.norm(pns - dprime)
+    n_mm = float(n_px * spacing)
+    
+    # 计算 A/N 比值
+    if n_mm > 1e-6:  # 防止除零
+        an_ratio = a_mm / n_mm
+    else:
+        an_ratio = 0.0
+        result["status"] = "invalid_n_value"
+        logger.warning("[腺样体测量] N 值过小，无法计算 A/N 比值")
+        return result
+    
+    result["value"] = round(an_ratio, 2)
+    result["A_mm"] = round(a_mm, 2)
+    result["N_mm"] = round(n_mm, 2)
+    
+    # 判断结论：A/N < 0.7 为正常
+    result["conclusion"] = an_ratio < ADENOID_AN_THRESHOLD  # True=未见肿大, False=肿大
+    result["confidence"] = 0.85  # 默认置信度
+    
+    logger.info(f"[腺样体测量] A={a_mm:.2f}mm, N={n_mm:.2f}mm, A/N={an_ratio:.2f}, "
+                f"结论={'未见肿大' if result['conclusion'] else '肿大'}")
+    
+    return result
