@@ -20,6 +20,7 @@ from .ceph_report import (
     SGO_NME_VERTICAL_THRESHOLD,
     DEFAULT_SPACING_MM_PER_PIXEL,
 )
+from .ceph_visualization import build_visualization_map
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ MEASUREMENT_ORDER = [
     "Mandibular_Growth_Type_Angle",  # Björk sum
     "S_N_Anterior_Cranial_Base_Length",
     "Go_Me_Length",
-    "Cervical_Vertebral_Maturity_Stage",  # 可选
+    "Cervical_Vertebral_Maturity_Stage",  
 ]
 
 # 特殊测量项类型定义
@@ -101,6 +102,7 @@ UNDETECTED_LEVEL = -1
 def generate_standard_output(
     inference_results: Dict[str, Any],
     patient_info: Dict[str, str],
+    visualization_enabled: bool = True,
 ) -> Dict[str, Any]:
     """
     将推理结果映射为符合《接口定义.md》的 data 字段。
@@ -123,7 +125,12 @@ def generate_standard_output(
     spacing = inference_results.get("spacing", DEFAULT_SPACING_MM_PER_PIXEL)
 
     landmark_section = _build_landmark_section(landmarks_block)
-    measurement_section = _build_measurement_section_in_order(measurements)
+    viz_map = (
+        build_visualization_map(measurements, landmarks_block)
+        if visualization_enabled
+        else None
+    )
+    measurement_section = _build_measurement_section_in_order(measurements, viz_map)
 
     visibility_grade = _visibility_grade(
         landmark_section["DetectedLandmarks"], landmark_section["TotalLandmarks"]
@@ -229,7 +236,10 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_measurement_section_in_order(measurements: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_measurement_section_in_order(
+    measurements: Dict[str, Dict[str, Any]],
+    viz_map: Dict[str, Any] | None = None,
+) -> List[Dict[str, Any]]:
     """
     关键修改：严格按照 MEASUREMENT_ORDER 顺序输出所有测量项
     缺失的项目也会占位（返回空值但保留Label），保证序号不乱
@@ -238,23 +248,30 @@ def _build_measurement_section_in_order(measurements: Dict[str, Dict[str, Any]])
 
     for name in MEASUREMENT_ORDER:
         payload = measurements.get(name, {})
-        entry = _build_measurement_entry(name, payload)
+        entry = _build_measurement_entry(name, payload, viz_map)
         section.append(entry)
 
     return section
 
 
-def _build_measurement_section(measurements: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_measurement_section(
+    measurements: Dict[str, Dict[str, Any]],
+    viz_map: Dict[str, Any] | None = None,
+) -> List[Dict[str, Any]]:
     section: List[Dict[str, Any]] = []
 
     for name, payload in measurements.items():
-        entry = _build_measurement_entry(name, payload)
+        entry = _build_measurement_entry(name, payload, viz_map)
         section.append(entry)
 
     return section
 
 
-def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def _build_measurement_entry(
+    name: str,
+    payload: Dict[str, Any],
+    viz_map: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     """
     根据测量项类型构建对应的输出格式。
     
@@ -274,6 +291,8 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
     unit = payload.get("unit", "")
     conclusion = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
+    status_ok = payload.get("status") == "ok"
+    viz_payload = viz_map.get(name) if viz_map else None
     
     # 判断是否为未检测状态：payload 为空或 value 为 None
     is_undetected = not payload or value is None
@@ -319,6 +338,7 @@ def _build_measurement_entry(name: str, payload: Dict[str, Any]) -> Dict[str, An
         entry["Level"] = int(level)
 
     entry["Confidence"] = round(float(confidence), 2)
+    entry["Visualization"] = _format_visualization(viz_payload) if status_ok else None
 
     return entry
 
@@ -436,6 +456,56 @@ def _format_value(value: Any) -> Union[float, None]:
         return float(Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
     except (ValueError, TypeError, Exception):
         return None
+
+
+def _format_visualization(raw: Any) -> Union[Dict[str, Any], None]:
+    if not isinstance(raw, dict):
+        return None
+
+    virtual_points_raw = raw.get("VirtualPoints")
+    elements_raw = raw.get("Elements")
+
+    formatted_vp: Dict[str, List[float]] | None = None
+    if isinstance(virtual_points_raw, dict):
+        formatted_vp = {}
+        for key, value in virtual_points_raw.items():
+            arr = np.asarray(value, dtype=float)
+            if arr.shape[0] < 2 or np.isnan(arr).any():
+                continue
+            formatted_vp[key] = [round(float(arr[0]), 2), round(float(arr[1]), 2)]
+        if not formatted_vp:
+            formatted_vp = None
+
+    formatted_elements: List[Dict[str, Any]] | None = None
+    if isinstance(elements_raw, list):
+        formatted_elements = []
+        for item in elements_raw:
+            if not isinstance(item, dict):
+                continue
+            if item.get("Type") != "Line":
+                continue
+            from_key = item.get("From")
+            to_key = item.get("To")
+            style = item.get("Style")
+            role = item.get("Role")
+            if None in (from_key, to_key, style, role):
+                continue
+            formatted_elements.append(
+                {
+                    "Type": "Line",
+                    "From": from_key,
+                    "To": to_key,
+                    "Style": style,
+                    "Role": role,
+                }
+            )
+        if not formatted_elements:
+            formatted_elements = None
+
+    if formatted_vp is None and formatted_elements is None:
+        return None
+
+    return {"VirtualPoints": formatted_vp, "Elements": formatted_elements}
 
 
 def _get_measurement_level(name: str, conclusion: Any, value: Any) -> int:

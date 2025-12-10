@@ -279,6 +279,16 @@ h2 {
     background: #e9ecef;
 }
 
+.measurement-item.clickable {
+    cursor: pointer;
+    border-left-color: #3498db;
+}
+
+.measurement-item.active {
+    border-left-color: #2980b9;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
 .measurement-item.abnormal {
     border-left-color: #f44336;
     background: #ffebee;
@@ -694,6 +704,70 @@ h2 {
     display: none; /* 默认隐藏，渲染完成后显示 */
 }
 
+.measurement-tools {
+    margin: 12px 0 16px 0;
+    padding: 12px;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    background: #fdfefe;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.measurement-tools .legend {
+    flex: 1;
+}
+
+.legend-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #2c3e50;
+    margin-bottom: 6px;
+}
+
+.legend-items {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 6px 10px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #606266;
+}
+
+.legend-line {
+    display: inline-block;
+    width: 36px;
+    height: 0;
+    border-top: 2px solid #7f8c8d;
+}
+
+.legend-line.dashed {
+    border-top-style: dashed;
+}
+
+.legend-line.measurement {
+    border-color: #e74c3c;
+}
+
+.legend-line.reference {
+    border-color: #3498db;
+}
+
+.measurement-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
 .layer-control-header {
     display: flex;
     justify-content: space-between;
@@ -898,49 +972,6 @@ h2 {
 .sinus-confidence .label {
     margin-right: 6px;
     color: #bdc3c7;
-}
-
-/* ============================================
-   标签页切换样式
-   ============================================ */
-
-.tab-container {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #e9ecef;
-}
-
-.tab-btn {
-    padding: 12px 24px;
-    background: transparent;
-    border: none;
-    border-bottom: 3px solid transparent;
-    color: #7f8c8d;
-    font-size: 16px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s;
-    margin-bottom: -2px;
-}
-
-.tab-btn:hover {
-    color: #3498db;
-    background: #f8f9fa;
-}
-
-.tab-btn.active {
-    color: #3498db;
-    border-bottom-color: #3498db;
-    font-weight: 600;
-}
-
-.tab-content {
-    display: none;
-}
-
-.tab-content.active {
-    display: block;
 }
 
 /* ============================================

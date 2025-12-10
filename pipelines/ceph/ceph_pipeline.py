@@ -21,7 +21,8 @@ from tools.timer import timer
 #     "gender": "Female",
 #     "DentalAgeStage": "Permanent",
 # }
-# DEFAULT_IMAGE_PATH = r"/app/example/151.jpg"
+# # DEFAULT_IMAGE_PATH = r"D:\git-615\Teeth\Xray-inference\example\example_ceph_img.jpg"
+# DEFAULT_IMAGE_PATH = r"/app/example/example_ceph_img.jpg"
 # DEFAULT_OUTPUT_NAME = "ceph_output.json"
 
 
@@ -312,7 +313,7 @@ class CephPipeline(BasePipeline):
 #     data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
 #
 #     # 输出 JSON 到指定目录
-#     output_dir = Path(r"D:\git-615\Teeth\Xray-inference\example")
+#     output_dir = Path(r"/app/example/")
 #     output_path = output_dir / DEFAULT_OUTPUT_NAME
 #     output_dir.mkdir(parents=True, exist_ok=True)
 #

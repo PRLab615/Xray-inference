@@ -30,11 +30,44 @@ const appState = {
     originalImage: null,       // 原始图片对象
     imageScale: 1.0,           // 图片缩放比例
     layerVisibility: {},       // 图层显示状态 {layerKey: true/false}
-    currentFile: null          // 当前选择的文件对象
+    currentFile: null,         // 当前选择的文件对象
+    cephLandmarks: {},         // 侧位片点位映射（Label -> [x,y]）
+    cephMeasurements: [],      // 侧位片测量项列表
+    activeMeasurementLabel: null // 当前高亮的测量项
 };
 
 // 动态获取当前主机名，支持在任意 IP 的机器上运行
 const CURRENT_HOST = window.location.hostname || 'localhost';
+
+// 侧位片短标签到完整名称映射（用于兼容 Visualization 的短标签）
+const SHORT_LABEL_MAP = {
+    S: 'Sella',
+    N: 'Nasion',
+    Or: 'Orbitale',
+    Po: 'Porion',
+    A: 'Subspinale',
+    B: 'Supramentale',
+    Pog: 'Pogonion',
+    Me: 'Menton',
+    Gn: 'Gnathion',
+    Go: 'Gonion',
+    L1: 'Incision inferius',
+    UI: 'Incision superius',
+    U1: 'Incision superius',
+    PNS: 'Posterior nasal spine',
+    ANS: 'Anterior nasal spine',
+    Ar: 'Articulare',
+    Ba: 'Ba',
+    Bo: 'Bo',
+    Pt: 'Pt',
+    PTM: 'PTM',
+    Co: 'Co',
+    U1A: 'U1A',
+    L1A: 'L1A',
+    U6: 'U6',
+    L6: 'L6',
+    Pcd: 'Pcd'
+};
 
 // 全局配置常量
 const CONFIG = {
@@ -79,6 +112,14 @@ function init() {
     
     // 绑定手动可视化按钮
     document.getElementById('manualVisualizeBtn').addEventListener('click', onManualVisualize);
+    
+    // 测量可视化控制
+    const prevBtn = document.getElementById('prevMeasurement');
+    const nextBtn = document.getElementById('nextMeasurement');
+    const clearBtn = document.getElementById('clearMeasurement');
+    if (prevBtn) prevBtn.addEventListener('click', () => jumpMeasurement(-1));
+    if (nextBtn) nextBtn.addEventListener('click', () => jumpMeasurement(1));
+    if (clearBtn) clearBtn.addEventListener('click', clearMeasurementVisualization);
     
     // 步骤14：设置窗口大小变化处理
     setupWindowResizeHandler();
@@ -206,198 +247,7 @@ function showSuccessMessage(message, duration = 3000) {
 }
 
 // ============================================
-// 标签页切换和手动可视化功能
-// ============================================
-
-/**
- * 标签页切换函数
- * @param {string} tabName - 标签页名称 ('analysis' 或 'manual')
- */
-function switchTab(tabName) {
-    // 隐藏所有标签页内容
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    
-    // 移除所有标签按钮的 active 状态
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    // 显示选中的标签页内容
-    const targetContent = document.getElementById(`tab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`);
-    if (targetContent) {
-        targetContent.classList.add('active');
-    }
-    
-    // 激活对应的标签按钮
-    const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
-    if (targetBtn) {
-        targetBtn.classList.add('active');
-    }
-    
-    // 如果切换到手动可视化标签页，清空之前的结果
-    if (tabName === 'manual') {
-        clearCanvas();
-        clearReport();
-        const mainContainer = document.getElementById('mainContainer');
-        if (mainContainer) {
-            mainContainer.classList.add('hidden');
-        }
-    }
-}
-
-/**
- * 手动可视化处理函数
- */
-async function onManualVisualize() {
-    const imageFile = document.getElementById('manualImageFile').files[0];
-    const jsonFile = document.getElementById('manualJsonFile').files[0];
-    const jsonText = document.getElementById('manualJsonText').value.trim();
-    
-    // 校验：必须选择图片
-    if (!imageFile) {
-        alert('请先选择图片文件');
-        return;
-    }
-    
-    // 校验：必须提供 JSON（文件或文本）
-    let resultJson = null;
-    if (jsonFile) {
-        try {
-            const text = await jsonFile.text();
-            resultJson = JSON.parse(text);
-        } catch (error) {
-            alert('JSON 文件解析失败：' + error.message);
-            return;
-        }
-    } else if (jsonText) {
-        try {
-            resultJson = JSON.parse(jsonText);
-        } catch (error) {
-            alert('JSON 文本解析失败：' + error.message);
-            return;
-        }
-    } else {
-        alert('请选择 JSON 文件或粘贴 JSON 文本');
-        return;
-    }
-    
-    // 智能处理 JSON 格式：支持完整格式或仅 data 字段
-    if (!resultJson) {
-        alert('JSON 格式错误：无法解析');
-        return;
-    }
-    
-    // 如果输入的是完整的响应格式（包含 data 字段），直接使用
-    if (resultJson.data) {
-        // 已经是完整格式，无需处理
-    } else {
-        // 如果输入的是 data 字段的内容，包装成完整格式
-        console.log('检测到仅 data 字段内容，自动包装为完整格式');
-        resultJson = {
-            taskId: resultJson.taskId || 'manual-' + Date.now(),
-            status: resultJson.status || 'SUCCESS',
-            timestamp: resultJson.timestamp || new Date().toISOString(),
-            metadata: resultJson.metadata || {},
-            data: resultJson, // 将整个输入作为 data 字段
-            error: resultJson.error || null
-        };
-    }
-    
-    // 最终校验：确保有 data 字段
-    if (!resultJson.data) {
-        alert('JSON 格式错误：无法识别 data 字段');
-        return;
-    }
-    
-    // 禁用按钮
-    const btn = document.getElementById('manualVisualizeBtn');
-    btn.disabled = true;
-    
-    try {
-        // 显示加载中
-        showLoading();
-        
-        // 加载图片
-        const img = new Image();
-        img.onerror = function() {
-            hideLoading();
-            alert('图片加载失败');
-            btn.disabled = false;
-        };
-        
-        img.onload = async function() {
-            try {
-                // 从 JSON 中提取任务类型（如果有）
-                let taskType = null;
-                if (resultJson.requestParameters && resultJson.requestParameters.taskType) {
-                    taskType = resultJson.requestParameters.taskType;
-                } else if (resultJson.data) {
-                    // 尝试从数据结构推断任务类型
-                    if (resultJson.data.ToothAnalysis || resultJson.data.JointAndMandible) {
-                        taskType = 'panoramic';
-                    } else if (resultJson.data.CephalometricMeasurements || resultJson.data.LandmarkPositions) {
-                        taskType = 'cephalometric';
-                    } else if (resultJson.data.dentalAgeStage) {
-                        taskType = 'dental_age_stage';
-                    }
-                }
-                
-                if (!taskType) {
-                    alert('无法从 JSON 中识别任务类型，请确保 JSON 格式正确');
-                    hideLoading();
-                    btn.disabled = false;
-                    return;
-                }
-                
-                // 设置任务类型和结果
-                appState.currentTaskType = taskType;
-                appState.currentTaskId = resultJson.taskId || 'manual-' + Date.now();
-                
-                // 构建结果对象（兼容 displayResult 函数）
-                const resultData = {
-                    taskId: resultJson.taskId || appState.currentTaskId,
-                    status: resultJson.status || 'SUCCESS',
-                    timestamp: resultJson.timestamp || new Date().toISOString(),
-                    metadata: resultJson.metadata || {},
-                    data: resultJson.data,
-                    error: resultJson.error || null
-                };
-                
-                // 临时设置图片文件到 imageFile，以便渲染函数可以访问
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(imageFile);
-                document.getElementById('imageFile').files = dataTransfer.files;
-                
-                // 显示结果
-                displayResult(resultData);
-                
-                // 显示成功提示
-                showSuccessMessage('可视化成功！');
-                
-            } catch (error) {
-                console.error('手动可视化错误:', error);
-                alert('可视化失败：' + error.message);
-                hideLoading();
-            } finally {
-                btn.disabled = false;
-            }
-        };
-        
-        img.src = URL.createObjectURL(imageFile);
-        
-    } catch (error) {
-        hideLoading();
-        console.error('手动可视化错误:', error);
-        alert('处理失败：' + error.message);
-        btn.disabled = false;
-    }
-}
-
-
-// ============================================
-// 步骤5：Konva Stage 初始化和工具函数
+// Konva Stage 初始化和工具函数
 // ============================================
 
 /**
@@ -452,6 +302,261 @@ function scaleCoordinates(x, y, scale) {
         x: x * scale,
         y: y * scale
     };
+}
+
+/**
+ * 构建点位映射：Label -> [x, y]
+ * 仅保留已检测且坐标有效的点
+ */
+function buildLandmarkMap(data) {
+    const map = {};
+    const landmarks = data?.LandmarkPositions?.Landmarks || [];
+    landmarks.forEach(l => {
+        if (l && l.Status === 'Detected' && l.X != null && l.Y != null) {
+            // 原始全名
+            map[l.Label] = [l.X, l.Y];
+            // 尝试匹配短标签
+            const shortKey = Object.keys(SHORT_LABEL_MAP).find(k => SHORT_LABEL_MAP[k] === l.Label);
+            if (shortKey) {
+                map[shortKey] = [l.X, l.Y];
+            }
+        }
+    });
+    return map;
+}
+
+/**
+ * 确保指定图层存在，不存在则创建
+ */
+function ensureLayer(layerKey) {
+    if (!appState.konvaStage) return null;
+    // 如果层已存在，直接返回（renderCephalometric 已按正确顺序创建）
+    if (appState.konvaLayers[layerKey]) return appState.konvaLayers[layerKey];
+    // 如果层不存在，创建并添加到 stage
+    // 注意：对于 measurementLines，应该在 renderCephalometric 中已创建，这里不应该执行
+    const layer = new Konva.Layer();
+    appState.konvaStage.add(layer);
+    appState.konvaLayers[layerKey] = layer;
+    return layer;
+}
+
+/**
+ * 设置当前激活的测量项并高亮
+ */
+function setActiveMeasurementLabel(label) {
+    appState.activeMeasurementLabel = label || null;
+    const items = document.querySelectorAll('.measurement-item');
+    items.forEach(node => {
+        if (label && node.dataset && node.dataset.label === label) {
+            node.classList.add('active');
+        } else {
+            node.classList.remove('active');
+        }
+    });
+}
+
+/**
+ * 清空测量线
+ */
+function clearMeasurementVisualization() {
+    const layer = appState.konvaLayers.measurementLines;
+    if (layer) {
+        layer.destroyChildren();
+        layer.draw();
+    }
+    appState.activeMeasurementLabel = null;
+    setActiveMeasurementLabel(null);
+    initLayerControlPanel();
+}
+
+/**
+ * 按增量切换测量项（仅包含可视化）
+ */
+function jumpMeasurement(delta) {
+    const list = getNavigableMeasurements();
+    if (!list.length) {
+        alert('无可视化的测量项');
+        return;
+    }
+    const currentIndex = list.findIndex(m => m.Label === appState.activeMeasurementLabel);
+    let nextIndex = currentIndex + delta;
+    if (nextIndex >= list.length) nextIndex = 0;
+    if (nextIndex < 0) nextIndex = list.length - 1;
+    const target = list[nextIndex];
+    handleMeasurementClick(target);
+}
+
+/**
+ * 获取可导航的测量项列表（含 Visualization）
+ */
+function getNavigableMeasurements() {
+    if (!Array.isArray(appState.cephMeasurements)) return [];
+    return appState.cephMeasurements.filter(m => m && m.Visualization);
+}
+
+/**
+ * 渲染单个测量项的可视化（线段）
+ */
+function renderMeasurementVisualization(measurement) {
+    if (!measurement || !measurement.Visualization) {
+        console.warn('该测量项无可视化指令');
+        return;
+    }
+    if (!appState.konvaStage) {
+        console.warn('Konva Stage 未初始化，无法绘制可视化');
+        return;
+    }
+
+    const layer = ensureLayer('measurementLines');
+    if (!layer) return;
+    layer.destroyChildren();
+
+    const vis = measurement.Visualization;
+    const pointMap = { ...appState.cephLandmarks };
+    if (vis.VirtualPoints && typeof vis.VirtualPoints === 'object') {
+        Object.entries(vis.VirtualPoints).forEach(([k, v]) => {
+            if (Array.isArray(v) && v.length >= 2) {
+                pointMap[k] = v;
+            }
+        });
+    }
+
+    const scale = appState.imageScale || 1;
+    const elements = Array.isArray(vis.Elements) ? vis.Elements : [];
+    let drawCount = 0;
+
+    elements.forEach(el => {
+        if (!el || el.Type !== 'Line') return;
+        const from = pointMap[el.From];
+        const to = pointMap[el.To];
+        if (!from || !to) return;
+
+        const role = el.Role === 'Measurement' ? 'Measurement' : 'Reference';
+        const style = el.Style === 'Dashed' ? [6, 4] : [];
+        const stroke = role === 'Measurement' ? '#e74c3c' : '#3498db';
+        const strokeWidth = role === 'Measurement' ? 2 : 1;
+
+        const line = new Konva.Line({
+            points: [from[0] * scale, from[1] * scale, to[0] * scale, to[1] * scale],
+            stroke,
+            strokeWidth,
+            dash: style,
+            lineCap: 'round',
+            lineJoin: 'round',
+            listening: false
+        });
+        layer.add(line);
+        drawCount++;
+    });
+
+    layer.draw();
+    appState.konvaStage.draw();
+    appState.konvaLayers.measurementLines = layer;
+    appState.layerVisibility.measurementLines = true;
+    initLayerControlPanel();
+
+    if (drawCount === 0) {
+        console.warn('可视化元素为空或坐标缺失，未绘制任何线段');
+    }
+
+    // 显示测量工具栏
+    const tools = document.getElementById('measurementTools');
+    if (tools) {
+        tools.classList.remove('hidden');
+    }
+}
+
+/**
+ * 处理测量项点击事件
+ */
+function handleMeasurementClick(measurement) {
+    if (!measurement) return;
+    if (!measurement.Visualization) {
+        alert('该测量项暂无可视化');
+        return;
+    }
+    setActiveMeasurementLabel(measurement.Label);
+    renderMeasurementVisualization(measurement);
+}
+
+/**
+ * 渲染所有测量项的可视化（叠加显示）
+ */
+function renderAllMeasurements() {
+    const measurements = getNavigableMeasurements();
+    if (measurements.length === 0) {
+        alert('没有可显示的测量线');
+        return;
+    }
+    
+    if (!appState.konvaStage) {
+        console.warn('Konva Stage 未初始化，无法绘制可视化');
+        return;
+    }
+    
+    const layer = ensureLayer('measurementLines');
+    if (!layer) return;
+    layer.destroyChildren();
+    
+    const scale = appState.imageScale || 1;
+    let totalDrawCount = 0;
+    
+    measurements.forEach(measurement => {
+        if (!measurement || !measurement.Visualization) return;
+        
+        const vis = measurement.Visualization;
+        const pointMap = { ...appState.cephLandmarks };
+        if (vis.VirtualPoints && typeof vis.VirtualPoints === 'object') {
+            Object.entries(vis.VirtualPoints).forEach(([k, v]) => {
+                if (Array.isArray(v) && v.length >= 2) {
+                    pointMap[k] = v;
+                }
+            });
+        }
+        
+        const elements = Array.isArray(vis.Elements) ? vis.Elements : [];
+        elements.forEach(el => {
+            if (!el || el.Type !== 'Line') return;
+            const from = pointMap[el.From];
+            const to = pointMap[el.To];
+            if (!from || !to) return;
+            
+            const role = el.Role === 'Measurement' ? 'Measurement' : 'Reference';
+            const style = el.Style === 'Dashed' ? [6, 4] : [];
+            const stroke = role === 'Measurement' ? '#e74c3c' : '#3498db';
+            const strokeWidth = role === 'Measurement' ? 2 : 1;
+            
+            const line = new Konva.Line({
+                points: [from[0] * scale, from[1] * scale, to[0] * scale, to[1] * scale],
+                stroke,
+                strokeWidth,
+                dash: style,
+                lineCap: 'round',
+                lineJoin: 'round',
+                listening: false
+            });
+            layer.add(line);
+            totalDrawCount++;
+        });
+    });
+    
+    layer.draw();
+    appState.konvaStage.draw();
+    appState.konvaLayers.measurementLines = layer;
+    appState.layerVisibility.measurementLines = true;
+    appState.activeMeasurementLabel = null;
+    initLayerControlPanel();
+    
+    if (totalDrawCount === 0) {
+        console.warn('未绘制任何线段');
+    } else {
+        console.log(`已绘制所有测量线，共 ${totalDrawCount} 条线段`);
+    }
+    
+    const tools = document.getElementById('measurementTools');
+    if (tools) {
+        tools.classList.remove('hidden');
+    }
 }
 
 /**
@@ -1026,6 +1131,11 @@ function clearCanvas() {
     if (panel) {
         panel.style.display = 'none';
     }
+
+    const tools = document.getElementById('measurementTools');
+    if (tools) {
+        tools.classList.add('hidden');
+    }
 }
 
 /**
@@ -1271,6 +1381,15 @@ async function renderCephalometric(data) {
         mainContainer.classList.remove('hidden');
     }
     
+    // 预先缓存点位与测量列表，供可视化渲染使用
+    appState.cephLandmarks = buildLandmarkMap(data);
+    appState.cephMeasurements = data?.CephalometricMeasurements?.AllMeasurements || [];
+    appState.activeMeasurementLabel = null;
+    const tools = document.getElementById('measurementTools');
+    if (tools) {
+        tools.classList.remove('hidden');
+    }
+    
     // 生成结构化报告
     buildCephReport(data);
     
@@ -1358,6 +1477,12 @@ async function renderCephalometric(data) {
     stage.add(bgLayer);
     appState.konvaLayers.background = bgLayer;
     
+    // 5.5. 创建测量线图层（在关键点层之前，确保关键点显示在测量线之上）
+    const measurementLayer = new Konva.Layer();
+    stage.add(measurementLayer);
+    appState.konvaLayers.measurementLines = measurementLayer;
+    appState.layerVisibility.measurementLines = true;
+    
     // 6. 绘制关键点
     drawLandmarks(data, stage, scale);
     
@@ -1369,6 +1494,14 @@ async function renderCephalometric(data) {
     
     // 8. 初始化图层控制面板
     initLayerControlPanel();
+
+    // 9. 自动渲染首个可视化测量项
+    const first = getNavigableMeasurements()[0];
+    if (first) {
+        handleMeasurementClick(first);
+    } else {
+        console.warn('未找到可视化测量项，无法自动渲染');
+    }
     
     console.log('侧位片渲染完成');
 }
@@ -2105,6 +2238,7 @@ function createKeyValue(key, value) {
 function createMeasurementItem(measurement) {
     const item = document.createElement('div');
     item.className = 'measurement-item';
+    item.dataset.label = measurement.Label || '';
     
     // 判断是否为未检测状态：Level === -1 或 Level === null 或 Level === [-1]
     const isUndetected = measurement.Level === -1 || 
@@ -2189,6 +2323,12 @@ function createMeasurementItem(measurement) {
     // 置信度已隐藏 - 不再显示测量数据的置信度
     
     item.innerHTML = content;
+    
+    // 若存在可视化指令，绑定点击渲染
+    if (measurement.Visualization) {
+        item.classList.add('clickable');
+        item.onclick = () => handleMeasurementClick(measurement);
+    }
     return item;
 }
 
@@ -4572,6 +4712,7 @@ const LAYER_CONFIG = {
     // 侧位片图层
     landmarks: { name: '关键点', taskType: 'cephalometric' },
     cvm: { name: '颈椎成熟度', taskType: 'cephalometric' },
+    measurementLines: { name: '测量线', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
     implants: { name: '种植体', taskType: 'panoramic' },
@@ -4669,6 +4810,14 @@ function initLayerControlPanel() {
         console.log('已绑定全部显示按钮');
     } else {
         console.warn('未找到全部显示按钮: showAllBtn');
+    }
+    
+    const showAllMeasurementsBtn = document.getElementById('showAllMeasurementsBtn');
+    if (showAllMeasurementsBtn) {
+        showAllMeasurementsBtn.onclick = renderAllMeasurements;
+        console.log('已绑定显示所有测量线按钮');
+    } else {
+        console.warn('未找到显示所有测量线按钮: showAllMeasurementsBtn');
     }
     
     // 更新所有图层的显示状态
