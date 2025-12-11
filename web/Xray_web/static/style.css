@@ -34,6 +34,33 @@ h1 {
     font-size: 14px;
 }
 
+/* Tabs */
+.tab-header {
+    display: flex;
+    gap: 10px;
+    margin: 16px 0 12px;
+}
+.tab-btn {
+    padding: 8px 14px;
+    border: 1px solid #dcdfe6;
+    background: #f7f9fc;
+    cursor: pointer;
+    border-radius: 6px;
+    color: #2c3e50;
+    transition: all 0.2s ease;
+}
+.tab-btn.active {
+    background: #3498db;
+    color: #fff;
+    border-color: #3498db;
+}
+.tab-panel {
+    display: block;
+}
+.tab-panel.hidden {
+    display: none;
+}
+
 h2 {
     color: #34495e;
     margin-bottom: 15px;

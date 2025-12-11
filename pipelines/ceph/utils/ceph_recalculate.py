@@ -104,13 +104,22 @@ def recalculate_ceph_report(
     # 使用 X 方向的 spacing（假设等比例）
     spacing = float(spacing_x)
     
-    # 1.2 提取 25 点关键点坐标
+    # 1.2 提取 25 点关键点坐标（以及可能已合并的 11 点）
     landmark_positions = input_data.get("LandmarkPositions", {})
     input_landmarks = landmark_positions.get("Landmarks", [])
-    
-    # 1.3 提取 11 点关键点坐标（气道/腺体）
-    airway_landmark_positions = input_data.get("AirwayLandmarkPositions", {})
-    input_landmarks_11 = airway_landmark_positions.get("Landmarks", [])
+
+    # 1.3 提取 11 点关键点坐标（兼容两种输入：独立字段或已合并进 LandmarkPositions）
+    input_landmarks_11: List[Dict[str, Any]] = []
+    airway_landmark_positions = input_data.get("AirwayLandmarkPositions")
+    if isinstance(airway_landmark_positions, dict) and airway_landmark_positions.get("Landmarks"):
+        # 旧格式：单独字段
+        input_landmarks_11 = airway_landmark_positions.get("Landmarks", [])
+    else:
+        # 新格式：已合并到 LandmarkPositions 中，从中筛选 11 点标签
+        if isinstance(input_landmarks, list) and input_landmarks:
+            # FULL_NAME_TO_KEY_11 在模块顶部已构建
+            eleven_full_names = set(FULL_NAME_TO_KEY_11.keys())
+            input_landmarks_11 = [lm for lm in input_landmarks if lm.get("Label") in eleven_full_names]
     has_landmarks_11 = len(input_landmarks_11) > 0
     
     # 1.4 提取颈椎成熟度（透传）
@@ -188,12 +197,13 @@ def recalculate_ceph_report(
         cervical_entry=cervical_entry,
     )
     
-    # 5.3 计算总的统计信息（25点 + 11点）
+    # 5.3 计算总的统计信息（25点 + 11点）并合并列表
     total_all_landmarks = total_landmarks + total_landmarks_11
     detected_all_count = detected_count + detected_count_11
     all_missing_labels = missing_labels + missing_labels_11
-    
-    # 5.4 组装完整输出
+    combined_entries = landmark_entries + (landmark_11_entries if has_landmarks_11 else [])
+
+    # 5.4 组装完整输出（关键变更：仅保留合并后的 LandmarkPositions，不再输出 AirwayLandmarkPositions）
     output_data = {
         "ImageSpacing": {
             "X": spacing_x,
@@ -222,34 +232,24 @@ def recalculate_ceph_report(
             },
         },
         "LandmarkPositions": {
-            "TotalLandmarks": total_landmarks,
-            "DetectedLandmarks": detected_count,
-            "MissingLandmarks": missing_count,
-            "Landmarks": landmark_entries,
+            "TotalLandmarks": total_all_landmarks,
+            "DetectedLandmarks": detected_all_count,
+            "MissingLandmarks": total_all_landmarks - detected_all_count,
+            "MissingLabels": all_missing_labels,
+            "Landmarks": combined_entries,
         },
         "CephalometricMeasurements": {
             "AllMeasurements": measurement_section,
         },
     }
-    
-    # 5.5 如果有 11 点，添加 AirwayLandmarkPositions
-    if has_landmarks_11:
-        output_data["AirwayLandmarkPositions"] = {
-            "TotalLandmarks": total_landmarks_11,
-            "DetectedLandmarks": detected_count_11,
-            "MissingLandmarks": missing_count_11,
-            "Landmarks": landmark_11_entries,
-        }
-    
+
     logger.info(
-        "[Ceph Recalculate] Generated report: %d/%d landmarks (25pt), %d/%d landmarks (11pt), %d measurements",
-        detected_count,
-        total_landmarks,
-        detected_count_11,
-        total_landmarks_11,
+        "[Ceph Recalculate] Generated report (merged): %d/%d landmarks (25+11), %d measurements",
+        detected_all_count,
+        total_all_landmarks,
         len(measurement_section),
     )
-    
+
     return output_data
 
 

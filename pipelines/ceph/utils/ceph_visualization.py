@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .ceph_report import KEYPOINT_MAP
+from .ceph_report import KEYPOINT_MAP, KEYPOINT_MAP_11
 
 # 反向映射：短标签 -> 点位编号（P1...）
 _SHORT_KEY_TO_POINT_ID = {short: pid for pid, short in KEYPOINT_MAP.items()}
@@ -15,16 +15,18 @@ _SHORT_KEY_TO_POINT_ID = {short: pid for pid, short in KEYPOINT_MAP.items()}
 def build_visualization_map(
     measurements: Dict[str, Dict[str, Any]],
     landmarks_block: Dict[str, Any],
+    landmarks_11_block: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     为所有测量项生成可视化指令。
     返回 dict[name] = VisualizationPayload | None
     """
-    coordinates = _extract_coordinates(landmarks_block)
-    if not coordinates:
+    coords25 = _extract_coordinates(landmarks_block)
+    coords11 = _extract_coordinates(landmarks_11_block) if landmarks_11_block else {}
+    if not coords25 and not coords11:
         return {name: None for name in measurements}
 
-    landmarks = _normalize_landmarks(coordinates)
+    landmarks = _normalize_landmarks_all(coords25, coords11)
     viz_map: Dict[str, Optional[Dict[str, Any]]] = {}
 
     for name, payload in measurements.items():
@@ -469,11 +471,55 @@ def _go_me_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
 
 
 def _airway_gap_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-    # 气道测量点位缺乏统一标注，尝试使用 PNS 与 Ba 作为参考
-    if not _has_points(landmarks, ["PNS", "Ba"]):
+    """构建气道区域可视化：直接使用 11 个专用点形成闭合多边形。
+
+    采用“质心-极角排序”对已检测到的点进行环绕排序，尽可能形成外轮廓，
+    保证任意点缺失情况下也能输出稳定的多边形（>=3点时）。
+    """
+    # 11点的短键（与 KEYPOINT_MAP_11 的键一致）
+    keys_11 = [
+        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "Dprime"
+    ]
+
+    pts: List[np.ndarray] = []
+    for k in keys_11:
+        p = landmarks.get(k)
+        if isinstance(p, np.ndarray) and p.shape[0] >= 2 and not np.isnan(p).any():
+            pts.append(p.astype(float))
+    # 也兼容全名（比如 "D'" 等），以防前端/上游用了全名做了覆盖
+    fallback_full_names = [
+        "Uvula tip", "Vallecula", "Upper Pharyngeal Wall", "Soft Palate Point",
+        "Soft Palate Pharyngeal Wall", "Middle Pharyngeal Wall", "Lower Pharyngeal Wall",
+        "Tongue Base", "Tongue Posterior Pharyngeal Wall", "Adenoid", "D'"
+    ]
+    for name in fallback_full_names:
+        if len(pts) >= 11:
+            break
+        p = landmarks.get(name)
+        if isinstance(p, np.ndarray) and p.shape[0] >= 2 and not np.isnan(p).any():
+            # 避免重复
+            if not any(np.allclose(p, q) for q in pts):
+                pts.append(p.astype(float))
+
+    if len(pts) < 3:
         return None
-    elements = [_line("Ba", "PNS", "Dashed", "Reference")]
-    return {"VirtualPoints": None, "Elements": elements}
+
+    # 使用质心-极角排序，获得一个非自交的闭合轮廓
+    arr = np.vstack(pts)  # (n,2)
+    centroid = np.mean(arr, axis=0)
+    angles = np.arctan2(arr[:, 1] - centroid[1], arr[:, 0] - centroid[0])
+    order = np.argsort(angles)
+    ordered = arr[order]
+
+    contour: List[float] = []
+    for p in ordered:
+        contour.extend([float(p[0]), float(p[1])])
+
+    return {
+        "VirtualPoints": None,
+        "Elements": [],
+        "Polygon": contour,
+    }
 
 
 def _adenoid_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
@@ -512,7 +558,7 @@ def _has_points(landmarks: Dict[str, np.ndarray], labels: List[str]) -> bool:
 
 
 def _normalize_landmarks(coordinates: Dict[str, Any]) -> Dict[str, np.ndarray]:
-    """将坐标映射转换为短标签->np.ndarray 的形式。"""
+    """仅规范化25点：P-id -> 短标签。保留旧用法。"""
     normalized: Dict[str, np.ndarray] = {}
     for pid, point in coordinates.items():
         if pid not in KEYPOINT_MAP:
@@ -522,6 +568,29 @@ def _normalize_landmarks(coordinates: Dict[str, Any]) -> Dict[str, np.ndarray]:
         if arr.shape[0] < 2 or np.isnan(arr).any():
             continue
         normalized[alias] = arr
+    return normalized
+
+
+def _normalize_landmarks_all(coords25: Dict[str, Any], coords11: Dict[str, Any]) -> Dict[str, np.ndarray]:
+    """合并规范化：25点(P-id->短标签) + 11点(直接key即短标签)。"""
+    normalized: Dict[str, np.ndarray] = {}
+    # 25点
+    for pid, point in (coords25 or {}).items():
+        if pid in KEYPOINT_MAP:
+            alias = KEYPOINT_MAP[pid]
+            arr = np.asarray(point, dtype=float)
+            if arr.shape[0] >= 2 and not np.isnan(arr).any():
+                normalized[alias] = arr
+    # 11点
+    for key, point in (coords11 or {}).items():
+        # key 与 KEYPOINT_MAP_11 的键一致（U, V, ...）
+        if key in KEYPOINT_MAP_11:
+            arr = np.asarray(point, dtype=float)
+            if arr.shape[0] >= 2 and not np.isnan(arr).any():
+                normalized[key] = arr
+            # 同时支持映射到人类可读的短标签别名（不必，但以防前端使用全名）
+            alias_full = KEYPOINT_MAP_11[key]
+            normalized[alias_full] = arr
     return normalized
 
 
