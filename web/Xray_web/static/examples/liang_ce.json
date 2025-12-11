@@ -1,0 +1,1087 @@
+{
+    "ImageSpacing": {
+      "X": 0.2,
+      "Y": 0.2,
+      "Unit": "mm/pixel"
+    },
+    "VisibilityMetrics": {
+      "Grade": "Excellent",
+      "MissingLandmarks": []
+    },
+    "MissingPointHandling": {
+      "Method": "插值估算",
+      "ConfidenceThreshold": 0.7,
+      "InterpolationAllowed": false
+    },
+    "StatisticalFields": {
+      "ProcessedLandmarks": 36,
+      "MissingLandmarks": 0,
+      "AverageConfidence": 0.99,
+      "QualityScore": 0.99
+    },
+    "PatientInformation": {
+      "Gender": "Male",
+      "DentalAgeStage": {
+        "CurrentStage": "Permanent"
+      }
+    },
+    "LandmarkPositions": {
+      "TotalLandmarks": 36,
+      "DetectedLandmarks": 36,
+      "MissingLandmarks": 0,
+      "MissingLabels": [],
+      "Landmarks": [
+        {
+          "Label": "Sella",
+          "X": 649,
+          "Y": 240,
+          "Confidence": 0.83,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Nasion",
+          "X": 982,
+          "Y": 190,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Orbitale",
+          "X": 921,
+          "Y": 332,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Porion",
+          "X": 530,
+          "Y": 342,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Subspinale",
+          "X": 996,
+          "Y": 498,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Supramentale",
+          "X": 978,
+          "Y": 680,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Pogonion",
+          "X": 979,
+          "Y": 751,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Menton",
+          "X": 949,
+          "Y": 784,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Gnathion",
+          "X": 964,
+          "Y": 772,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Gonion",
+          "X": 622,
+          "Y": 626,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Incision inferius",
+          "X": 1010,
+          "Y": 588,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Incision superius",
+          "X": 1022,
+          "Y": 599,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Posterior nasal spine",
+          "X": 754,
+          "Y": 456,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Anterior nasal spine",
+          "X": 1000,
+          "Y": 458,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Articulare",
+          "X": 576,
+          "Y": 409,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Co",
+          "X": 583,
+          "Y": 326,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "PTM",
+          "X": 742,
+          "Y": 388,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Pt",
+          "X": 731,
+          "Y": 309,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "U1A",
+          "X": 966,
+          "Y": 498,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "L1A",
+          "X": 952,
+          "Y": 684,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "U6",
+          "X": 880,
+          "Y": 571,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "L6",
+          "X": 882,
+          "Y": 583,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Ba",
+          "X": 516,
+          "Y": 446,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Bo",
+          "X": 322,
+          "Y": 433,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Pcd",
+          "X": 563,
+          "Y": 360,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Uvula tip",
+          "X": 669,
+          "Y": 590,
+          "Confidence": 0.92,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Vallecula",
+          "X": 633,
+          "Y": 737,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Upper Pharyngeal Wall",
+          "X": 663,
+          "Y": 463,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Soft Palate Point",
+          "X": 695,
+          "Y": 522,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Soft Palate Pharyngeal Wall",
+          "X": 634,
+          "Y": 491,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Middle Pharyngeal Wall",
+          "X": 620,
+          "Y": 581,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Lower Pharyngeal Wall",
+          "X": 580,
+          "Y": 721,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Tongue Base",
+          "X": 669,
+          "Y": 629,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Tongue Posterior Pharyngeal Wall",
+          "X": 610,
+          "Y": 619,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "Adenoid",
+          "X": 692,
+          "Y": 443,
+          "Confidence": 1,
+          "Status": "Detected"
+        },
+        {
+          "Label": "D prime",
+          "X": 682,
+          "Y": 360,
+          "Confidence": 1,
+          "Status": "Detected"
+        }
+      ]
+    },
+    "CephalometricMeasurements": {
+      "AllMeasurements": [
+        {
+          "Label": "ANB_Angle",
+          "Angle": 3.01,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              },
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "B",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "PtmANS_Length",
+          "Length_mm": 50.44,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "PTM",
+                "To": "ANS",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "GoPo_Length",
+          "Length_mm": 75.25,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": {
+              "v_pog_on_mp": [
+                960.84,
+                790.18
+              ]
+            },
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Pog",
+                "To": "v_pog_on_mp",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "PoNB_Length",
+          "Length_mm": 0.41,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": {
+              "v_pog_on_nb": [
+                977.49,
+                751.49
+              ]
+            },
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "B",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Pog",
+                "To": "v_pog_on_nb",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Jaw_Development_Coordination",
+          "Type": "MultiSelect",
+          "Level": [
+            0,
+            0
+          ],
+          "Confidence": 0
+        },
+        {
+          "Label": "SGo_NMe_Ratio",
+          "Ratio": 65.07,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "Go",
+                "Style": "Solid",
+                "Role": "Measurement"
+              },
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "FH_MP_Angle",
+          "Angle": 23.19,
+          "Level": 2,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Po",
+                "To": "Or",
+                "Style": "Dashed",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "IMPA_Angle",
+          "Angle": 95.27,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "L1",
+                "To": "L1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Airway_Gap",
+          "PNS-UPW": 18.25,
+          "SPP-SPPW": 13.68,
+          "U-MPW": 9.93,
+          "TB-TPPW": 11.8,
+          "V-LPW": 11.19,
+          "Level": false,
+          "Confidence": 1
+        },
+        {
+          "Label": "Adenoid_Index",
+          "Value": 0.75,
+          "Level": false,
+          "Confidence": 0.85
+        },
+        {
+          "Label": "SNA_Angle",
+          "Angle": 83.95,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Upper_Jaw_Position",
+          "Length_mm": 17,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "PTM",
+                "To": "S",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "SNB_Angle",
+          "Angle": 80.04,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "B",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Pcd_Lower_Position",
+          "Length_mm": 29.57,
+          "Level": 1,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Pcd",
+                "To": "S",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Distance_Witsmm",
+          "Length_mm": 3.18,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": {
+              "v_a_on_fh": [
+                992.04,
+                330.98
+              ],
+              "v_b_on_fh": [
+                969.67,
+                331.52
+              ]
+            },
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Po",
+                "To": "Or",
+                "Style": "Dashed",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "A",
+                "To": "v_a_on_fh",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              },
+              {
+                "Type": "Line",
+                "From": "B",
+                "To": "v_b_on_fh",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "U1_SN_Angle",
+          "Angle": 110.56,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "UI",
+                "To": "U1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "U1_NA_Angle",
+          "Angle": 26.61,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "A",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "UI",
+                "To": "U1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "U1_NA_Incisor_Length",
+          "Length_mm": 4.42,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": {
+              "v_u1_on_na": [
+                1000.48,
+                600
+              ]
+            },
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "A",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "UI",
+                "To": "v_u1_on_na",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "FMIA_Angle",
+          "Angle": 57.54,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Po",
+                "To": "Or",
+                "Style": "Dashed",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "L1",
+                "To": "L1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "L1_NB_Angle",
+          "Angle": 30.5,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "B",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "L1",
+                "To": "L1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "L1_NB_Distance",
+          "Length_mm": 6.31,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": {
+              "v_l1_on_nb": [
+                979.08,
+                588.02
+              ]
+            },
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "N",
+                "To": "B",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "L1",
+                "To": "v_l1_on_nb",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "U1_L1_Inter_Incisor_Angle",
+          "Angle": 119.88,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "UI",
+                "To": "U1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              },
+              {
+                "Type": "Line",
+                "From": "L1",
+                "To": "L1A",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Y_Axis_Angle",
+          "Angle": 67.78,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "Gn",
+                "Style": "Solid",
+                "Role": "Measurement"
+              },
+              {
+                "Type": "Line",
+                "From": "Or",
+                "To": "Po",
+                "Style": "Dashed",
+                "Role": "Reference"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Mandibular_Growth_Angle",
+          "Angle": 87.94,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Ba",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Pt",
+                "To": "Gn",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "SN_MP_Angle",
+          "Angle": 23.29,
+          "Level": 2,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "U1_PP_Upper_Anterior_Alveolar_Height",
+          "Length_mm": 27.99,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "ANS",
+                "To": "PNS",
+                "Style": "Dashed",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "UI",
+                "To": "ANS",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "L1_MP_Lower_Anterior_Alveolar_Height",
+          "Length_mm": 40.68,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "L1",
+                "To": "Go",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "U6_PP_Upper_Posterior_Alveolar_Height",
+          "Length_mm": 22.83,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "ANS",
+                "To": "PNS",
+                "Style": "Dashed",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "U6",
+                "To": "ANS",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "L6_MP_Lower_Posterior_Alveolar_Height",
+          "Length_mm": 30.41,
+          "Level": 2,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "L6",
+                "To": "Go",
+                "Style": "Dashed",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Mandibular_Growth_Type_Angle",
+          "Angle": 394.29,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "Ar",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Ar",
+                "To": "Go",
+                "Style": "Solid",
+                "Role": "Reference"
+              },
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Reference"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "S_N_Anterior_Cranial_Base_Length",
+          "Length_mm": 67.38,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "S",
+                "To": "N",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Go_Me_Length",
+          "Length_mm": 72.74,
+          "Level": 0,
+          "Confidence": 0,
+          "Visualization": {
+            "VirtualPoints": null,
+            "Elements": [
+              {
+                "Type": "Line",
+                "From": "Go",
+                "To": "Me",
+                "Style": "Solid",
+                "Role": "Measurement"
+              }
+            ]
+          }
+        },
+        {
+          "Label": "Cervical_Vertebral_Maturity_Stage",
+          "Coordinates": [
+            [
+              458,
+              495
+            ],
+            [
+              601,
+              495
+            ],
+            [
+              601,
+              817
+            ],
+            [
+              458,
+              817
+            ]
+          ],
+          "Level": 4,
+          "Confidence": 0.97
+        }
+      ]
+    }
+  }

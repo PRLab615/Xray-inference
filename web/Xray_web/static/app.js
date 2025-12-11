@@ -41,6 +41,7 @@ const CURRENT_HOST = window.location.hostname || 'localhost';
 
 // 侧位片短标签到完整名称映射（用于兼容 Visualization 的短标签）
 const SHORT_LABEL_MAP = {
+    // 25点
     S: 'Sella',
     N: 'Nasion',
     Or: 'Orbitale',
@@ -66,7 +67,19 @@ const SHORT_LABEL_MAP = {
     L1A: 'L1A',
     U6: 'U6',
     L6: 'L6',
-    Pcd: 'Pcd'
+    Pcd: 'Pcd',
+    // 11点（气道/腺体）
+    U: 'Uvula tip',
+    V: 'Vallecula',
+    UPW: 'Upper Pharyngeal Wall',
+    SPP: 'Soft Palate Point',
+    SPPW: 'Soft Palate Pharyngeal Wall',
+    MPW: 'Middle Pharyngeal Wall',
+    LPW: 'Lower Pharyngeal Wall',
+    TB: 'Tongue Base',
+    TPPW: 'Tongue Posterior Pharyngeal Wall',
+    AD: 'Adenoid',
+    "D'": 'D prime'
 };
 
 // 全局配置常量
@@ -293,8 +306,8 @@ function initKonvaStage(containerId, width, height) {
     
     console.log('Konva Stage 初始化完成:', width, 'x', height);
     return stage;
-}
-
+    }
+    
 /**
  * 坐标缩放转换
  * @param {number} x - 原始 X 坐标
@@ -324,8 +337,8 @@ function buildLandmarkMap(data) {
             const shortKey = Object.keys(SHORT_LABEL_MAP).find(k => SHORT_LABEL_MAP[k] === l.Label);
             if (shortKey) {
                 map[shortKey] = [l.X, l.Y];
-            }
         }
+    }
     });
     return map;
 }
@@ -343,8 +356,8 @@ function ensureLayer(layerKey) {
     appState.konvaStage.add(layer);
     appState.konvaLayers[layerKey] = layer;
     return layer;
-}
-
+    }
+    
 /**
  * 设置当前激活的测量项并高亮
  */
@@ -368,6 +381,11 @@ function clearMeasurementVisualization() {
     if (layer) {
         layer.destroyChildren();
         layer.draw();
+    }
+    const airway = appState.konvaLayers.airway;
+    if (airway) {
+        airway.destroyChildren();
+        airway.draw();
     }
     appState.activeMeasurementLabel = null;
     setActiveMeasurementLabel(null);
@@ -412,11 +430,53 @@ function renderMeasurementVisualization(measurement) {
         return;
     }
 
+    const vis = measurement.Visualization;
+    const scale = appState.imageScale || 1;
+
+    // 特殊处理：气道多边形（紫色半透明，圆滑）
+    if (measurement.Label === 'Airway_Gap' && Array.isArray(vis.Polygon) && vis.Polygon.length >= 6) {
+        const airwayLayer = ensureLayer('airway');
+        if (!airwayLayer) return;
+        airwayLayer.destroyChildren();
+
+        // 缩放
+        let pts = [];
+        for (let i = 0; i < vis.Polygon.length; i += 2) {
+            pts.push(vis.Polygon[i] * scale, vis.Polygon[i + 1] * scale);
+        }
+        // 平滑处理：去毛刺 -> 抽稀 -> Chaikin
+        pts = movingAverageSmooth(pts, 5);
+        pts = simplifyPoints(pts, 2.0, true);
+        pts = smoothPolyline(pts, 3);
+
+        const poly = new Konva.Line({
+            points: pts,
+            closed: true,
+            stroke: '#a066cc',                 // 浅紫色描边
+            strokeWidth: 1.2,
+            lineCap: 'round',
+            lineJoin: 'round',
+            tension: 0,
+            fill: 'rgba(160, 102, 204, 0.22)', // 浅紫色填充
+            listening: false,
+            strokeScaleEnabled: false
+        });
+        airwayLayer.add(poly);
+        airwayLayer.draw();
+        appState.konvaLayers.airway = airwayLayer;
+        appState.layerVisibility.airway = true;
+        initLayerControlPanel();
+
+        const tools = document.getElementById('measurementTools');
+        if (tools) tools.classList.remove('hidden');
+        return; // 不再绘制标准测量线
+    }
+    
+    // 常规测量线渲染
     const layer = ensureLayer('measurementLines');
     if (!layer) return;
     layer.destroyChildren();
 
-    const vis = measurement.Visualization;
     const pointMap = { ...appState.cephLandmarks };
     if (vis.VirtualPoints && typeof vis.VirtualPoints === 'object') {
         Object.entries(vis.VirtualPoints).forEach(([k, v]) => {
@@ -426,7 +486,6 @@ function renderMeasurementVisualization(measurement) {
         });
     }
 
-    const scale = appState.imageScale || 1;
     const elements = Array.isArray(vis.Elements) ? vis.Elements : [];
     let drawCount = 0;
 
@@ -800,27 +859,46 @@ async function onSubmit() {
     console.log('文件类型: 图片');
     
     try {
-        // 优先检测示例水印/文件：若命中则直接走本地 JSON，跳过后端
-        const demoHit = await detectDemoPanoramicCase(file);
-        if (demoHit) {
-            console.log(`检测到示例文件：${demoHit.key}，直接加载本地 JSON`);
-            clearCanvas();
-            clearReport();
-            // 2s 延时，避免过快
-            await new Promise(res => setTimeout(res, 2000));
-            // 读取本地 JSON
-            const resp = await fetch(demoHit.json);
-            if (!resp.ok) {
-                throw new Error(`示例 JSON 加载失败: ${resp.status}`);
+        // 根据任务类型先做本地示例哈希匹配，命中则绕过后端
+        const selectedTaskType = document.getElementById('taskType').value;
+        if (selectedTaskType === 'panoramic') {
+            const demoHit = await detectDemoPanoramicCase(file);
+            if (demoHit) {
+                console.log(`检测到示例文件（全景）：${demoHit.key}，直接加载本地 JSON`);
+                clearCanvas();
+                clearReport();
+                await new Promise(res => setTimeout(res, 2000));
+                const resp = await fetch(demoHit.json);
+                if (!resp.ok) {
+                    throw new Error(`示例 JSON 加载失败: ${resp.status}`);
+                }
+                const data = await resp.json();
+                appState.currentTaskType = 'panoramic';
+                appState.cachedResult = { taskType: 'panoramic', data };
+                appState.activeMeasurementLabel = null;
+                renderPanoramic(data);
+                submitBtn.disabled = false;
+                return;
             }
-            const data = await resp.json();
-            appState.currentTaskType = 'panoramic';
-            appState.cachedResult = { taskType: 'panoramic', data };
-            appState.activeMeasurementLabel = null;
-            // 直接渲染（使用当前上传的文件作为显示图）
-            renderPanoramic(data);
-            submitBtn.disabled = false;
-            return;
+        } else if (selectedTaskType === 'cephalometric') {
+            const demoHitCe = await detectDemoCephalometricCase(file);
+            if (demoHitCe) {
+                console.log(`检测到示例文件（侧位片）：${demoHitCe.key}，直接加载本地 JSON`);
+                clearCanvas();
+                clearReport();
+                await new Promise(res => setTimeout(res, 2000));
+                const resp = await fetch(demoHitCe.json);
+                if (!resp.ok) {
+                    throw new Error(`示例 JSON 加载失败: ${resp.status}`);
+                }
+                const data = await resp.json();
+                appState.currentTaskType = 'cephalometric';
+                appState.cachedResult = { taskType: 'cephalometric', data };
+                appState.activeMeasurementLabel = null;
+                renderCephalometric(data);
+                submitBtn.disabled = false;
+                return;
+            }
         }
 
         // 步骤1：先上传文件到 Flask Web 服务器，获取 URL
@@ -1268,46 +1346,148 @@ function loadImageFile(file) {
 }
 
 /**
- * 计算文件的 SHA-256（用于示例识别，可选）
+ * SHA-256 纯 JS 实现（用于非安全上下文/无 SubtleCrypto）
+ * 输入: ArrayBuffer
+ * 输出: 十六进制字符串（小写）
  */
-async function computeSHA256(file) {
-    const buffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+function sha256Hex(buffer) {
+    const K = new Uint32Array([
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ]);
+    const H = new Uint32Array([
+        0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+    ]);
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    const Ch  = (x, y, z) => (x & y) ^ (~x & z);
+    const Maj = (x, y, z) => (x & y) ^ (x & z) ^ (y & z);
+    const Sigma0 = x => rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
+    const Sigma1 = x => rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25);
+    const sigma0 = x => rotr(x, 7) ^ rotr(x, 18) ^ (x >>> 3);
+    const sigma1 = x => rotr(x, 17) ^ rotr(x, 19) ^ (x >>> 10);
+
+    const bytes = new Uint8Array(buffer);
+    const l = bytes.length;
+
+    // 计算填充后的总长度（64字节块对齐）
+    const totalLen = ((l + 9 + 63) & ~63) >>> 0;
+    const padded = new Uint8Array(totalLen);
+    padded.set(bytes);
+    padded[l] = 0x80; // 附加 '1' 位
+
+    // 附加长度（单位：位，64位大端）
+    const bitLenLo = (l << 3) >>> 0;           // 低32位
+    const bitLenHi = (l >>> 29) >>> 0;         // 高32位
+    const dv = new DataView(padded.buffer);
+    dv.setUint32(totalLen - 8, bitLenHi, false);
+    dv.setUint32(totalLen - 4, bitLenLo, false);
+
+    const w = new Uint32Array(64);
+
+    for (let i = 0; i < totalLen; i += 64) {
+        for (let j = 0; j < 16; j++) {
+            w[j] = dv.getUint32(i + j * 4, false);
+        }
+        for (let j = 16; j < 64; j++) {
+            w[j] = (sigma1(w[j - 2]) + w[j - 7] + sigma0(w[j - 15]) + w[j - 16]) >>> 0;
+        }
+
+        let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+
+        for (let j = 0; j < 64; j++) {
+            const T1 = (h + Sigma1(e) + Ch(e, f, g) + K[j] + w[j]) >>> 0;
+            const T2 = (Sigma0(a) + Maj(a, b, c)) >>> 0;
+            h = g; g = f; f = e; e = (d + T1) >>> 0; d = c; c = b; b = a; a = (T1 + T2) >>> 0;
+        }
+
+        H[0] = (H[0] + a) >>> 0;
+        H[1] = (H[1] + b) >>> 0;
+        H[2] = (H[2] + c) >>> 0;
+        H[3] = (H[3] + d) >>> 0;
+        H[4] = (H[4] + e) >>> 0;
+        H[5] = (H[5] + f) >>> 0;
+        H[6] = (H[6] + g) >>> 0;
+        H[7] = (H[7] + h) >>> 0;
+    }
+
+    // 输出十六进制
+    let hex = '';
+    for (let i = 0; i < 8; i++) {
+        hex += ('00000000' + H[i].toString(16)).slice(-8);
+    }
+    return hex;
 }
 
 /**
- * 检测是否为已知的示例全景图（带水印的上传文件）
- * 优先通过文件名关键词；若配置了哈希则使用哈希匹配
+ * 计算文件的 SHA256 哈希值
+ */
+async function calculateFileHash(file) {
+    const buffer = await file.arrayBuffer();
+    const subtle = (globalThis.crypto && globalThis.crypto.subtle) || null;
+    if (subtle && typeof subtle.digest === 'function') {
+        const hashBuffer = await subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+    // Fallback: pure JS SHA-256 (works in non-secure contexts / IP access)
+    return sha256Hex(buffer);
+}
+
+/**
+ * 文件哈希到示例数据的映射
+ * 包含所有已知示例图片的 SHA256 哈希值
+ */
+const DEMO_HASHES = {
+    // liang.jpg 的哈希值（全景片）
+    "8f7350ba59f17be45617f5e0aa813e15161410b25e3ccf9140086e206d3f16b8": { key: "liang", json: "/static/examples/liang.json" },
+    // lin.jpg 的哈希值（全景片）
+    "92ce152bbee0f613b0160fb64ca0de0817c5a1598ad65b4962c585ae5be2f760": { key: "lin", json: "/static/examples/lin.json" },
+};
+
+// 侧位片 demo 哈希映射
+const DEMO_HASHES_CEPH = {
+    // liang_ce.jpg 的哈希值（侧位片）
+    "d9b37a83786ee1757563e1d7eeaa7c213d0d2f1af18207e6fc42ab4533693144": { key: "liang_ce", json: "/static/examples/liang_ce.json" },
+    // lin_ce.jpg 的哈希值（侧位片）
+    "b5b4cd443a6d3237caf98084bfdef490d82f172f1403dba4848ec7b11c6924b3": { key: "lin_ce", json: "/static/examples/lin_ce.json" },
+};
+
+/**
+ * 检测上传的图片是否为示例图（通过文件哈希匹配）
  */
 async function detectDemoPanoramicCase(file) {
-    const DEMO_JSON_MAP = {
-        liang: { json: '/static/examples/liang.json', keywords: ['liang'] },
-        lin: { json: '/static/examples/lin.json', keywords: ['lin'] },
-    };
+    const fileHash = await calculateFileHash(file);
+    console.log(`[哈希检测-全景] 文件: ${file.name}, 大小: ${file.size} bytes, 哈希: ${fileHash}`);
+    
+    if (fileHash && DEMO_HASHES[fileHash]) {
+        console.log(`[哈希检测-全景] ✓ 匹配成功: ${DEMO_HASHES[fileHash].key}`);
+        return DEMO_HASHES[fileHash];
+    }
+    
+    console.log(`[哈希检测-全景] ✗ 未找到匹配的示例文件`);
+    console.log(`[哈希检测-全景] 已知哈希值: ${Object.keys(DEMO_HASHES).join(', ')}`);
+    return null;
+}
 
-    // 1) 文件名关键词匹配
-    const name = (file.name || '').toLowerCase();
-    for (const [key, info] of Object.entries(DEMO_JSON_MAP)) {
-        if (info.keywords && info.keywords.some(k => name.includes(k))) {
-            return { key, json: info.json };
-        }
+// 侧位片：检测上传图片是否为示例图（通过文件哈希匹配）
+async function detectDemoCephalometricCase(file) {
+    const fileHash = await calculateFileHash(file);
+    console.log(`[哈希检测-侧位片] 文件: ${file.name}, 大小: ${file.size} bytes, 哈希: ${fileHash}`);
+
+    if (fileHash && DEMO_HASHES_CEPH[fileHash]) {
+        console.log(`[哈希检测-侧位片] ✓ 匹配成功: ${DEMO_HASHES_CEPH[fileHash].key}`);
+        return DEMO_HASHES_CEPH[fileHash];
     }
 
-    // 2) 如需哈希匹配，可在此配置预先计算好的哈希（可选，留空不影响）
-    const DEMO_HASHES = {
-        // 'sha256-of-liang_wm.jpg': 'liang',
-        // 'sha256-of-lin_wm.jpg': 'lin',
-    };
-    if (Object.keys(DEMO_HASHES).length > 0) {
-        const sha = await computeSHA256(file);
-        const hitKey = DEMO_HASHES[sha];
-        if (hitKey && DEMO_JSON_MAP[hitKey]) {
-            return { key: hitKey, json: DEMO_JSON_MAP[hitKey].json };
-        }
-    }
-
+    console.log(`[哈希检测-侧位片] ✗ 未找到匹配的示例文件`);
+    console.log(`[哈希检测-侧位片] 已知哈希值: ${Object.keys(DEMO_HASHES_CEPH).join(', ')}`);
     return null;
 }
 
@@ -1689,6 +1869,12 @@ async function renderCephalometric(data) {
     stage.add(measurementLayer);
     appState.konvaLayers.measurementLines = measurementLayer;
     appState.layerVisibility.measurementLines = true;
+
+    // 5.6. 创建气道图层（在关键点层之前，位于测量线之上或下方均可，这里放在测量线之上）
+    const airwayLayer = new Konva.Layer();
+    stage.add(airwayLayer);
+    appState.konvaLayers.airway = airwayLayer;
+    appState.layerVisibility.airway = true;
     
     // 6. 绘制关键点
     drawLandmarks(data, stage, scale);
@@ -4921,6 +5107,7 @@ const LAYER_CONFIG = {
     landmarks: { name: '关键点', taskType: 'cephalometric' },
     cvm: { name: '颈椎成熟度', taskType: 'cephalometric' },
     measurementLines: { name: '测量线', taskType: 'cephalometric' },
+    airway: { name: '气道', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
     implants: { name: '种植体', taskType: 'panoramic' },

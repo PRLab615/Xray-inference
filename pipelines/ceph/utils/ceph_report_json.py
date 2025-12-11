@@ -150,12 +150,13 @@ def generate_standard_output(
     
     # 构建可视化映射
     viz_map = (
-        build_visualization_map(measurements, landmarks_block)
+        build_visualization_map(measurements, landmarks_block, landmarks_11_block)
         if visualization_enabled
         else None
     )
     measurement_section = _build_measurement_section_in_order(measurements, viz_map)
 
+    # 计算合并后的可视性等级与统计
     visibility_grade = _visibility_grade(
         landmark_section["DetectedLandmarks"], landmark_section["TotalLandmarks"]
     )
@@ -165,11 +166,14 @@ def generate_standard_output(
     total_landmarks = landmark_section["TotalLandmarks"]
     detected_landmarks = landmark_section["DetectedLandmarks"]
     missing_labels = landmark_section["MissingLabels"].copy()
-    
+
+    combined_landmarks_list = landmark_section["Landmarks"].copy()
     if landmark_11_section:
         total_landmarks += landmark_11_section["TotalLandmarks"]
         detected_landmarks += landmark_11_section["DetectedLandmarks"]
         missing_labels.extend(landmark_11_section["MissingLabels"])
+        # 合并 11 点到 Landmarks 列表
+        combined_landmarks_list.extend(landmark_11_section["Landmarks"])
 
     data_dict = {
         "ImageSpacing": {
@@ -198,32 +202,23 @@ def generate_standard_output(
                 "CurrentStage": patient_info.get("DentalAgeStage", "Permanent"),
             },
         },
+        # 关键变更：将 11 点合并进 LandmarkPositions 中，去掉 AirwayLandmarkPositions 字段
         "LandmarkPositions": {
-            "TotalLandmarks": landmark_section["TotalLandmarks"],
-            "DetectedLandmarks": landmark_section["DetectedLandmarks"],
-            "MissingLandmarks": landmark_section["MissingLandmarks"],
-            "Landmarks": landmark_section["Landmarks"],
+            "TotalLandmarks": total_landmarks,
+            "DetectedLandmarks": detected_landmarks,
+            "MissingLandmarks": total_landmarks - detected_landmarks,
+            "MissingLabels": missing_labels,
+            "Landmarks": combined_landmarks_list,
         },
         "CephalometricMeasurements": {
             "AllMeasurements": measurement_section,
         },
     }
-    
-    # 如果有 11 点结果，添加到输出中
-    if landmark_11_section:
-        data_dict["AirwayLandmarkPositions"] = {
-            "TotalLandmarks": landmark_11_section["TotalLandmarks"],
-            "DetectedLandmarks": landmark_11_section["DetectedLandmarks"],
-            "MissingLandmarks": landmark_11_section["MissingLandmarks"],
-            "Landmarks": landmark_11_section["Landmarks"],
-        }
 
     logger.info(
-        "Generated cephalometric JSON: %s/%s landmarks (25pt), %s/%s landmarks (11pt), %s measurements",
-        landmark_section["DetectedLandmarks"],
-        landmark_section["TotalLandmarks"],
-        landmark_11_section["DetectedLandmarks"] if landmark_11_section else 0,
-        landmark_11_section["TotalLandmarks"] if landmark_11_section else 0,
+        "Generated cephalometric JSON (merged): %s/%s landmarks (25+11), %s measurements",
+        detected_landmarks,
+        total_landmarks,
         len(measurement_section),
     )
     return data_dict
@@ -402,10 +397,14 @@ def _build_measurement_entry(
         return _build_cervical_entry(name, payload)
     
     if name in AIRWAY_MEASUREMENTS:
-        return _build_airway_entry(name, payload)
+        entry = _build_airway_entry(name, payload)
+        entry["Visualization"] = _format_visualization(viz_payload) if status_ok else None
+        return entry
     
     if name in ADENOID_MEASUREMENTS:
-        return _build_adenoid_entry(name, payload)
+        entry = _build_adenoid_entry(name, payload)
+        entry["Visualization"] = _format_visualization(viz_payload) if status_ok else None
+        return entry
     
     if name in MULTISELECT_MEASUREMENTS:
         return _build_multiselect_entry(name, payload)
@@ -598,6 +597,7 @@ def _format_visualization(raw: Any) -> Union[Dict[str, Any], None]:
 
     virtual_points_raw = raw.get("VirtualPoints")
     elements_raw = raw.get("Elements")
+    polygon_raw = raw.get("Polygon")
 
     formatted_vp: Dict[str, List[float]] | None = None
     if isinstance(virtual_points_raw, dict):
@@ -636,10 +636,23 @@ def _format_visualization(raw: Any) -> Union[Dict[str, Any], None]:
         if not formatted_elements:
             formatted_elements = None
 
-    if formatted_vp is None and formatted_elements is None:
+    formatted_polygon: List[float] | None = None
+    if isinstance(polygon_raw, (list, tuple)) and len(polygon_raw) >= 6:
+        # 扁平浮点数组 [x1,y1,x2,y2,...]
+        try:
+            arr = np.asarray(polygon_raw, dtype=float)
+            if arr.ndim == 1 and arr.size % 2 == 0 and not np.isnan(arr).any():
+                formatted_polygon = [round(float(v), 2) for v in arr.tolist()]
+        except Exception:
+            formatted_polygon = None
+
+    if formatted_vp is None and formatted_elements is None and formatted_polygon is None:
         return None
 
-    return {"VirtualPoints": formatted_vp, "Elements": formatted_elements}
+    out: Dict[str, Any] = {"VirtualPoints": formatted_vp, "Elements": formatted_elements}
+    if formatted_polygon is not None:
+        out["Polygon"] = formatted_polygon
+    return out
 
 
 def _get_measurement_level(name: str, conclusion: Any, value: Any) -> int:
