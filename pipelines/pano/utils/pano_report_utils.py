@@ -107,6 +107,7 @@ def generate_standard_output(
     curved_short_root_res = inference_results.get("curved_short_root", {})
     erupted_wisdomteeth_res = inference_results.get("erupted_wisdomteeth", {})
     rootTipDensity_res = inference_results.get("rootTipDensity", {})
+    periodontal_res = inference_results.get("periodontal", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
     # 处理 ImageSpacing（像素间距/比例尺）
@@ -222,6 +223,11 @@ def generate_standard_output(
     if rootTipDensity_res:
         rootTipDensity_data = format_root_tip_density_report(rootTipDensity_res)
         report["RootTipDensityAnalysis"] = rootTipDensity_data
+
+    # 9. 组装牙周吸收分析 (PeriodontalCondition) - 真实数据
+    if periodontal_res:
+        periodontal_data = format_periodontal_report(periodontal_res)
+        report["PeriodontalCondition"] = periodontal_data
 
     return report
 
@@ -857,6 +863,158 @@ def format_sinus_anatomy_results(sinus_results: dict) -> List[dict]:
 
     logger.info(f"[format_sinus_anatomy_results] Generated {len(anatomy_results)} sinus AnatomyResults")
     return anatomy_results
+
+
+def format_periodontal_report(periodontal_results: dict) -> dict:
+    """
+    格式化牙周吸收(PeriodontalCondition)部分 - 真实数据
+
+    Args:
+        periodontal_results: {
+            'quadrant_1': [
+                {
+                    'tooth_id': 11,
+                    'severity': '轻度',  # '正常'/'轻度'/'中度'/'重度'
+                    'absorption_ratio': 0.25,
+                    'confidence': 0.85,
+                    ...
+                },
+                ...
+            ],
+            'quadrant_2': [...],
+            'quadrant_3': [...],
+            'quadrant_4': [...]
+        }
+
+    Returns:
+        dict: 符合 PeriodontalCondition 格式的字典
+    """
+    # 象限分组：1,2象限 → 上牙槽骨；3,4象限 → 下牙槽骨
+    upper_quadrants = [1, 2]  # 上牙槽骨
+    lower_quadrants = [3, 4]  # 下牙槽骨
+
+    # 吸收程度映射：正常→0, 轻度→1, 中度→2, 重度→3
+    severity_to_level = {
+        "正常": 0,
+        "轻度": 1,
+        "中度": 2,
+        "重度": 3
+    }
+
+    # 收集所有牙齿的吸收结果
+    all_teeth_results = []
+    for quadrant in [1, 2, 3, 4]:
+        quadrant_key = f"quadrant_{quadrant}"
+        quadrant_results = periodontal_results.get(quadrant_key, [])
+        for tooth_result in quadrant_results:
+            tooth_result["quadrant"] = quadrant
+            all_teeth_results.append(tooth_result)
+
+    if not all_teeth_results:
+        logger.warning("[format_periodontal_report] No periodontal results found")
+        return {
+            "BoneAbsorptionLevel": 0,
+            "Detail": "未检测到牙周吸收",
+            "Confidence": 0.0,
+            "SpecificAbsorption": []
+        }
+
+    # 分别计算上下牙槽骨的吸收情况
+    upper_teeth = [t for t in all_teeth_results if t.get("quadrant") in upper_quadrants]
+    lower_teeth = [t for t in all_teeth_results if t.get("quadrant") in lower_quadrants]
+
+    # 计算上下牙槽骨的最严重吸收程度
+    upper_max_level = 0
+    lower_max_level = 0
+    
+    if upper_teeth:
+        upper_levels = [severity_to_level.get(t.get("severity", "正常"), 0) for t in upper_teeth]
+        upper_max_level = max(upper_levels) if upper_levels else 0
+    
+    if lower_teeth:
+        lower_levels = [severity_to_level.get(t.get("severity", "正常"), 0) for t in lower_teeth]
+        lower_max_level = max(lower_levels) if lower_levels else 0
+
+    # BoneAbsorptionLevel = max(上牙槽骨最严重, 下牙槽骨最严重)
+    bone_absorption_level = max(upper_max_level, lower_max_level)
+
+    # 收集非正常的牙齿（用于 SpecificAbsorption）
+    abnormal_teeth = []
+    for tooth_result in all_teeth_results:
+        severity = tooth_result.get("severity", "正常")
+        if severity != "正常":
+            tooth_id = tooth_result.get("tooth_id")
+            absorption_level = severity_to_level.get(severity, 0)
+            ratio = tooth_result.get("absorption_ratio", 0.0)
+            
+            # 生成详细描述
+            if severity == "轻度":
+                detail = "牙槽骨轻度吸收"
+            elif severity == "中度":
+                detail = "牙槽骨吸收达根中1/3"
+            elif severity == "重度":
+                detail = "牙槽骨吸收达根尖1/3"
+            else:
+                detail = f"牙槽骨{severity}吸收"
+            
+            abnormal_teeth.append({
+                "FDI": str(tooth_id),
+                "AbsorptionLevel": absorption_level,
+                "Detail": detail
+            })
+
+    # 生成 Detail 文本
+    detail_parts = []
+    
+    # 上牙槽骨描述
+    if upper_max_level > 0:
+        upper_severity_map = {1: "轻度", 2: "中度", 3: "重度"}
+        upper_severity_text = upper_severity_map.get(upper_max_level, "")
+        detail_parts.append(f"上牙槽骨{upper_severity_text}吸收")
+        
+        # 列出上牙槽骨的具体牙位（只列出最严重的牙位，或所有异常牙位）
+        upper_abnormal = [t for t in abnormal_teeth if int(t["FDI"]) // 10 in [1, 2]]
+        if upper_abnormal:
+            # 找出最严重的牙位
+            upper_max_severity_teeth = [t for t in upper_abnormal if t["AbsorptionLevel"] == upper_max_level]
+            if upper_max_severity_teeth:
+                # 取第一个最严重的牙位作为代表
+                representative_tooth = upper_max_severity_teeth[0]
+                detail_parts.append(f"，{representative_tooth['FDI']}牙位{representative_tooth['Detail']}")
+    
+    # 下牙槽骨描述
+    if lower_max_level > 0:
+        lower_severity_map = {1: "轻度", 2: "中度", 3: "重度"}
+        lower_severity_text = lower_severity_map.get(lower_max_level, "")
+        if detail_parts:
+            detail_parts.append("；")
+        detail_parts.append(f"下牙槽骨{lower_severity_text}吸收")
+        
+        # 列出下牙槽骨的具体牙位（只列出最严重的牙位）
+        lower_abnormal = [t for t in abnormal_teeth if int(t["FDI"]) // 10 in [3, 4]]
+        if lower_abnormal:
+            # 找出最严重的牙位
+            lower_max_severity_teeth = [t for t in lower_abnormal if t["AbsorptionLevel"] == lower_max_level]
+            if lower_max_severity_teeth:
+                # 取第一个最严重的牙位作为代表
+                representative_tooth = lower_max_severity_teeth[0]
+                detail_parts.append(f"，{representative_tooth['FDI']}牙位{representative_tooth['Detail']}")
+    
+    if not detail_parts:
+        detail_text = "未见明显吸收"
+    else:
+        detail_text = "".join(detail_parts)
+
+    # 计算整体置信度：取所有检测结果置信度的平均值
+    confidences = [t.get("confidence", 0.0) for t in all_teeth_results if t.get("confidence") is not None]
+    overall_confidence = float(np.mean(confidences)) if confidences else 0.0
+
+    return {
+        "BoneAbsorptionLevel": bone_absorption_level,
+        "Detail": detail_text,
+        "Confidence": round(overall_confidence, 2),
+        "SpecificAbsorption": abnormal_teeth
+    }
 
 
 def format_root_tip_density_report(rootTipDensity_results: dict) -> dict:

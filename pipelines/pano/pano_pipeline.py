@@ -26,6 +26,8 @@ from pipelines.pano.modules.teeth_attribute1.teeth_attribute1_predictor import T
 from pipelines.pano.modules.teeth_attribute2.teeth_attribute2_predictor import TeethAttribute2Module
 from pipelines.pano.modules.curved_short_root.curved_short_root_predictor import CurvedShortRootModule
 from pipelines.pano.modules.erupted_wisdomteeth.erupted_wisdomteeth_predictor import EruptedModule
+# 导入牙周吸收检测模块
+from pipelines.pano.modules.periodontal_detect.periodontal_predictor import PeriodontalPredictor
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,11 @@ class PanoPipeline(BasePipeline):
             self.modules['rootTipDensity_detect'] = RootTipDensityPredictor(**rootTipDensity_cfg)
             logger.info("  ✓ RootTipDensity Detection module loaded")
 
+            # 13. 牙周吸收检测模块 (periodontal_detect)
+            periodontal_cfg = self._get_module_config('periodontal_detect')
+            self.modules['periodontal_detect'] = PeriodontalPredictor(**periodontal_cfg)
+            logger.info("  ✓ Periodontal Detection module loaded")
+
 
         except (WeightFetchError, FileNotFoundError) as e:
             # 权重加载失败：本地缓存没有且S3连接失败
@@ -303,6 +310,9 @@ class PanoPipeline(BasePipeline):
             # 2.11 根尖低密度影检测
             rootTipDensity_results = self._run_rootTipDensity_detect(image_path)
 
+            # 2.12 牙周吸收检测（需要牙齿分割结果）
+            periodontal_results = self._run_periodontal_detect(image_path, teeth_results)
+
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
@@ -340,6 +350,7 @@ class PanoPipeline(BasePipeline):
         logger.debug(f"[Pipeline] curved_short_root_results keys: {list(curved_short_root_results.keys()) if curved_short_root_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] erupted_wisdomteeth_results keys: {list(erupted_wisdomteeth_results.keys()) if erupted_wisdomteeth_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] sinus_results keys: {list(sinus_results.keys()) if sinus_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] periodontal_results keys: {list(periodontal_results.keys()) if periodontal_results else 'EMPTY'}")
         # 如果检测模块有结果，打印详细信息
         if condyle_det_results:
             logger.debug(f"[Pipeline] condyle_det left confidence: {condyle_det_results.get('left', {}).get('confidence', 'N/A')}")
@@ -356,7 +367,8 @@ class PanoPipeline(BasePipeline):
             teeth_attribute2=teeth_attribute2_results,
             curved_short_root=curved_short_root_results,
             erupted_wisdomteeth=erupted_wisdomteeth_results,
-            rootTipDensity=rootTipDensity_results  # 加入根尖低密度影结果
+            rootTipDensity=rootTipDensity_results,  # 加入根尖低密度影结果
+            periodontal=periodontal_results  # 加入牙周吸收检测结果
         )
         logger.info(f"Results collected successfully. Modules: {list(inference_results.keys())}")
         
@@ -1232,6 +1244,64 @@ class PanoPipeline(BasePipeline):
 
         return "".join(parts)
 
+    def _run_periodontal_detect(self, image_path: str, teeth_results: dict) -> dict:
+        """
+        执行牙周吸收检测
+
+        Args:
+            image_path: 图像文件路径
+            teeth_results: 牙齿分割结果（包含 masks, class_names, original_shape）
+
+        Returns:
+            dict: 牙周吸收检测结果
+                包含各象限的牙周吸收分析结果
+        """
+        self._log_step("牙周吸收检测", "使用 YOLOv11 进行关键点检测")
+
+        try:
+            import time
+            start_time = time.time()
+            logger.info(f"Starting periodontal detection for: {image_path}")
+
+            # 准备牙齿分割结果（需要原始格式）
+            # 从处理后的结果中提取原始数据
+            raw_masks = teeth_results.get("raw_masks", None)
+            class_names = []
+            detected_teeth = teeth_results.get("detected_teeth", [])
+            for tooth in detected_teeth:
+                class_names.append(tooth.get("class_name", f"tooth-{tooth.get('fdi', '')}"))
+            
+            original_shape = teeth_results.get("original_shape", None)
+            if original_shape is None:
+                # 尝试从 image_shape 获取
+                original_shape = teeth_results.get("image_shape", None)
+
+            if raw_masks is None or len(class_names) == 0:
+                logger.warning("No valid teeth segmentation data for periodontal detection")
+                return {}
+
+            # 准备输入数据格式
+            teeth_seg_input = {
+                "masks": raw_masks,
+                "class_names": class_names,
+                "original_shape": original_shape
+            }
+
+            # 执行推理
+            results = self.modules['periodontal_detect'].predict(
+                image_path=image_path,
+                teeth_seg_results=teeth_seg_input
+            )
+
+            elapsed = time.time() - start_time
+            logger.info(f"Periodontal detection completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Periodontal detection failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+
     def _run_rootTipDensity_detect(self, image_path: str) -> dict:
         """
         执行根尖低密度影检测
@@ -1643,6 +1713,7 @@ class PanoPipeline(BasePipeline):
             "erupted_wisdomteeth": module_results.get("erupted_wisdomteeth", {}),
             "sinus": module_results.get("sinus", {}),  # 收集上颌窦结果
             "rootTipDensity": module_results.get("rootTipDensity", {}),  # 收集根尖低密度影结果
+            "periodontal": module_results.get("periodontal", {}),  # 收集牙周吸收检测结果
         }
 
         return inference_results
