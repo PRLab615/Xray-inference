@@ -91,7 +91,15 @@ const CONFIG = {
     CALLBACK_URL: `http://${CURRENT_HOST}:5000/callback`,
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000,      // 6分钟
-    STROKE_WIDTH: 0.7            // 统一线条宽度（像素）
+    STROKE_WIDTH: 0.7,          // 统一线条宽度（像素）
+    // 气道可视化数据源策略：
+    // 'auto'（默认）：优先 Polygon，其次 Coordinates，最后从 Landmarks 重建
+    // 'prefer_landmarks'：总是从 11 个关键点重建（保证与点位逐一对应）
+    // 'prefer_polygon'：总是使用 Polygon（若缺失再退化）
+    // 'prefer_coordinates'：总是使用 Coordinates（若缺失再退化）
+    AIRWAY_SOURCE: 'auto',
+    AIRWAY_DEBUG_POINTS: false,
+    AIRWAY_POINT_RADIUS: 2.2
 };
 
 // 页面加载完成后初始化
@@ -421,7 +429,12 @@ function getNavigableMeasurements() {
  * 渲染单个测量项的可视化（线段）
  */
 function renderMeasurementVisualization(measurement) {
-    if (!measurement || !measurement.Visualization) {
+    if (!measurement) {
+        console.warn('测量项为空');
+        return;
+    }
+    // 允许 Airway_Gap 在缺少 Visualization 时走专用分支
+    if (!measurement.Visualization && measurement.Label !== 'Airway_Gap') {
         console.warn('该测量项无可视化指令');
         return;
     }
@@ -433,21 +446,37 @@ function renderMeasurementVisualization(measurement) {
     const vis = measurement.Visualization;
     const scale = appState.imageScale || 1;
 
-    // 特殊处理：气道多边形（紫色半透明，圆滑）
-    if (measurement.Label === 'Airway_Gap' && Array.isArray(vis.Polygon) && vis.Polygon.length >= 6) {
+    // 特殊处理：气道多边形（紫色半透明）
+    if (measurement.Label === 'Airway_Gap') {
         const airwayLayer = ensureLayer('airway');
         if (!airwayLayer) return;
         airwayLayer.destroyChildren();
 
-        // 缩放
-        let pts = [];
-        for (let i = 0; i < vis.Polygon.length; i += 2) {
-            pts.push(vis.Polygon[i] * scale, vis.Polygon[i + 1] * scale);
+        let pts = null;
+        if (vis && Array.isArray(vis.Polygon) && vis.Polygon.length >= 6) {
+            // 使用后端提供的 Polygon（扁平数组）
+            pts = [];
+            for (let i = 0; i < vis.Polygon.length; i += 2) {
+                pts.push(vis.Polygon[i] * scale, vis.Polygon[i + 1] * scale);
+            }
+            console.info(`[Airway] Using Visualization.Polygon with ${pts.length/2} points`);
+        } else if (vis && vis.Coordinates) {
+            // 兼容 Coordinates: [[x,y], ...] 或多多边形 [[...],[...]] 或矩形 [x1,y1,x2,y2]
+            const polys = normalizeMaskPolygons(vis.Coordinates, scale);
+            if (polys && polys.length > 0) {
+                pts = polys[0];
+                console.info(`[Airway] Using Visualization.Coordinates with ${pts.length/2} points`);
+            }
+        } else {
+            // 后备方案：从 Landmarks 的 11 个点重建（不平滑/不抽稀）
+            pts = buildAirwayPolygonFromLandmarks(scale);
+            if (pts) console.info(`[Airway] Fallback build from Landmarks with ${pts.length/2} points`);
         }
-        // 平滑处理：去毛刺 -> 抽稀 -> Chaikin
-        pts = movingAverageSmooth(pts, 5);
-        pts = simplifyPoints(pts, 2.0, true);
-        pts = smoothPolyline(pts, 3);
+
+        if (!pts || pts.length < 6) {
+            console.warn('[Airway] No valid polygon points to draw');
+            return;
+        }
 
         const poly = new Konva.Line({
             points: pts,
@@ -820,6 +849,60 @@ function normalizeMaskPolygons(coords, scale) {
         return polys;
     }
     return [];
+}
+
+// =============================
+// Airway fallback helpers
+// 当 Airway_Gap 缺少 Visualization.Polygon 时，
+// 依据 Landmarks 里的 11 个点重建闭合多边形
+// =============================
+function buildAirwayPolygonFromLandmarks(scale = 1) {
+    const lm = appState.cephLandmarks || {};
+    // 11 个短标签
+    const shortKeys = ['U','V','UPW','SPP','SPPW','MPW','LPW','TB','TPPW','AD',"D'"];
+    // 对应的全名（Landmarks 列表里的 Label）
+    const fullKeys = [
+        'Uvula tip',
+        'Vallecula',
+        'Upper Pharyngeal Wall',
+        'Soft Palate Point',
+        'Soft Palate Pharyngeal Wall',
+        'Middle Pharyngeal Wall',
+        'Lower Pharyngeal Wall',
+        'Tongue Base',
+        'Tongue Posterior Pharyngeal Wall',
+        'Adenoid',
+        'D prime'
+    ];
+    const pts = [];
+    const pushScaled = (p) => {
+        if (Array.isArray(p) && p.length >= 2 && isFinite(p[0]) && isFinite(p[1])) {
+            pts.push([p[0] * scale, p[1] * scale]);
+        }
+    };
+    shortKeys.forEach(k => pushScaled(lm[k]));
+    // 避免重复：用字符串键去重
+    const seen = new Set(pts.map(p => `${Math.round(p[0])},${Math.round(p[1])}`));
+    fullKeys.forEach(k => {
+        const p = lm[k];
+        if (Array.isArray(p) && p.length >= 2 && isFinite(p[0]) && isFinite(p[1])) {
+            const key = `${Math.round(p[0] * scale)},${Math.round(p[1] * scale)}`;
+            if (!seen.has(key)) {
+                pts.push([p[0] * scale, p[1] * scale]);
+                seen.add(key);
+            }
+        }
+    });
+    if (pts.length < 3) return null;
+    // 质心-极角排序，形成非自交闭合轮廓
+    let cx = 0, cy = 0;
+    pts.forEach(p => { cx += p[0]; cy += p[1]; });
+    cx /= pts.length; cy /= pts.length;
+    pts.sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+    // 展平成 Konva 所需的扁平数组
+    const flat = [];
+    pts.forEach(p => { flat.push(p[0], p[1]); });
+    return flat;
 }
 
 // ============================================
@@ -2246,9 +2329,9 @@ function hideTooltip() {
  * 显示牙齿 Tooltip
  * @param {Konva.Node} node - Konva 节点（Line）
  * @param {Object} toothData - 牙齿数据
- * @param {Object} event - Konva 事件对象
+ * @param {Object} periodontalInfo - 牙周吸收匹配数据（源自 PeriodontalCondition.SpecificAbsorption）
  */
-function showToothTooltip(node, toothData, event) {
+function showToothTooltip(node, toothData, periodontalInfo) {
     // 移除已存在的 Tooltip
     hideTooltip();
     
@@ -2260,15 +2343,28 @@ function showToothTooltip(node, toothData, event) {
     // 构建 Tooltip 内容
     let content = `<strong>牙位: ${toothData.FDI || 'N/A'}</strong><br>`;
     
+    // 牙槽骨吸收信息（仅使用 PeriodontalCondition.SpecificAbsorption 的前端映射数据）
+    const absorptionLevel = periodontalInfo ? periodontalInfo.AbsorptionLevel : undefined;
+    if (absorptionLevel !== undefined) {
+        const levelText = absorptionLevel !== undefined
+            ? formatPeriodontalLevel(absorptionLevel)
+            : '';
+        content += '<br>牙槽骨吸收:<br>';
+        if (levelText) {
+            content += `- 等级: ${levelText}<br>`;
+        }
+    }
+    
     // 汇总该牙齿的所有属性类发现
     if (toothData.Properties && Array.isArray(toothData.Properties) && toothData.Properties.length > 0) {
-        content += '<br>发现:<br>';
+        content += '<br>其他发现:<br>';
         toothData.Properties.forEach(prop => {
             const description = prop.Description || prop.Value || '未知';
             const confidence = prop.Confidence !== undefined ? (prop.Confidence * 100).toFixed(1) : 'N/A';
             content += `- ${description} (置信度: ${confidence}%)<br>`;
         });
-    } else {
+    } else if (absorptionLevel === undefined) {
+        // 既无属性发现，也无牙周信息时才显示“未发现异常”
         content += '<br>未发现异常';
     }
     
@@ -2693,8 +2789,8 @@ function createMeasurementItem(measurement) {
         if (measurement['U-MPW'] != null) {
             airwayValues.push(`U-MPW: ${measurement['U-MPW'].toFixed(2)}mm`);
         }
-        if (measurement['TB-YPPW'] != null) {
-            airwayValues.push(`TB-YPPW: ${measurement['TB-YPPW'].toFixed(2)}mm`);
+        if (measurement['TB-TPPW'] != null) {
+            airwayValues.push(`TB-TPPW: ${measurement['TB-TPPW'].toFixed(2)}mm`);
         }
         if (measurement['V-LPW'] != null) {
             airwayValues.push(`V-LPW: ${measurement['V-LPW'].toFixed(2)}mm`);
@@ -2719,7 +2815,7 @@ function createMeasurementItem(measurement) {
     item.innerHTML = content;
     
     // 若存在可视化指令，绑定点击渲染
-    if (measurement.Visualization) {
+    if (measurement.Visualization || measurement.Label === 'Airway_Gap') {
         item.classList.add('clickable');
         item.onclick = () => handleMeasurementClick(measurement);
     }
@@ -3205,6 +3301,7 @@ async function renderPanoramic(data) {
 function drawToothSegments(data, stage, scale) {
     // 创建牙齿分割图层
     const toothLayer = new Konva.Layer();
+    const periodontalMap = buildPeriodontalAbsorptionMap(data);
     
     // 遍历 ToothAnalysis 数组，绘制分割区域
     if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
@@ -3275,10 +3372,11 @@ function drawToothSegments(data, stage, scale) {
             
             // 存储牙齿信息到 line 对象，用于后续 Tooltip
             line.toothData = tooth;
+            line.periodontalInfo = periodontalMap[tooth.FDI] || null;
             
             // 绑定 Tooltip 事件
-            line.on('mouseenter', function(e) {
-                showToothTooltip(this, this.toothData, e);
+            line.on('mouseenter', function() {
+                showToothTooltip(this, this.toothData, this.periodontalInfo);
             });
             
             line.on('mouseleave', function() {
@@ -4130,6 +4228,25 @@ function showSinusTooltip(node, sinusInfo, side, event) {
 // ============================================
 
 /**
+ * 构建牙周吸收映射表（FDI -> SpecificAbsorption 条目）
+ * 前端只做读取，不修改后端返回的数据结构
+ * @param {Object} data - 全景片分析数据
+ * @returns {Object} 映射表
+ */
+function buildPeriodontalAbsorptionMap(data) {
+    const map = {};
+    const items = data && data.PeriodontalCondition && Array.isArray(data.PeriodontalCondition.SpecificAbsorption)
+        ? data.PeriodontalCondition.SpecificAbsorption
+        : [];
+    items.forEach(item => {
+        if (item && item.FDI) {
+            map[item.FDI] = item;
+        }
+    });
+    return map;
+}
+
+/**
  * 构建全景片结构化报告
  * @param {Object} data - 全景片分析数据
  */
@@ -4141,6 +4258,7 @@ function buildPanoReport(data) {
     }
     
     container.innerHTML = ''; // 清空
+    const periodontalAbsorptionMap = buildPeriodontalAbsorptionMap(data);
     
     // 1. 整体诊断摘要
     const summarySection = createReportSection('整体诊断摘要');
@@ -4156,11 +4274,12 @@ function buildPanoReport(data) {
         }
     }
     
-    // 牙周状况
+    // 牙周 / 牙槽骨吸收概况（基于全局 BoneAbsorptionLevel）
     if (data.PeriodontalCondition) {
         const condition = data.PeriodontalCondition;
-        if (condition.OverallStatus) {
-            summaryItems.push(`牙周状况: ${condition.OverallStatus}`);
+        if (condition.BoneAbsorptionLevel !== undefined) {
+            const levelText = formatPeriodontalLevel(condition.BoneAbsorptionLevel);
+            summaryItems.push(`牙槽骨吸收: ${levelText}`);
         }
     }
     
@@ -4398,15 +4517,16 @@ function buildPanoReport(data) {
     const periodontalSection = createReportSection('牙周与缺牙');
     let hasPeriodontalContent = false;
     
-    // 牙周状况
+    // 牙周 / 牙槽骨吸收总体情况
     if (data.PeriodontalCondition) {
         const condition = data.PeriodontalCondition;
-        if (condition.OverallStatus) {
-            periodontalSection.appendChild(createKeyValue('整体牙周状况', condition.OverallStatus));
+        if (condition.BoneAbsorptionLevel !== undefined) {
+            const levelText = formatPeriodontalLevel(condition.BoneAbsorptionLevel);
+            periodontalSection.appendChild(createKeyValue('牙槽骨吸收总体程度', levelText));
             hasPeriodontalContent = true;
         }
-        if (condition.AffectedTeeth && Array.isArray(condition.AffectedTeeth) && condition.AffectedTeeth.length > 0) {
-            periodontalSection.appendChild(createKeyValue('受影响牙齿', condition.AffectedTeeth.join(', ')));
+        if (condition.Detail) {
+            periodontalSection.appendChild(createKeyValue('详细描述', condition.Detail));
             hasPeriodontalContent = true;
         }
     }
@@ -4457,7 +4577,8 @@ function buildPanoReport(data) {
             
             if (wisdomTeeth.length > 0) {
                 wisdomTeeth.forEach(tooth => {
-                    const toothCard = createToothCard(tooth);
+                    const periodontalInfo = periodontalAbsorptionMap[tooth.FDI];
+                    const toothCard = createToothCard(tooth, periodontalInfo);
                     wisdomSection.appendChild(toothCard);
                 });
             }
@@ -4536,7 +4657,8 @@ function buildPanoReport(data) {
         
         if (nonWisdomTeeth.length > 0) {
             nonWisdomTeeth.forEach(tooth => {
-                const toothCard = createToothCard(tooth);
+                const periodontalInfo = periodontalAbsorptionMap[tooth.FDI];
+                const toothCard = createToothCard(tooth, periodontalInfo);
                 toothDetailSection.appendChild(toothCard);
             });
             container.appendChild(toothDetailSection);
@@ -4581,9 +4703,10 @@ function buildPanoReport(data) {
 /**
  * 创建单牙诊断卡片
  * @param {Object} tooth - 牙齿数据
+ * @param {Object|null} periodontalInfo - 牙周吸收匹配数据（源自 PeriodontalCondition.SpecificAbsorption）
  * @returns {HTMLElement} 牙齿卡片元素
  */
-function createToothCard(tooth) {
+function createToothCard(tooth, periodontalInfo) {
     const card = document.createElement('div');
     card.className = 'tooth-card';
     
@@ -4618,10 +4741,17 @@ function createToothCard(tooth) {
         content += '<div class="tooth-properties">未发现异常</div>';
     }
     
-    // 显示牙周吸收等级
-    if (tooth.PeriodontalLevel !== undefined) {
-        const levelText = formatPeriodontalLevel(tooth.PeriodontalLevel);
-        content += `<div class="tooth-periodontal">牙周吸收等级: ${levelText}</div>`;
+    // 显示牙槽骨吸收信息（仅来源于 PeriodontalCondition.SpecificAbsorption 的前端匹配结果）
+    const absorptionLevel = periodontalInfo ? periodontalInfo.AbsorptionLevel : undefined;
+    if (absorptionLevel !== undefined) {
+        const levelText = absorptionLevel !== undefined
+            ? formatPeriodontalLevel(absorptionLevel)
+            : '';
+        let periodontalText = '';
+        if (levelText) {
+            periodontalText += levelText;
+        }
+        content += `<div class="tooth-periodontal">牙槽骨吸收: ${periodontalText}</div>`;
     }
     
     // 显示智齿等级
