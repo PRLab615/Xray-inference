@@ -138,6 +138,15 @@ pipelines:
         device: "0"
         conf: 0.25
         iou: 0.45
+
+      periodontal_detect:
+        description: "牙周吸收判断"
+        weights_key: "weights/panoramic/periodontal.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+
   
   cephalometric:
     preload: true                # Worker 启动时即初始化侧位片 Pipeline
