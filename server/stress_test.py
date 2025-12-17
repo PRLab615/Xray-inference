@@ -14,7 +14,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 # ================= 配置区域 =================
 # 后端 API 地址
 # ⚠️ 如果在同一台服务器上运行，建议使用 localhost
-API_BASE_URL = "http://localhost:18000"  # 后端API地址，请根据实际情况修改端口
+API_BASE_URL = "http://localhost:9010"  # 后端API地址，请根据实际情况修改端口
 
 # ===== 图片访问模式配置 =====
 # 模式1: "local_server" - 启动本地HTTP服务器（适用于本地测试）
@@ -59,9 +59,9 @@ IMAGE_SERVER_BASE_URL = "http://{}:{}".format(IMAGE_SERVER_URL_HOST, IMAGE_SERVE
 # 【模式2】远程URL配置（仅在 IMAGE_MODE="remote_url" 时使用）
 # 将图片文件名列表和URL前缀配置在这里
 # 例如：将图片上传到后端服务器的静态文件目录，或使用公共图床
-REMOTE_PANO_URL_PREFIX = "http://192.168.1.23:18000/static/test_images/pano"  # 全景片URL前缀
-REMOTE_CEPH_URL_PREFIX = "http://192.168.1.23:18000/static/test_images/ceph"  # 侧位片URL前缀
-REMOTE_DICOM_URL_PREFIX = "http://192.168.1.23:18000/static/test_images/dicom"  # DICOM URL前缀
+REMOTE_PANO_URL_PREFIX = "http://192.168.1.23:9010/static/test_images/pano"  # 全景片URL前缀
+REMOTE_CEPH_URL_PREFIX = "http://192.168.1.23:9010/static/test_images/ceph"  # 侧位片URL前缀
+REMOTE_DICOM_URL_PREFIX = "http://192.168.1.23:9010/static/test_images/dicom"  # DICOM URL前缀
 
 # 图片文件名列表（模式2使用，手动列出可用的图片文件名）
 REMOTE_PANO_IMAGES = [

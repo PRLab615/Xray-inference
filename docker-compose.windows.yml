@@ -33,7 +33,7 @@ services:
     networks:
       - xray-network
     ports:
-      - "18000:18000"
+      - "9010:9010"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

@@ -278,7 +278,7 @@ http://localhost:5000/
 在 `app.js` 中修改以下配置：
 ```javascript
 const CONFIG = {
-    AI_BACKEND_URL: 'http://192.168.1.17:18000/api/v1/analyze',
+    AI_BACKEND_URL: 'http://192.168.1.17:9010/api/v1/analyze',
     CALLBACK_URL: 'http://192.168.1.17:5000/callback',
     POLL_INTERVAL: 3000,       // 轮询间隔（毫秒）
     POLL_TIMEOUT: 360000       // 轮询超时（毫秒）

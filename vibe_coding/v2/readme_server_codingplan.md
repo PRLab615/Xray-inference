@@ -814,7 +814,7 @@ celery:
 # API 配置（v1 保持不变）
 api:
   host: "0.0.0.0"
-  port: 18000
+  port: 9010
   upload_dir: "./tmp/uploads"
 
 # Worker 配置（v1 保持不变）
@@ -1836,7 +1836,7 @@ print(f"\n📤 发送请求:")
 print(json.dumps(request_data, indent=2, ensure_ascii=False))
 
 response = requests.post(
-    "http://localhost:18000/api/v1/analyze",
+    "http://localhost:9010/api/v1/analyze",
     json=request_data
 )
 

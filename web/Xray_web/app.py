@@ -201,17 +201,18 @@ def get_result():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', os.environ.get('FLASK_PORT', '5000')))
+    # 默认使用 9005，可通过环境变量 PORT 或 FLASK_PORT 进行覆盖（推荐在 9005-9010 范围内）
+    port = int(os.environ.get('PORT', os.environ.get('FLASK_PORT', '9005')))
     print("=" * 60)
     print("Flask 微型回调服务器启动中...")
     print("监听地址: 0.0.0.0:{}".format(port))
     print("上传目录: {}".format(UPLOAD_FOLDER))
-    print("前端页面: http://localhost:5000/")
-    print("健康检查: http://localhost:5000/health")
-    print("图片上传: http://localhost:5000/upload")
-    print("回调接口: http://localhost:5000/callback")
-    print("结果查询: http://localhost:5000/get-result?taskId=xxx")
+    print(f"前端页面: http://localhost:{port}/")
+    print(f"健康检查: http://localhost:{port}/health")
+    print(f"图片上传: http://localhost:{port}/upload")
+    print(f"回调接口: http://localhost:{port}/callback")
+    print(f"结果查询: http://localhost:{port}/get-result?taskId=xxx")
     print("=" * 60)
     
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)
 

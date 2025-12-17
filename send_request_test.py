@@ -14,7 +14,7 @@ from datetime import datetime
 
 # ==================== 配置（支持环境变量覆盖） ====================
 API_HOST = os.getenv('API_HOST', 'localhost')
-API_PORT = os.getenv('API_PORT', '18000')
+API_PORT = os.getenv('API_PORT', '9010')
 API_URL = os.getenv('API_URL', f"http://{API_HOST}:{API_PORT}/api/v1/analyze")
 
 CALLBACK_HOST = os.getenv('CALLBACK_HOST', 'localhost')

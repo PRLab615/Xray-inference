@@ -200,7 +200,7 @@ celery:
 # API 配置
 api:
   host: "0.0.0.0"               # 监听地址
-  port: 18000                    # 监听端口
+  port: 9010                    # 监听端口
   upload_dir: "./tmp/uploads"   # 文件上传目录
 
 # Worker 配置
