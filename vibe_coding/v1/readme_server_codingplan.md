@@ -645,8 +645,8 @@ except Exception as e:
 
 **预期输出**:
 ```
-✓ Broker: redis://localhost:6379/0
-✓ Backend: redis://localhost:6379/1
+✓ Broker: redis://localhost:9006/0
+✓ Backend: redis://localhost:9006/1
 ✓ Timezone: UTC
 ✓ Redis 连接成功
 ```

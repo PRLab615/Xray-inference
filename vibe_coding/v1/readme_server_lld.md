@@ -188,14 +188,14 @@ erDiagram
 # Redis 配置
 redis:
   host: "localhost"              # Redis 服务器地址
-  port: 6379                     # Redis 端口
+  port: 9006                     # Redis 端口
   db: 0                          # 数据库索引
   password: null                 # 密码（可选）
 
 # Celery 配置
 celery:
-  broker_url: "redis://localhost:6379/0"           # 消息队列
-  result_backend: "redis://localhost:6379/1"       # 结果后端
+  broker_url: "redis://localhost:9006/0"           # 消息队列
+  result_backend: "redis://localhost:9006/1"       # 结果后端
 
 # API 配置
 api:
