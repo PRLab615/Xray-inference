@@ -520,7 +520,7 @@ const appState = {
 
 ```javascript
 const CONFIG = {
-    AI_BACKEND_URL: 'http://192.168.1.17:18000/api/v1/analyze',
+    AI_BACKEND_URL: 'http://192.168.1.17:9010/api/v1/analyze',
     CALLBACK_URL: 'http://192.168.1.17:5000/callback',
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000       // 6分钟

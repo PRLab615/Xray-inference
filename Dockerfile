@@ -40,7 +40,7 @@ COPY . .
 RUN mkdir -p /app/tmp/uploads
 
 # Expose API port
-EXPOSE 18000
+EXPOSE 9010
 
 # Default command (可以通过 docker-compose 覆盖)
 CMD ["python", "main_api.py"]

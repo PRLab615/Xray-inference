@@ -31,7 +31,7 @@ http://localhost:5000/
 
 **服务组成**: 
 - Redis (消息队列)
-- API (接收请求，端口: 18000)
+- API (接收请求，端口: 9010)
 - Worker (执行推理)
 - Frontend (前端展示，端口: 5000)
 
@@ -108,7 +108,7 @@ http://localhost:5000/
 | 服务 | 端口 | 地址 | 说明 |
 |------|------|------|------|
 | 前端界面 | 5000 | http://localhost:5000/ | Web UI 界面 |
-| API 服务 | 18000 | http://localhost:18000/api/v1/analyze | 推理请求接口 |
+| API 服务 | 9010 | http://localhost:9010/api/v1/analyze | 推理请求接口 |
 | 回调接口 | 5000 | http://localhost:5000/callback | 接收推理结果回调 |
 | Redis | 6379 | localhost:6379 | 消息队列 |
 

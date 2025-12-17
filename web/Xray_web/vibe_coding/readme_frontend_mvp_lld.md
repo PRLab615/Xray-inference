@@ -37,7 +37,7 @@ sequenceDiagram
     participant User as 用户浏览器
     participant Frontend as static/app.js
     participant Flask as app.py (Flask服务)
-    participant AIBackend as AI后端 (localhost:18000)
+    participant AIBackend as AI后端 (localhost:9010)
 
     Note over User,AIBackend: 步骤1-3: 用户选择任务类型、文件和填写表单
     User->>Frontend: 选择 taskType="cephalometric"
@@ -120,7 +120,7 @@ erDiagram
 - **调试模式**: `False`（生产环境）
 
 ### 前端配置
-- **AI 后端接口地址**: `http://192.168.1.17:18000/api/v1/analyze`
+- **AI 后端接口地址**: `http://192.168.1.17:9010/api/v1/analyze`
 - **回调服务器地址**: `http://192.168.1.17:5000/callback`
 - **轮询间隔**: `3000` 毫秒（3秒）
 - **超时时间**: `360000` 毫秒（6分钟）
@@ -310,7 +310,7 @@ const appState = {
 
 // 全局配置常量
 const CONFIG = {
-    AI_BACKEND_URL: 'http://localhost:18000/api/v1/analyze',
+    AI_BACKEND_URL: 'http://localhost:9010/api/v1/analyze',
     CALLBACK_URL: 'http://192.168.1.17:5000/callback',
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000       // 6分钟

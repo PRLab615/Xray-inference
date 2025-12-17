@@ -85,10 +85,10 @@ const SHORT_LABEL_MAP = {
 // 全局配置常量
 const CONFIG = {
     // 动态构建 API 地址，使用当前访问的主机名
-    AI_BACKEND_SYNC_URL: `http://${CURRENT_HOST}:18000/api/v1/analyze`,      // 同步/伪同步接口
-    AI_BACKEND_ASYNC_URL: `http://${CURRENT_HOST}:18000/api/v1/analyze_async`, // 纯异步接口
-    FLASK_UPLOAD_URL: `http://${CURRENT_HOST}:5000/upload`,  // Flask 服务器上传接口
-    CALLBACK_URL: `http://${CURRENT_HOST}:5000/callback`,
+    AI_BACKEND_SYNC_URL: `http://${CURRENT_HOST}:9010/api/v1/analyze`,      // 同步/伪同步接口
+    AI_BACKEND_ASYNC_URL: `http://${CURRENT_HOST}:9010/api/v1/analyze_async`, // 纯异步接口
+    FLASK_UPLOAD_URL: `http://${CURRENT_HOST}:9005/upload`,  // Flask 服务器上传接口
+    CALLBACK_URL: `http://${CURRENT_HOST}:9005/callback`,
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000,      // 6分钟
     STROKE_WIDTH: 0.7,          // 统一线条宽度（像素）

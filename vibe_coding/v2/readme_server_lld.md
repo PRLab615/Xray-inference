@@ -1206,7 +1206,7 @@ celery:
 # API 配置（v1 保持不变）
 api:
   host: "0.0.0.0"
-  port: 18000
+  port: 9010
   upload_dir: "./tmp/uploads"
 
 # Worker 配置（v1 保持不变）
@@ -1278,7 +1278,7 @@ image_download:
 
 ### 全景片请求
 ```bash
-curl -X POST http://localhost:18000/api/v1/analyze \
+curl -X POST http://localhost:9010/api/v1/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "taskId": "550e8400-e29b-41d4-a716-446655440001",
@@ -1294,7 +1294,7 @@ curl -X POST http://localhost:18000/api/v1/analyze \
 
 ### 侧位片请求（包含 patientInfo）
 ```bash
-curl -X POST http://localhost:18000/api/v1/analyze \
+curl -X POST http://localhost:9010/api/v1/analyze \
   -H "Content-Type: application/json" \
   -d '{
     "taskId": "550e8400-e29b-41d4-a716-446655440002",
