@@ -110,7 +110,7 @@ http://localhost:5000/
 | 前端界面 | 5000 | http://localhost:5000/ | Web UI 界面 |
 | API 服务 | 9010 | http://localhost:9010/api/v1/analyze | 推理请求接口 |
 | 回调接口 | 5000 | http://localhost:5000/callback | 接收推理结果回调 |
-| Redis | 6379 | localhost:6379 | 消息队列 |
+| Redis | 9006 | localhost:9006 | 消息队列 |
 
 ### 查看服务状态
 
