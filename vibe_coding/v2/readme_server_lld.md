@@ -1194,14 +1194,14 @@ v2 版本在 Redis 中存储的 `task:{taskId}` 值包含以下字段：
 # Redis 配置（v1 保持不变）
 redis:
   host: "localhost"
-  port: 6379
+  port: 9006
   db: 0
   password: null
 
 # Celery 配置（v1 保持不变）
 celery:
-  broker_url: "redis://localhost:6379/0"
-  result_backend: "redis://localhost:6379/1"
+  broker_url: "redis://localhost:9006/0"
+  result_backend: "redis://localhost:9006/1"
 
 # API 配置（v1 保持不变）
 api:

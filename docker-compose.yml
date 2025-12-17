@@ -7,9 +7,11 @@ version: '3.8'
 
 services:
   # Redis 服务
+  
   redis:
     image: redis:7-alpine
     container_name: xray_redis
+    command: ["redis-server", "--port", "9006"]
     network_mode: "host"
     volumes:
       - redis_data:/data
@@ -34,7 +36,7 @@ services:
       - ./tmp:/app/tmp
     environment:
       - REDIS_HOST=localhost
-      - REDIS_PORT=6379
+      - REDIS_PORT=9006
       - REDIS_DB=0
     depends_on:
       - redis
@@ -64,7 +66,7 @@ services:
       - ./tmp:/app/tmp
     environment:
       - REDIS_HOST=localhost
-      - REDIS_PORT=6379
+      - REDIS_PORT=9006
       - REDIS_DB=0
     depends_on:
       - redis
@@ -106,7 +108,7 @@ services:
       - .:/app
     environment:
       - REDIS_HOST=localhost
-      - REDIS_PORT=6379
+      - REDIS_PORT=9006
       - REDIS_DB=0
     depends_on:
       - redis

@@ -12,8 +12,9 @@ services:
     container_name: xray_redis
     networks:
       - xray-network
+    command: ["redis-server", "--port", "9006"]
     ports:
-      - "6379:6379"
+      - "9006:9006"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -42,7 +43,7 @@ services:
       - ./tmp:/app/tmp
     environment:
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=9006
       - REDIS_DB=0
       # Docker 桥接网络 URL 重写：将宿主机地址转换为 Docker 服务名
       - URL_REWRITE_RULES=127.0.0.1:5000->frontend:5000,localhost:5000->frontend:5000
@@ -78,7 +79,7 @@ services:
       - ./tmp:/app/tmp
     environment:
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=9006
       - REDIS_DB=0
     depends_on:
       - redis
@@ -127,7 +128,7 @@ services:
       - .:/app
     environment:
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=9006
       - REDIS_DB=0
     depends_on:
       - redis
