@@ -1529,17 +1529,17 @@ async function calculateFileHash(file) {
  */
 const DEMO_HASHES = {
     // liang.jpg 的哈希值（全景片）
-    "8f7350ba59f17be45617f5e0aa813e15161410b25e3ccf9140086e206d3f16b8": { key: "liang", json: "/static/examples/liang.json" },
+    //"8f7350ba59f17be45617f5e0aa813e15161410b25e3ccf9140086e206d3f16b8": { key: "liang", json: "/static/examples/liang.json" },
     // lin.jpg 的哈希值（全景片）
-    "92ce152bbee0f613b0160fb64ca0de0817c5a1598ad65b4962c585ae5be2f760": { key: "lin", json: "/static/examples/lin.json" },
+    //"92ce152bbee0f613b0160fb64ca0de0817c5a1598ad65b4962c585ae5be2f760": { key: "lin", json: "/static/examples/lin.json" },
 };
 
 // 侧位片 demo 哈希映射
 const DEMO_HASHES_CEPH = {
     // liang_ce.jpg 的哈希值（侧位片）
-    "d9b37a83786ee1757563e1d7eeaa7c213d0d2f1af18207e6fc42ab4533693144": { key: "liang_ce", json: "/static/examples/liang_ce.json" },
+    //"d9b37a83786ee1757563e1d7eeaa7c213d0d2f1af18207e6fc42ab4533693144": { key: "liang_ce", json: "/static/examples/liang_ce.json" },
     // lin_ce.jpg 的哈希值（侧位片）
-    "b5b4cd443a6d3237caf98084bfdef490d82f172f1403dba4848ec7b11c6924b3": { key: "lin_ce", json: "/static/examples/lin_ce.json" },
+    //"b5b4cd443a6d3237caf98084bfdef490d82f172f1403dba4848ec7b11c6924b3": { key: "lin_ce", json: "/static/examples/lin_ce.json" },
 };
 
 /**
