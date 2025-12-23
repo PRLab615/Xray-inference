@@ -334,6 +334,15 @@ function scaleCoordinates(x, y, scale) {
  * 构建点位映射：Label -> [x, y]
  * 仅保留已检测且坐标有效的点
  */
+/**
+ * 获取测量数据对象（兼容新旧字段名）
+ * @param {Object} data - 分析数据
+ * @returns {Object} 测量数据对象
+ */
+function getMeasurementsObject(data) {
+    return data?.Measurements || data?.CephalometricMeasurements;
+}
+
 function buildLandmarkMap(data) {
     const map = {};
     const landmarks = data?.LandmarkPositions?.Landmarks || [];
@@ -957,8 +966,11 @@ async function onSubmit() {
                 }
                 const data = await resp.json();
                 appState.currentTaskType = 'panoramic';
-                appState.cachedResult = { taskType: 'panoramic', data };
+                // 保存原始数据的深拷贝到缓存（在调用渲染函数之前）
+                const originalData = JSON.parse(JSON.stringify(data));
+                appState.cachedResult = { taskType: 'panoramic', data: originalData };
                 appState.activeMeasurementLabel = null;
+                console.log('[示例加载] 已缓存原始数据（未经适配层修改）');
                 renderPanoramic(data);
                 submitBtn.disabled = false;
                 return;
@@ -976,8 +988,11 @@ async function onSubmit() {
                 }
                 const data = await resp.json();
                 appState.currentTaskType = 'cephalometric';
-                appState.cachedResult = { taskType: 'cephalometric', data };
+                // 保存原始数据的深拷贝到缓存（在调用渲染函数之前）
+                const originalData = JSON.parse(JSON.stringify(data));
+                appState.cachedResult = { taskType: 'cephalometric', data: originalData };
                 appState.activeMeasurementLabel = null;
+                console.log('[示例加载] 已缓存原始数据（未经适配层修改）');
                 renderCephalometric(data);
                 submitBtn.disabled = false;
                 return;
@@ -1167,8 +1182,7 @@ async function pollResult(taskId) {
             // 停止轮询
             stopPolling();
             
-            // 缓存结果
-            appState.cachedResult = resultData;
+            // 注意：缓存会在 displayResult 中设置（保存原始数据的深拷贝）
             
             // 显示结果（步骤7实现）
             displayResult(resultData);
@@ -1255,6 +1269,33 @@ function displayResult(resultJson) {
         return;
     }
     
+    // ⚠️ 重要：在调用渲染函数之前，保存原始数据的深拷贝到缓存
+    // 因为渲染函数（特别是 renderCephalometric）中的适配层会修改 data 对象
+    // 我们需要确保缓存中保存的是后端返回的原始格式（未经适配层修改）
+    console.log('[displayResult] 准备保存原始数据，当前 data 结构:', {
+        LandmarkPositions: data.LandmarkPositions ? Object.keys(data.LandmarkPositions) : 'undefined',
+        Measurements: data.Measurements ? Object.keys(data.Measurements) : 'undefined',
+        CephalometricMeasurements: data.CephalometricMeasurements ? Object.keys(data.CephalometricMeasurements) : 'undefined (旧字段名)'
+    });
+    
+    const originalData = JSON.parse(JSON.stringify(data));
+    
+    console.log('[displayResult] 深拷贝后的 originalData 结构:', {
+        LandmarkPositions: originalData.LandmarkPositions ? Object.keys(originalData.LandmarkPositions) : 'undefined',
+        Measurements: originalData.Measurements ? Object.keys(originalData.Measurements) : 'undefined',
+        CephalometricMeasurements: originalData.CephalometricMeasurements ? Object.keys(originalData.CephalometricMeasurements) : 'undefined (旧字段名)'
+    });
+    
+    appState.cachedResult = {
+        taskType: taskType,
+        taskId: resultJson.taskId,
+        status: resultJson.status,
+        timestamp: resultJson.timestamp,
+        data: originalData,  // 保存原始数据
+        is_mock: resultJson.is_mock
+    };
+    console.log('[displayResult] 已缓存原始数据（未经适配层修改）');
+    
     if (taskType === 'cephalometric') {
         console.log('调用 renderCephalometric');
         renderCephalometric(data);
@@ -1324,9 +1365,12 @@ async function onManualVisualize() {
 
     // 缓存状态并按任务类型渲染
     appState.originalImage = img;
-    appState.cachedResult = { taskType, data };
+    // 保存原始数据的深拷贝到缓存（在调用渲染函数之前）
+    const originalData = JSON.parse(JSON.stringify(data));
+    appState.cachedResult = { taskType, data: originalData };
     appState.currentTaskType = taskType;
     appState.imageScale = 1.0;
+    console.log('[手动可视化] 已缓存原始数据（未经适配层修改）');
 
     if (taskType === 'cephalometric') {
         renderCephalometric(data);
@@ -1528,18 +1572,18 @@ async function calculateFileHash(file) {
  * 包含所有已知示例图片的 SHA256 哈希值
  */
 const DEMO_HASHES = {
-    // liang.jpg 的哈希值（全景片）
-    //"8f7350ba59f17be45617f5e0aa813e15161410b25e3ccf9140086e206d3f16b8": { key: "liang", json: "/static/examples/liang.json" },
-    // lin.jpg 的哈希值（全景片）
-    //"92ce152bbee0f613b0160fb64ca0de0817c5a1598ad65b4962c585ae5be2f760": { key: "lin", json: "/static/examples/lin.json" },
+// liang.jpg 的哈希值（全景片）
+//"8f7350ba59f17be45617f5e0aa813e15161410b25e3ccf9140086e206d3f16b8": { key: "liang", json: "/static/examples/liang.json" },
+// lin.jpg 的哈希值（全景片）
+//     "92ce152bbee0f613b0160fb64ca0de0817c5a1598ad65b4962c585ae5be2f760": { key: "lin", json: "/static/examples/lin.json" },
 };
 
-// 侧位片 demo 哈希映射
-const DEMO_HASHES_CEPH = {
-    // liang_ce.jpg 的哈希值（侧位片）
-    //"d9b37a83786ee1757563e1d7eeaa7c213d0d2f1af18207e6fc42ab4533693144": { key: "liang_ce", json: "/static/examples/liang_ce.json" },
-    // lin_ce.jpg 的哈希值（侧位片）
-    //"b5b4cd443a6d3237caf98084bfdef490d82f172f1403dba4848ec7b11c6924b3": { key: "lin_ce", json: "/static/examples/lin_ce.json" },
+// // 侧位片 demo 哈希映射
+ const DEMO_HASHES_CEPH = {
+// liang_ce.jpg 的哈希值（侧位片）
+//     "d9b37a83786ee1757563e1d7eeaa7c213d0d2f1af18207e6fc42ab4533693144": { key: "liang_ce", json: "/static/examples/liang_ce.json" },
+// lin_ce.jpg 的哈希值（侧位片）
+//     "b5b4cd443a6d3237caf98084bfdef490d82f172f1403dba4848ec7b11c6924b3": { key: "lin_ce", json: "/static/examples/lin_ce.json" },
 };
 
 /**
@@ -1715,7 +1759,11 @@ function renderDentalAgeStage(data) {
         jsonContent.style.padding = '10px';
         jsonContent.style.borderRadius = '4px';
         jsonContent.style.overflowX = 'auto';
-        jsonContent.textContent = JSON.stringify(data, null, 2);
+        // ⚠️ 重要：使用缓存的原始数据（后端返回的原始格式），而不是适配层修改后的 data
+        const originalDataForJson = appState.cachedResult && appState.cachedResult.data 
+            ? appState.cachedResult.data 
+            : data; // 降级方案：如果没有缓存，使用传入的 data
+        jsonContent.textContent = JSON.stringify(originalDataForJson, null, 2);
         jsonSection.appendChild(jsonContent);
 
         jsonSection.appendChild(createCopyJsonButton(jsonContent));
@@ -1851,9 +1899,91 @@ async function renderCephalometric(data) {
         mainContainer.classList.remove('hidden');
     }
     
+    // ============================================================
+    // [适配层 Start] 将新版拆分结构的 JSON 转换为旧版扁平结构
+    // ============================================================
+    console.log('[适配层] 开始检测 JSON 格式...');
+    console.log('[适配层] 原始数据结构:', {
+        LandmarkPositions: data.LandmarkPositions ? Object.keys(data.LandmarkPositions) : 'undefined',
+        Measurements: data.Measurements ? Object.keys(data.Measurements) : 'undefined',
+        CephalometricMeasurements: data.CephalometricMeasurements ? Object.keys(data.CephalometricMeasurements) : 'undefined (旧字段名)'
+    });
+    
+    // 保存原始数据的深拷贝（用于"复制 JSON"等功能，保持后端返回的原始格式）
+    // 注意：这里使用 JSON 深拷贝，确保原始数据不受适配层修改的影响
+    const originalData = JSON.parse(JSON.stringify(data));
+    console.log('[适配层] 已保存原始数据副本');
+    
+    // 1. 适配关键点 (Landmarks)
+    if (data.LandmarkPositions) {
+        const hasNewFormat = data.LandmarkPositions.CephalometricLandmarks || 
+                            data.LandmarkPositions.AirwayLandmarks;
+        
+        console.log('[适配层] Landmarks 格式:', hasNewFormat ? '新格式' : '旧格式');
+        
+        if (hasNewFormat && !data.LandmarkPositions.Landmarks) {
+            let allLandmarks = [];
+            if (data.LandmarkPositions.CephalometricLandmarks) {
+                console.log('[适配层] 提取 CephalometricLandmarks:', data.LandmarkPositions.CephalometricLandmarks.length, '个');
+                allLandmarks = allLandmarks.concat(data.LandmarkPositions.CephalometricLandmarks);
+            }
+            if (data.LandmarkPositions.AirwayLandmarks) {
+                console.log('[适配层] 提取 AirwayLandmarks:', data.LandmarkPositions.AirwayLandmarks.length, '个');
+                allLandmarks = allLandmarks.concat(data.LandmarkPositions.AirwayLandmarks);
+            }
+            data.LandmarkPositions.Landmarks = allLandmarks;
+            console.log('[适配层] ✅ 已合并为扁平结构:', allLandmarks.length, '个点位');
+        }
+    }
+    
+    // 2. 适配测量结果 (Measurements)
+    // 兼容新旧字段名：Measurements (新) 和 CephalometricMeasurements (旧)
+    const measurementsObj = data.Measurements || data.CephalometricMeasurements;
+    if (measurementsObj) {
+        const hasNewFormat = measurementsObj.CephalometricMeasurements || 
+                            measurementsObj.AirwayMeasurements || 
+                            measurementsObj.BoneAgeMeasurements;
+        
+        console.log('[适配层] Measurements 格式:', hasNewFormat ? '新格式' : '旧格式');
+        
+        if (hasNewFormat && !measurementsObj.AllMeasurements) {
+            let allMeasurements = [];
+            if (measurementsObj.CephalometricMeasurements) {
+                console.log('[适配层] 提取 CephalometricMeasurements:', measurementsObj.CephalometricMeasurements.length, '个');
+                allMeasurements = allMeasurements.concat(measurementsObj.CephalometricMeasurements);
+            }
+            if (measurementsObj.AirwayMeasurements) {
+                console.log('[适配层] 提取 AirwayMeasurements:', measurementsObj.AirwayMeasurements.length, '个');
+                allMeasurements = allMeasurements.concat(measurementsObj.AirwayMeasurements);
+            }
+            if (measurementsObj.BoneAgeMeasurements) {
+                console.log('[适配层] 提取 BoneAgeMeasurements:', measurementsObj.BoneAgeMeasurements.length, '个');
+                allMeasurements = allMeasurements.concat(measurementsObj.BoneAgeMeasurements);
+            }
+            measurementsObj.AllMeasurements = allMeasurements;
+            console.log('[适配层] ✅ 已合并为扁平结构:', allMeasurements.length, '个测量项');
+            
+            // 确保两个字段名都可用（兼容性）
+            if (data.Measurements) {
+                data.CephalometricMeasurements = data.Measurements;
+            }
+        }
+    }
+    
+    console.log('[适配层] 格式转换完成');
+    
+    // 注意：原始数据已在 displayResult 中保存到缓存，这里不需要再次更新
+    // 因为 displayResult 在调用 renderCephalometric 之前就已经保存了深拷贝
+    
+    // ============================================================
+    // [适配层 End]
+    // ============================================================
+    
     // 预先缓存点位与测量列表，供可视化渲染使用
     appState.cephLandmarks = buildLandmarkMap(data);
-    appState.cephMeasurements = data?.CephalometricMeasurements?.AllMeasurements || [];
+    // 兼容新旧字段名：Measurements (新) 和 CephalometricMeasurements (旧)
+    const measurementsData = data?.Measurements || data?.CephalometricMeasurements;
+    appState.cephMeasurements = measurementsData?.AllMeasurements || [];
     appState.activeMeasurementLabel = null;
     const tools = document.getElementById('measurementTools');
     if (tools) {
@@ -2077,12 +2207,13 @@ function drawLandmarks(data, stage, scale) {
  */
 function drawCVMBox(data, stage, scale) {
     // 查找 CVM 测量项
-    if (!data.CephalometricMeasurements || !data.CephalometricMeasurements.AllMeasurements) {
+    const measurementsObj = getMeasurementsObject(data);
+    if (!measurementsObj || !measurementsObj.AllMeasurements) {
         console.log('未找到测量数据，跳过 CVM 边界框绘制');
         return;
     }
     
-    const measurements = data.CephalometricMeasurements.AllMeasurements;
+    const measurements = measurementsObj.AllMeasurements;
     const cvmMeasurement = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
     
     if (!cvmMeasurement || !cvmMeasurement.Coordinates || cvmMeasurement.Coordinates.length === 0) {
@@ -2516,6 +2647,9 @@ function buildCephReport(data) {
     
     container.innerHTML = ''; // 清空
     
+    // 获取测量数据对象（兼容新旧字段名）
+    const measurementsObj = getMeasurementsObject(data);
+    
     // 1. 分析摘要
     const summarySection = createReportSection('分析摘要');
     if (data.VisibilityMetrics) {
@@ -2569,9 +2703,9 @@ function buildCephReport(data) {
     container.appendChild(summarySection);
     
     // 2. 骨骼分析
-    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+    if (measurementsObj && measurementsObj.AllMeasurements) {
         const boneSection = createReportSection('骨骼分析');
-        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        const measurements = measurementsObj.AllMeasurements;
         
         measurements.forEach(m => {
             if (isBoneMeasurement(m.Label)) {
@@ -2586,9 +2720,9 @@ function buildCephReport(data) {
     }
     
     // 3. 牙齿分析
-    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+    if (measurementsObj && measurementsObj.AllMeasurements) {
         const toothSection = createReportSection('牙齿分析');
-        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        const measurements = measurementsObj.AllMeasurements;
         
         measurements.forEach(m => {
             if (isToothMeasurement(m.Label)) {
@@ -2603,9 +2737,9 @@ function buildCephReport(data) {
     }
     
     // 4. 生长发育评估（包含所有生长相关测量项和 CVSM 图片）
-    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+    if (measurementsObj && measurementsObj.AllMeasurements) {
         const growthSection = createReportSection('生长发育评估');
-        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        const measurements = measurementsObj.AllMeasurements;
         
         // 先添加所有生长发育相关的测量项
         measurements.forEach(m => {
@@ -2633,9 +2767,9 @@ function buildCephReport(data) {
     }
     
     // 5. 气道分析
-    if (data.CephalometricMeasurements && data.CephalometricMeasurements.AllMeasurements) {
+    if (measurementsObj && measurementsObj.AllMeasurements) {
         const airwaySection = createReportSection('气道分析');
-        const measurements = data.CephalometricMeasurements.AllMeasurements;
+        const measurements = measurementsObj.AllMeasurements;
         
         const airwayGap = measurements.find(m => m.Label === 'Airway_Gap');
         const adenoidIndex = measurements.find(m => m.Label === 'Adenoid_Index');
@@ -2684,7 +2818,11 @@ function buildCephReport(data) {
     jsonContent.style.padding = '10px';
     jsonContent.style.borderRadius = '4px';
     jsonContent.style.overflowX = 'auto';
-    jsonContent.textContent = JSON.stringify(data, null, 2);
+    // ⚠️ 重要：使用缓存的原始数据（后端返回的原始格式），而不是适配层修改后的 data
+    const originalDataForJson = appState.cachedResult && appState.cachedResult.data 
+        ? appState.cachedResult.data 
+        : data; // 降级方案：如果没有缓存，使用传入的 data
+    jsonContent.textContent = JSON.stringify(originalDataForJson, null, 2);
     jsonSection.appendChild(jsonContent);
     jsonSection.appendChild(createCopyJsonButton(jsonContent));
     
@@ -4694,7 +4832,11 @@ function buildPanoReport(data) {
     jsonContent.style.padding = '10px';
     jsonContent.style.borderRadius = '4px';
     jsonContent.style.overflowX = 'auto';
-    jsonContent.textContent = JSON.stringify(data, null, 2);
+    // ⚠️ 重要：使用缓存的原始数据（后端返回的原始格式），而不是适配层修改后的 data
+    const originalDataForJson = appState.cachedResult && appState.cachedResult.data 
+        ? appState.cachedResult.data 
+        : data; // 降级方案：如果没有缓存，使用传入的 data
+    jsonContent.textContent = JSON.stringify(originalDataForJson, null, 2);
     jsonSection.appendChild(jsonContent);
     
     container.appendChild(jsonSection);

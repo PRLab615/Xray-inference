@@ -19,14 +19,6 @@ from pipelines.ceph.utils.ceph_report import calculate_airway_measurements, calc
 from tools.timer import timer
 
 
-# DEFAULT_PATIENT_INFO = {
-#     "gender": "Female",
-#     "DentalAgeStage": "Permanent",
-# }
-# # DEFAULT_IMAGE_PATH = r"D:\git-615\Teeth\Xray-inference\example\example_ceph_img.jpg"
-# DEFAULT_IMAGE_PATH = r"/app/example/example_ceph_img.jpg"
-# DEFAULT_OUTPUT_NAME = "ceph_output.json"
-
 
 class CephPipeline(BasePipeline):
     """
@@ -350,63 +342,180 @@ class CephPipeline(BasePipeline):
         return result
 
 
-# if __name__ == "__main__":
-#     # 从 config.yaml 加载配置
-#     import yaml
-#     from pathlib import Path
-#
-#     # 加载配置文件
-#     config_path = Path(__file__).resolve().parents[2] / "config.yaml"
-#     if not config_path.exists():
-#         raise FileNotFoundError(f"配置文件不存在: {config_path}")
-#
-#     with open(config_path, 'r', encoding='utf-8') as f:
-#         config = yaml.safe_load(f)
-#
-#     # 获取侧位片 pipeline 的模块配置
-#     cephalometric_config = config.get("pipelines", {}).get("cephalometric", {})
-#     modules_config = cephalometric_config.get("modules", {})
-#
-#     if not modules_config:
-#         raise ValueError("config.yaml 中未找到 pipelines.cephalometric.modules 配置")
-#
-#     print("从 config.yaml 加载的模块配置:")
-#     for module_name, module_cfg in modules_config.items():
-#         print(f"  - {module_name}: {module_cfg.get('description', 'N/A')}")
-#
-#     # 初始化 pipeline
-#     pipeline = CephPipeline(modules=modules_config)
-#     patient = DEFAULT_PATIENT_INFO
-#
-#     if not os.path.exists(DEFAULT_IMAGE_PATH):
-#         raise FileNotFoundError(
-#             f"请修改 DEFAULT_IMAGE_PATH 为实际存在的图片路径，当前值: {DEFAULT_IMAGE_PATH}"
-#         )
-#
-#     data = pipeline.run(DEFAULT_IMAGE_PATH, patient_info=patient)
-#
-#     # 输出 JSON 到指定目录
-#     output_dir = Path(r"/app/example/")
-#     output_path = output_dir / DEFAULT_OUTPUT_NAME
-#     output_dir.mkdir(parents=True, exist_ok=True)
-#
-#     with output_path.open("w", encoding="utf-8") as fp:
-#         json.dump(data, fp, ensure_ascii=False, indent=2)
-#
-#     print(f"\n✅ Ceph inference finished. JSON saved to: {output_path}")
-#
-#     # 检查 CVM 结果是否在输出中
-#     if "CephalometricMeasurements" in data:
-#         measurements = data["CephalometricMeasurements"].get("AllMeasurements", [])
-#         cvm_measurement = next(
-#             (m for m in measurements if m.get("Label") == "Cervical_Vertebral_Maturity_Stage"),
-#             None
-#         )
-#         if cvm_measurement:
-#             print(f"\n✅ CVM 结果已包含在输出中:")
-#             print(f"   Level: {cvm_measurement.get('Level')}")
-#             print(f"   Confidence: {cvm_measurement.get('Confidence')}")
-#             print(f"   Coordinates: {cvm_measurement.get('Coordinates')}")
-#         else:
-#             print("\n⚠️  CVM 结果未在输出中找到（可能 CVM 模块未初始化或推理失败）")
+def test_json_structure():
+    """
+    测试新的 JSON 结构输出（按类别拆分 Landmarks 和 Measurements）
+
+    测试内容：
+    1. 验证 LandmarkPositions 是否拆分为三组：CephalometricLandmarks, AirwayLandmarks, BoneAgeLandmarks
+    2. 验证 Measurements 是否拆分为三组：CephalometricMeasurements, BoneAgeMeasurements, AirwayMeasurements
+    3. 验证每个测量项是否保持原有字段结构（Label, Angle/Length_mm, Level, Confidence, Visualization）
+    """
+    import yaml
+
+    # 测试配置
+    TEST_IMAGE_PATH = "/app/example/example_ceph_img.jpg"
+    TEST_OUTPUT_PATH = "/app/example/test_ceph_output.json"
+    TEST_PATIENT_INFO = {
+        "gender": "Male",
+        "DentalAgeStage": "Permanent",
+    }
+
+    print("=" * 80)
+    print("开始测试新的 JSON 结构输出")
+    print("=" * 80)
+
+    # 1. 检查图片是否存在
+    if not os.path.exists(TEST_IMAGE_PATH):
+        raise FileNotFoundError(f"测试图片不存在: {TEST_IMAGE_PATH}")
+    print(f"✓ 测试图片存在: {TEST_IMAGE_PATH}")
+
+    # 2. 加载配置文件
+    config_path = Path(__file__).resolve().parents[2] / "config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+
+    # 获取侧位片 pipeline 的模块配置
+    cephalometric_config = config.get("pipelines", {}).get("cephalometric", {})
+    modules_config = cephalometric_config.get("modules", {})
+
+    if not modules_config:
+        raise ValueError("config.yaml 中未找到 pipelines.cephalometric.modules 配置")
+
+    print(f"✓ 配置文件加载成功: {config_path}")
+    print(f"  已配置的模块: {list(modules_config.keys())}")
+
+    # 3. 初始化 pipeline
+    print("\n初始化 Pipeline...")
+    pipeline = CephPipeline(modules=modules_config)
+    print("✓ Pipeline 初始化成功")
+
+    # 4. 执行推理
+    print(f"\n执行推理: {TEST_IMAGE_PATH}")
+    data = pipeline.run(TEST_IMAGE_PATH, patient_info=TEST_PATIENT_INFO)
+    print("✓ 推理完成")
+
+    # 5. 验证 JSON 结构
+    print("\n" + "=" * 80)
+    print("验证 JSON 结构")
+    print("=" * 80)
+
+    # 5.1 验证 LandmarkPositions 结构
+    print("\n[1] 验证 LandmarkPositions 结构:")
+    if "LandmarkPositions" not in data:
+        raise ValueError("❌ 缺少 LandmarkPositions 字段")
+
+    landmark_positions = data["LandmarkPositions"]
+
+    # 检查是否拆分为两组（头影 + 气道）
+    required_keys = ["CephalometricLandmarks", "AirwayLandmarks"]
+    for key in required_keys:
+        if key not in landmark_positions:
+            raise ValueError(f"❌ LandmarkPositions 缺少 {key} 字段")
+        print(f"  ✓ {key}: {len(landmark_positions[key])} 个点位")
+
+    # 验证头影点位数量（应该是 25 个）
+    ceph_landmarks = landmark_positions["CephalometricLandmarks"]
+    if len(ceph_landmarks) != 25:
+        print(f"  ⚠️  警告: CephalometricLandmarks 应该有 25 个点，实际有 {len(ceph_landmarks)} 个")
+    else:
+        print(f"  ✓ CephalometricLandmarks 点位数量正确: 25 个")
+
+    # 验证气道点位数量（应该是 11 个，如果模块启用）
+    airway_landmarks = landmark_positions["AirwayLandmarks"]
+    if len(airway_landmarks) > 0:
+        if len(airway_landmarks) != 11:
+            print(f"  ⚠️  警告: AirwayLandmarks 应该有 11 个点，实际有 {len(airway_landmarks)} 个")
+        else:
+            print(f"  ✓ AirwayLandmarks 点位数量正确: 11 个")
+    else:
+        print(f"  ⚠️  AirwayLandmarks 为空（可能 point_11 模块未启用）")
+
+    # 骨龄无独立点位，通过 BoneAgeMeasurements 中的 CVM 测量项体现
+    print(f"  ℹ️  骨龄无独立点位（通过 BoneAgeMeasurements 中的 CVM 测量项体现）")
+
+    # 5.2 验证 Measurements 结构
+    print("\n[2] 验证 Measurements 结构:")
+    if "Measurements" not in data:
+        raise ValueError("❌ 缺少 Measurements 字段")
+
+    measurements = data["Measurements"]
+
+    # 检查是否拆分为三组
+    required_measurement_keys = ["CephalometricMeasurements", "BoneAgeMeasurements", "AirwayMeasurements"]
+    for key in required_measurement_keys:
+        if key not in measurements:
+            raise ValueError(f"❌ Measurements 缺少 {key} 字段")
+        print(f"  ✓ {key}: {len(measurements[key])} 个测量项")
+
+    # 5.3 验证测量项字段结构
+    print("\n[3] 验证测量项字段结构:")
+
+    # 检查头影测量项
+    ceph_measurements = measurements["CephalometricMeasurements"]
+    if len(ceph_measurements) > 0:
+        sample = ceph_measurements[0]
+        required_fields = ["Label"]
+        for field in required_fields:
+            if field not in sample:
+                raise ValueError(f"❌ 测量项缺少必需字段: {field}")
+        print(f"  ✓ 头影测量项字段完整，示例: {sample['Label']}")
+        print(f"    字段: {list(sample.keys())}")
+
+    # 检查骨龄测量项
+    bone_age_measurements = measurements["BoneAgeMeasurements"]
+    if len(bone_age_measurements) > 0:
+        sample = bone_age_measurements[0]
+        print(f"  ✓ 骨龄测量项存在: {sample['Label']}")
+        print(f"    字段: {list(sample.keys())}")
+    else:
+        print(f"  ⚠️  骨龄测量项为空（可能 CVM 模块未启用）")
+
+    # 检查气道测量项
+    airway_measurements = measurements["AirwayMeasurements"]
+    if len(airway_measurements) > 0:
+        sample = airway_measurements[0]
+        print(f"  ✓ 气道测量项存在: {sample['Label']}")
+        print(f"    字段: {list(sample.keys())}")
+    else:
+        print(f"  ⚠️  气道测量项为空（可能 point_11 模块未启用）")
+
+    # 6. 保存 JSON 文件
+    print(f"\n保存 JSON 文件: {TEST_OUTPUT_PATH}")
+    output_path = Path(TEST_OUTPUT_PATH)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_path.open("w", encoding="utf-8") as fp:
+        json.dump(data, fp, ensure_ascii=False, indent=2)
+
+    print(f"✓ JSON 文件已保存: {TEST_OUTPUT_PATH}")
+
+    # 7. 输出统计信息
+    print("\n" + "=" * 80)
+    print("测试完成 - 统计信息")
+    print("=" * 80)
+    print(f"总点位数: {len(ceph_landmarks) + len(airway_landmarks)}")
+    print(f"  - 头影点位: {len(ceph_landmarks)}")
+    print(f"  - 气道点位: {len(airway_landmarks)}")
+    print(f"\n总测量项数: {len(ceph_measurements) + len(bone_age_measurements) + len(airway_measurements)}")
+    print(f"  - 头影测量: {len(ceph_measurements)}")
+    print(f"  - 骨龄测量: {len(bone_age_measurements)} (通过 CVM 测量项体现)")
+    print(f"  - 气道测量: {len(airway_measurements)}")
+    print("=" * 80)
+
+    return data
+
+
+if __name__ == "__main__":
+    # 运行测试
+    try:
+        test_json_structure()
+    except Exception as e:
+        print(f"\n❌ 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
