@@ -26,271 +26,269 @@
     }
   },
   "LandmarkPositions": {
-    "TotalLandmarks": 36,
-    "DetectedLandmarks": 36,
-    "MissingLandmarks": 0,
-    "MissingLabels": [],
-    "Landmarks": [
+    "CephalometricLandmarks": [
       {
         "Label": "Sella",
-        "X": 811,
-        "Y": 1014,
-        "Confidence": 0.86,
+        "X": 579,
+        "Y": 256,
+        "Confidence": 0.83,
         "Status": "Detected"
       },
       {
         "Label": "Nasion",
-        "X": 1462,
-        "Y": 992,
+        "X": 946,
+        "Y": 196,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Orbitale",
-        "X": 1329,
-        "Y": 1263,
+        "X": 879,
+        "Y": 353,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Porion",
-        "X": 557,
-        "Y": 1190,
+        "X": 450,
+        "Y": 370,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Subspinale",
-        "X": 1388,
-        "Y": 1629,
+        "X": 968,
+        "Y": 535,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Supramentale",
-        "X": 1343,
-        "Y": 2022,
+        "X": 954,
+        "Y": 741,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Pogonion",
-        "X": 1311,
-        "Y": 2171,
+        "X": 957,
+        "Y": 821,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Menton",
-        "X": 1241,
-        "Y": 2236,
+        "X": 923,
+        "Y": 860,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Gnathion",
-        "X": 1294,
-        "Y": 2212,
+        "X": 943,
+        "Y": 847,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Gonion",
-        "X": 661,
-        "Y": 1814,
+        "X": 554,
+        "Y": 686,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Incision inferius",
-        "X": 1433,
-        "Y": 1846,
+        "X": 990,
+        "Y": 635,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Incision superius",
-        "X": 1432,
-        "Y": 1845,
+        "X": 1003,
+        "Y": 650,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Posterior nasal spine",
-        "X": 953,
-        "Y": 1477,
+        "X": 694,
+        "Y": 493,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Anterior nasal spine",
-        "X": 1417,
-        "Y": 1536,
+        "X": 972,
+        "Y": 491,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Articulare",
-        "X": 633,
-        "Y": 1328,
+        "X": 501,
+        "Y": 444,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Co",
-        "X": 665,
-        "Y": 1175,
+        "X": 508,
+        "Y": 355,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "PTM",
-        "X": 948,
-        "Y": 1332,
+        "X": 683,
+        "Y": 419,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Pt",
-        "X": 948,
-        "Y": 1161,
+        "X": 669,
+        "Y": 334,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "U1A",
-        "X": 1330,
-        "Y": 1631,
+        "X": 933,
+        "Y": 536,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "L1A",
-        "X": 1290,
-        "Y": 2024,
+        "X": 925,
+        "Y": 749,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "U6",
-        "X": 1161,
-        "Y": 1768,
+        "X": 839,
+        "Y": 619,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "L6",
-        "X": 1177,
-        "Y": 1797,
+        "X": 843,
+        "Y": 637,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Ba",
-        "X": 522,
-        "Y": 1388,
+        "X": 437,
+        "Y": 485,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Bo",
-        "X": 177,
-        "Y": 1325,
+        "X": 215,
+        "Y": 473,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Pcd",
-        "X": 627,
-        "Y": 1237,
+        "X": 484,
+        "Y": 392,
         "Confidence": 1,
         "Status": "Detected"
-      },
+      }
+    ],
+    "AirwayLandmarks": [
       {
         "Label": "Uvula tip",
-        "X": 764,
-        "Y": 1722,
-        "Confidence": 0.93,
+        "X": 632,
+        "Y": 634,
+        "Confidence": 0.91,
         "Status": "Detected"
       },
       {
         "Label": "Vallecula",
-        "X": 732,
-        "Y": 2076,
+        "X": 621,
+        "Y": 791,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Upper Pharyngeal Wall",
-        "X": 726,
-        "Y": 1474,
+        "X": 578,
+        "Y": 523,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Soft Palate Point",
-        "X": 810,
-        "Y": 1590,
+        "X": 624,
+        "Y": 595,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Soft Palate Pharyngeal Wall",
-        "X": 687,
-        "Y": 1532,
+        "X": 566,
+        "Y": 586,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Middle Pharyngeal Wall",
-        "X": 649,
-        "Y": 1699,
+        "X": 567,
+        "Y": 624,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Lower Pharyngeal Wall",
-        "X": 578,
-        "Y": 2045,
+        "X": 557,
+        "Y": 781,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Tongue Base",
-        "X": 765,
-        "Y": 1810,
+        "X": 637,
+        "Y": 690,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Tongue Posterior Pharyngeal Wall",
-        "X": 633,
-        "Y": 1783,
+        "X": 561,
+        "Y": 676,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "Adenoid",
-        "X": 781,
-        "Y": 1419,
+        "X": 588,
+        "Y": 487,
         "Confidence": 1,
         "Status": "Detected"
       },
       {
         "Label": "D prime",
-        "X": 766,
-        "Y": 1272,
+        "X": 601,
+        "Y": 440,
         "Confidence": 1,
         "Status": "Detected"
       }
     ]
   },
-  "CephalometricMeasurements": {
-    "AllMeasurements": [
+  "Measurements": {
+    "CephalometricMeasurements": [
       {
         "Label": "ANB_Angle",
-        "Angle": 0.01,
-        "Level": 2,
+        "Angle": 2.89,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -321,8 +319,8 @@
       },
       {
         "Label": "PtmANS_Length",
-        "Length_mm": 51.17,
-        "Level": 1,
+        "Length_mm": 29.86,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -339,14 +337,14 @@
       },
       {
         "Label": "GoPo_Length",
-        "Length_mm": 73.57,
-        "Level": 0,
+        "Length_mm": 42.3,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": {
             "v_pog_on_mp": [
-              1256.54,
-              2246.93
+              936.73,
+              866.7
             ]
           },
           "Elements": [
@@ -369,14 +367,14 @@
       },
       {
         "Label": "PoNB_Length",
-        "Length_mm": 1.49,
+        "Length_mm": 0.2,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": {
             "v_pog_on_nb": [
-              1325.92,
-              2173.36
+              955.9,
+              821.75
             ]
           },
           "Elements": [
@@ -401,14 +399,14 @@
         "Label": "Jaw_Development_Coordination",
         "Type": "MultiSelect",
         "Level": [
-          1,
+          2,
           0
         ],
         "Confidence": 0
       },
       {
         "Label": "SGo_NMe_Ratio",
-        "Ratio": 64.46,
+        "Ratio": 64.74,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -433,7 +431,7 @@
       },
       {
         "Label": "FH_MP_Angle",
-        "Angle": 30.57,
+        "Angle": 27.59,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -458,7 +456,7 @@
       },
       {
         "Label": "IMPA_Angle",
-        "Angle": 92.81,
+        "Angle": 94.55,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -482,110 +480,8 @@
         }
       },
       {
-        "Label": "Airway_Gap",
-        "PNS-UPW": 22.63,
-        "SPP-SPPW": 13.63,
-        "U-MPW": 11.82,
-        "TB-TPPW": 13.4,
-        "V-LPW": 15.76,
-        "Level": false,
-        "Confidence": 1,
-        "Visualization": {
-          "VirtualPoints": null,
-          "Elements": null,
-          "Polygon": [
-            687.75,
-            1532.55,
-            726.9,
-            1474.56,
-            766.48,
-            1273,
-            781.37,
-            1419.76,
-            810.93,
-            1590.84,
-            764.92,
-            1722.7,
-            765.12,
-            1810.58,
-            732.52,
-            2076.88,
-            578.19,
-            2045.05,
-            633.85,
-            1783.69,
-            649.01,
-            1699.52
-          ]
-        },
-        "Coordinates": [
-          [
-            764,
-            1722
-          ],
-          [
-            732,
-            2076
-          ],
-          [
-            726,
-            1474
-          ],
-          [
-            810,
-            1590
-          ],
-          [
-            687,
-            1532
-          ],
-          [
-            649,
-            1699
-          ],
-          [
-            578,
-            2045
-          ],
-          [
-            765,
-            1810
-          ],
-          [
-            633,
-            1783
-          ],
-          [
-            781,
-            1419
-          ],
-          [
-            766,
-            1272
-          ]
-        ]
-      },
-      {
-        "Label": "Adenoid_Index",
-        "Value": 0.54,
-        "Level": true,
-        "Confidence": 0.85,
-        "Visualization": {
-          "VirtualPoints": null,
-          "Elements": [
-            {
-              "Type": "Line",
-              "From": "PNS",
-              "To": "PNS",
-              "Style": "Dashed",
-              "Role": "Reference"
-            }
-          ]
-        }
-      },
-      {
         "Label": "SNA_Angle",
-        "Angle": 81.47,
+        "Angle": 84.36,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -610,8 +506,8 @@
       },
       {
         "Label": "Upper_Jaw_Position",
-        "Length_mm": 34.62,
-        "Level": 1,
+        "Length_mm": 19.27,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -653,8 +549,8 @@
       },
       {
         "Label": "Pcd_Lower_Position",
-        "Length_mm": 28.91,
-        "Level": 1,
+        "Length_mm": 16.55,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -671,18 +567,18 @@
       },
       {
         "Label": "Distance_Witsmm",
-        "Length_mm": 0.84,
-        "Level": 0,
+        "Length_mm": 2.25,
+        "Level": 1,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": {
             "v_a_on_fh": [
-              1422.42,
-              1272.51
+              961.23,
+              349.9
             ],
             "v_b_on_fh": [
-              1414.11,
-              1271.73
+              938.72,
+              350.82
             ]
           },
           "Elements": [
@@ -712,8 +608,8 @@
       },
       {
         "Label": "U1_SN_Angle",
-        "Angle": 113.47,
-        "Level": 1,
+        "Angle": 112.38,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -737,8 +633,8 @@
       },
       {
         "Label": "U1_NA_Angle",
-        "Angle": 32,
-        "Level": 1,
+        "Angle": 28.03,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -762,14 +658,14 @@
       },
       {
         "Label": "U1_NA_Incisor_Length",
-        "Length_mm": 6.85,
-        "Level": 1,
+        "Length_mm": 2.72,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": {
             "v_u1_on_na": [
-              1364.81,
-              1837.72
+              976.44,
+              652.11
             ]
           },
           "Elements": [
@@ -792,7 +688,7 @@
       },
       {
         "Label": "FMIA_Angle",
-        "Angle": 56.61,
+        "Angle": 57.86,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -817,7 +713,7 @@
       },
       {
         "Label": "L1_NB_Angle",
-        "Angle": 32.2,
+        "Angle": 30.65,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -842,14 +738,14 @@
       },
       {
         "Label": "L1_NB_Distance",
-        "Length_mm": 6.9,
-        "Level": 0,
+        "Length_mm": 3.78,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": {
             "v_l1_on_nb": [
-              1364.5,
-              1838.59
+              953.15,
+              636.14
             ]
           },
           "Elements": [
@@ -872,8 +768,8 @@
       },
       {
         "Label": "U1_L1_Inter_Incisor_Angle",
-        "Angle": 115.79,
-        "Level": 2,
+        "Angle": 118.43,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -897,8 +793,8 @@
       },
       {
         "Label": "Y_Axis_Angle",
-        "Angle": 62.68,
-        "Level": 0,
+        "Angle": 60.68,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -922,7 +818,7 @@
       },
       {
         "Label": "Mandibular_Growth_Angle",
-        "Angle": 85.35,
+        "Angle": 88.58,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -947,8 +843,8 @@
       },
       {
         "Label": "SN_MP_Angle",
-        "Angle": 37.93,
-        "Level": 1,
+        "Angle": 34.63,
+        "Level": 0,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -972,8 +868,8 @@
       },
       {
         "Label": "U1_PP_Upper_Anterior_Alveolar_Height",
-        "Length_mm": 30.43,
-        "Level": 1,
+        "Length_mm": 15.88,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -997,8 +893,8 @@
       },
       {
         "Label": "L1_MP_Lower_Anterior_Alveolar_Height",
-        "Length_mm": 42.78,
-        "Level": 1,
+        "Length_mm": 23.21,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -1022,8 +918,8 @@
       },
       {
         "Label": "U6_PP_Upper_Posterior_Alveolar_Height",
-        "Length_mm": 26.24,
-        "Level": 1,
+        "Length_mm": 12.69,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -1047,8 +943,8 @@
       },
       {
         "Label": "L6_MP_Lower_Posterior_Alveolar_Height",
-        "Length_mm": 31.71,
-        "Level": 0,
+        "Length_mm": 16.75,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -1072,7 +968,7 @@
       },
       {
         "Label": "Mandibular_Growth_Type_Angle",
-        "Angle": 397.93,
+        "Angle": 394.63,
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
@@ -1111,8 +1007,8 @@
       },
       {
         "Label": "S_N_Anterior_Cranial_Base_Length",
-        "Length_mm": 65.07,
-        "Level": 0,
+        "Length_mm": 37.18,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -1129,8 +1025,8 @@
       },
       {
         "Label": "Go_Me_Length",
-        "Length_mm": 71.77,
-        "Level": 0,
+        "Length_mm": 40.78,
+        "Level": 2,
         "Confidence": 0,
         "Visualization": {
           "VirtualPoints": null,
@@ -1144,29 +1040,89 @@
             }
           ]
         }
-      },
+      }
+    ],
+    "BoneAgeMeasurements": [
       {
         "Label": "Cervical_Vertebral_Maturity_Stage",
         "Coordinates": [
           [
-            317,
-            1455
+            457,
+            557
           ],
           [
-            593,
-            1455
+            552,
+            557
           ],
           [
-            593,
-            2197
+            552,
+            892
           ],
           [
-            317,
-            2197
+            457,
+            892
           ]
         ],
-        "Level": 5,
-        "Confidence": 0.94
+        "Level": 6,
+        "Confidence": 0.75
+      }
+    ],
+    "AirwayMeasurements": [
+      {
+        "Label": "Airway_Gap",
+        "PNS-UPW": 11.95,
+        "SPP-SPPW": 5.88,
+        "U-MPW": 6.59,
+        "TB-TPPW": 7.72,
+        "V-LPW": 6.47,
+        "Level": false,
+        "Confidence": 1,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": null,
+          "Polygon": [
+            566.69,
+            586.46,
+            578.5,
+            523.35,
+            588.77,
+            487.34,
+            601.1,
+            440.83,
+            624.7,
+            595.85,
+            632.71,
+            634.09,
+            637.15,
+            690.65,
+            621.21,
+            791.18,
+            557.17,
+            781.66,
+            561.29,
+            676.42,
+            567.55,
+            624.58
+          ]
+        }
+      },
+      {
+        "Label": "Adenoid_Index",
+        "Value": 0.77,
+        "Level": false,
+        "Confidence": 0.85,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            }
+          ]
+        }
       }
     ]
   }
