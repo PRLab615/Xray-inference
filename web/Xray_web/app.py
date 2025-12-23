@@ -84,7 +84,8 @@ def upload_file():
     
     # 检查文件扩展名
     if not allowed_file(file.filename):
-        return jsonify({"error": f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
+        allowed_types_str = ', '.join(ALLOWED_EXTENSIONS)
+        return jsonify({"error": "File type not allowed. Allowed types: {}".format(allowed_types_str)}), 400
     
     # 生成唯一文件名
     file_ext = os.path.splitext(file.filename)[1].lower()

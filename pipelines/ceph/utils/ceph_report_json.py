@@ -110,6 +110,49 @@ ADENOID_MEASUREMENTS = {"Adenoid_Index"}
 BOOLEAN_LEVEL_MEASUREMENTS = {"Airway_Gap", "Adenoid_Index"}
 CERVICAL_VERTEBRAL_MEASUREMENTS = {"Cervical_Vertebral_Maturity_Stage"}
 
+# 测量项分类：用于将测量项分组到不同的类别
+CEPHALOMETRIC_MEASUREMENT_NAMES = {
+    "ANB_Angle",
+    "PtmANS_Length",
+    "GoPo_Length",
+    "PoNB_Length",
+    "Jaw_Development_Coordination",
+    "SGo_NMe_Ratio",
+    "FH_MP_Angle",
+    "IMPA_Angle",
+    "SNA_Angle",
+    "Upper_Jaw_Position",
+    "SNB_Angle",
+    "Pcd_Lower_Position",
+    "Distance_Witsmm",
+    "U1_SN_Angle",
+    "U1_NA_Angle",
+    "U1_NA_Incisor_Length",
+    "FMIA_Angle",
+    "L1_NB_Angle",
+    "L1_NB_Distance",
+    "U1_L1_Inter_Incisor_Angle",
+    "Y_Axis_Angle",
+    "Mandibular_Growth_Angle",
+    "SN_MP_Angle",
+    "U1_PP_Upper_Anterior_Alveolar_Height",
+    "L1_MP_Lower_Anterior_Alveolar_Height",
+    "U6_PP_Upper_Posterior_Alveolar_Height",
+    "L6_MP_Lower_Posterior_Alveolar_Height",
+    "Mandibular_Growth_Type_Angle",
+    "S_N_Anterior_Cranial_Base_Length",
+    "Go_Me_Length",
+}
+
+BONE_AGE_MEASUREMENT_NAMES = {
+    "Cervical_Vertebral_Maturity_Stage",
+}
+
+AIRWAY_MEASUREMENT_NAMES = {
+    "Airway_Gap",
+    "Adenoid_Index",
+}
+
 # 未检测标识：Level=-1 表示该测量项未被模型检测到
 UNDETECTED_LEVEL = -1
 
@@ -140,13 +183,13 @@ def generate_standard_output(
     # 从推理结果获取实际使用的 spacing，如果没有则使用默认值
     spacing = inference_results.get("spacing", DEFAULT_SPACING_MM_PER_PIXEL)
 
-    # 构建 25 点的 landmark section
-    landmark_section = _build_landmark_section(landmarks_block)
+    # 构建 25 点的 landmark section（头影组）
+    cephalometric_landmarks = _build_landmark_section(landmarks_block)
     
-    # 构建 11 点的 landmark section（如果存在）
-    landmark_11_section = None
+    # 构建 11 点的 landmark section（气道组）
+    airway_landmarks = None
     if landmarks_11_block:
-        landmark_11_section = _build_landmark_11_section(landmarks_11_block)
+        airway_landmarks = _build_landmark_11_section(landmarks_11_block)
     
     # 构建可视化映射
     viz_map = (
@@ -154,27 +197,43 @@ def generate_standard_output(
         if visualization_enabled
         else None
     )
-    measurement_section = _build_measurement_section_in_order(measurements, viz_map)
-
-    # 计算合并后的可视性等级与统计
-    visibility_grade = _visibility_grade(
-        landmark_section["DetectedLandmarks"], landmark_section["TotalLandmarks"]
+    
+    # 将测量项按类别拆分
+    cephalometric_measurements, bone_age_measurements, airway_measurements = (
+        _split_measurements_by_category(measurements, viz_map)
     )
-    average_confidence = landmark_section.get("AverageConfidence", 0.0)
 
     # 计算总的 landmark 统计（25点 + 11点）
-    total_landmarks = landmark_section["TotalLandmarks"]
-    detected_landmarks = landmark_section["DetectedLandmarks"]
-    missing_labels = landmark_section["MissingLabels"].copy()
+    total_landmarks = cephalometric_landmarks["TotalLandmarks"]
+    detected_landmarks = cephalometric_landmarks["DetectedLandmarks"]
+    missing_labels = cephalometric_landmarks["MissingLabels"].copy()
+    
+    if airway_landmarks:
+        total_landmarks += airway_landmarks["TotalLandmarks"]
+        detected_landmarks += airway_landmarks["DetectedLandmarks"]
+        missing_labels.extend(airway_landmarks["MissingLabels"])
+    
+    # 计算合并后的可视性等级与统计
+    visibility_grade = _visibility_grade(detected_landmarks, total_landmarks)
+    
+    # 计算平均置信度（合并头影和气道）
+    all_confidences = []
+    for lm in cephalometric_landmarks["Landmarks"]:
+        if lm["Status"] == "Detected":
+            all_confidences.append(lm["Confidence"])
+    if airway_landmarks:
+        for lm in airway_landmarks["Landmarks"]:
+            if lm["Status"] == "Detected":
+                all_confidences.append(lm["Confidence"])
+    average_confidence = round(mean(all_confidences), 2) if all_confidences else 0.0
 
-    combined_landmarks_list = landmark_section["Landmarks"].copy()
-    if landmark_11_section:
-        total_landmarks += landmark_11_section["TotalLandmarks"]
-        detected_landmarks += landmark_11_section["DetectedLandmarks"]
-        missing_labels.extend(landmark_11_section["MissingLabels"])
-        # 合并 11 点到 Landmarks 列表
-        combined_landmarks_list.extend(landmark_11_section["Landmarks"])
-
+    # 构建 LandmarkPositions：按类别拆分
+    landmark_positions = {
+        "CephalometricLandmarks": cephalometric_landmarks["Landmarks"],
+        "AirwayLandmarks": airway_landmarks["Landmarks"] if airway_landmarks else [],
+        # BoneAgeLandmarks 字段已移除，因为骨龄通过测量项（CVM）体现，无独立点位
+    }
+    
     data_dict = {
         "ImageSpacing": {
             "X": spacing,
@@ -197,29 +256,30 @@ def generate_standard_output(
             "QualityScore": round(average_confidence, 2),
         },
         "PatientInformation": {
-            "Gender": patient_info.get("Gender", "Male"),
+            "Gender": patient_info.get("gender", "Male"),
             "DentalAgeStage": {
                 "CurrentStage": patient_info.get("DentalAgeStage", "Permanent"),
             },
         },
-        # 关键变更：将 11 点合并进 LandmarkPositions 中，去掉 AirwayLandmarkPositions 字段
-        "LandmarkPositions": {
-            "TotalLandmarks": total_landmarks,
-            "DetectedLandmarks": detected_landmarks,
-            "MissingLandmarks": total_landmarks - detected_landmarks,
-            "MissingLabels": missing_labels,
-            "Landmarks": combined_landmarks_list,
-        },
-        "CephalometricMeasurements": {
-            "AllMeasurements": measurement_section,
+        # 关键变更：LandmarkPositions 按类别拆分为三组
+        "LandmarkPositions": landmark_positions,
+        # 关键变更：Measurements 按类别拆分为三组
+        "Measurements": {
+            "CephalometricMeasurements": cephalometric_measurements,
+            "BoneAgeMeasurements": bone_age_measurements,
+            "AirwayMeasurements": airway_measurements,
         },
     }
 
     logger.info(
-        "Generated cephalometric JSON (merged): %s/%s landmarks (25+11), %s measurements",
-        detected_landmarks,
-        total_landmarks,
-        len(measurement_section),
+        "Generated cephalometric JSON (split by category): "
+        "%s ceph landmarks, %s airway landmarks | "
+        "%s ceph measurements, %s bone-age measurements, %s airway measurements",
+        len(cephalometric_landmarks["Landmarks"]),
+        len(airway_landmarks["Landmarks"]) if airway_landmarks else 0,
+        len(cephalometric_measurements),
+        len(bone_age_measurements),
+        len(airway_measurements),
     )
     return data_dict
 
@@ -331,6 +391,41 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _split_measurements_by_category(
+    measurements: Dict[str, Dict[str, Any]],
+    viz_map: Dict[str, Any] | None = None,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    将测量项按类别拆分为三组：头影、骨龄、气道。
+    
+    Returns:
+        (cephalometric_measurements, bone_age_measurements, airway_measurements)
+        每组都是测量项字典的列表，保持原有字段结构
+    """
+    cephalometric_list: List[Dict[str, Any]] = []
+    bone_age_list: List[Dict[str, Any]] = []
+    airway_list: List[Dict[str, Any]] = []
+    
+    # 按照 MEASUREMENT_ORDER 顺序处理，确保顺序一致
+    for name in MEASUREMENT_ORDER:
+        payload = measurements.get(name, {})
+        entry = _build_measurement_entry(name, payload, viz_map)
+        
+        # 根据测量项名称分类
+        if name in BONE_AGE_MEASUREMENT_NAMES:
+            bone_age_list.append(entry)
+        elif name in AIRWAY_MEASUREMENT_NAMES:
+            airway_list.append(entry)
+        elif name in CEPHALOMETRIC_MEASUREMENT_NAMES:
+            cephalometric_list.append(entry)
+        else:
+            # 未分类的测量项默认归入头影组
+            logger.warning(f"测量项 {name} 未在分类列表中，默认归入头影组")
+            cephalometric_list.append(entry)
+    
+    return cephalometric_list, bone_age_list, airway_list
+
+
 def _build_measurement_section_in_order(
     measurements: Dict[str, Dict[str, Any]],
     viz_map: Dict[str, Any] | None = None,
@@ -338,6 +433,8 @@ def _build_measurement_section_in_order(
     """
     关键修改：严格按照 MEASUREMENT_ORDER 顺序输出所有测量项
     缺失的项目也会占位（返回空值但保留Label），保证序号不乱
+    
+    注意：此函数已被 _split_measurements_by_category 替代，保留用于向后兼容
     """
     section: List[Dict[str, Any]] = []
 
