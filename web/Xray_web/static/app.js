@@ -461,6 +461,7 @@ function renderMeasurementVisualization(measurement) {
         if (!airwayLayer) return;
         airwayLayer.destroyChildren();
 
+        // 先尝试绘制气道多边形
         let pts = null;
         if (vis && Array.isArray(vis.Polygon) && vis.Polygon.length >= 6) {
             // 使用后端提供的 Polygon（扁平数组）
@@ -482,24 +483,67 @@ function renderMeasurementVisualization(measurement) {
             if (pts) console.info(`[Airway] Fallback build from Landmarks with ${pts.length/2} points`);
         }
 
-        if (!pts || pts.length < 6) {
+        let hasPolygon = false;
+        if (pts && pts.length >= 6) {
+            const poly = new Konva.Line({
+                points: pts,
+                closed: true,
+                stroke: '#a066cc',                 // 浅紫色描边
+                strokeWidth: 1.2,
+                lineCap: 'round',
+                lineJoin: 'round',
+                tension: 0,
+                fill: 'rgba(160, 102, 204, 0.22)', // 浅紫色填充
+                listening: false,
+                strokeScaleEnabled: false
+            });
+            airwayLayer.add(poly);
+            hasPolygon = true;
+        } else {
             console.warn('[Airway] No valid polygon points to draw');
+        }
+
+        // 再绘制五条气道测量线（若后端提供 Visualization.Elements）
+        const pointMap = { ...appState.cephLandmarks };
+        if (vis?.VirtualPoints && typeof vis.VirtualPoints === 'object') {
+            Object.entries(vis.VirtualPoints).forEach(([k, v]) => {
+                if (Array.isArray(v) && v.length >= 2) {
+                    pointMap[k] = v;
+                }
+            });
+        }
+
+        const elements = Array.isArray(vis?.Elements) ? vis.Elements : [];
+        let lineCount = 0;
+        elements.forEach(el => {
+            if (!el || el.Type !== 'Line') return;
+            const from = pointMap[el.From];
+            const to = pointMap[el.To];
+            if (!from || !to) return;
+
+            const role = el.Role === 'Measurement' ? 'Measurement' : 'Reference';
+            const style = el.Style === 'Dashed' ? [6, 4] : [];
+            const stroke = role === 'Measurement' ? '#e74c3c' : '#3498db';
+            const strokeWidth = role === 'Measurement' ? 2 : 1;
+
+            const line = new Konva.Line({
+                points: [from[0] * scale, from[1] * scale, to[0] * scale, to[1] * scale],
+                stroke,
+                strokeWidth,
+                dash: style,
+                lineCap: 'round',
+                lineJoin: 'round',
+                listening: false
+            });
+            airwayLayer.add(line);
+            lineCount++;
+        });
+
+        if (!hasPolygon && lineCount === 0) {
+            console.warn('[Airway] No polygon or measurement lines to draw');
             return;
         }
 
-        const poly = new Konva.Line({
-            points: pts,
-            closed: true,
-            stroke: '#a066cc',                 // 浅紫色描边
-            strokeWidth: 1.2,
-            lineCap: 'round',
-            lineJoin: 'round',
-            tension: 0,
-            fill: 'rgba(160, 102, 204, 0.22)', // 浅紫色填充
-            listening: false,
-            strokeScaleEnabled: false
-        });
-        airwayLayer.add(poly);
         airwayLayer.draw();
         appState.konvaLayers.airway = airwayLayer;
         appState.layerVisibility.airway = true;
@@ -507,7 +551,7 @@ function renderMeasurementVisualization(measurement) {
 
         const tools = document.getElementById('measurementTools');
         if (tools) tools.classList.remove('hidden');
-        return; // 不再绘制标准测量线
+        return; // 气道分支不再走通用测量线逻辑
     }
     
     // 常规测量线渲染

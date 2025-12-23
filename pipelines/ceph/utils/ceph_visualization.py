@@ -471,7 +471,11 @@ def _go_me_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
 
 
 def _airway_gap_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-    """构建气道区域可视化：直接使用 11 个专用点形成闭合多边形。
+    """构建气道区域可视化。
+
+    - 几何外轮廓：使用 11 个专用点形成闭合多边形（质心-极角排序）
+    - 测量连线：根据医学定义补充 5 条前后径测量线段
+        PNS-UPW, SPP-SPPW, U-MPW, TB-TPPW, V-LPW
 
     采用“质心-极角排序”对已检测到的点进行环绕排序，尽可能形成外轮廓，
     保证任意点缺失情况下也能输出稳定的多边形（>=3点时）。
@@ -501,33 +505,72 @@ def _airway_gap_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, 
             if not any(np.allclose(p, q) for q in pts):
                 pts.append(p.astype(float))
 
-    if len(pts) < 3:
+    # 如有至少 3 个点，则构建闭合轮廓多边形
+    polygon: Optional[List[float]] = None
+    if len(pts) >= 3:
+        # 使用质心-极角排序，获得一个非自交的闭合轮廓
+        arr = np.vstack(pts)  # (n,2)
+        centroid = np.mean(arr, axis=0)
+        angles = np.arctan2(arr[:, 1] - centroid[1], arr[:, 0] - centroid[0])
+        order = np.argsort(angles)
+        ordered = arr[order]
+
+        contour: List[float] = []
+        for p in ordered:
+            contour.extend([float(p[0]), float(p[1])])
+        polygon = contour
+
+    # 根据医学定义补充 5 条测量线（存在即画，允许部分缺失）
+    elements: List[Dict[str, str]] = []
+    airway_pairs = [
+        ("PNS", "UPW"),   # 鼻咽段
+        ("SPP", "SPPW"),  # 口咽段（腭咽段）
+        ("U", "MPW"),     # 口咽段（腭咽段）
+        ("TB", "TPPW"),   # 口咽段（舌咽段）
+        ("V", "LPW"),     # 喉咽段
+    ]
+    for a, b in airway_pairs:
+        if _has_points(landmarks, [a, b]):
+            elements.append(_line(a, b, "Dashed", "Measurement"))
+
+    # 若既没有多边形也没有测量线，则认为无法构建可视化
+    if polygon is None and not elements:
         return None
-
-    # 使用质心-极角排序，获得一个非自交的闭合轮廓
-    arr = np.vstack(pts)  # (n,2)
-    centroid = np.mean(arr, axis=0)
-    angles = np.arctan2(arr[:, 1] - centroid[1], arr[:, 0] - centroid[0])
-    order = np.argsort(angles)
-    ordered = arr[order]
-
-    contour: List[float] = []
-    for p in ordered:
-        contour.extend([float(p[0]), float(p[1])])
 
     return {
         "VirtualPoints": None,
-        "Elements": [],
-        "Polygon": contour,
+        "Elements": elements,
+        "Polygon": polygon,
     }
 
 
 def _adenoid_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-    # 缺乏具体点位，使用 PNS 作为占位参考
-    if "PNS" not in landmarks:
+    """腺样体 A/N 比值几何可视化。
+
+    参考文档《腺体气道集成与后处理说明.md》：
+    - N 值：PNS-D' 的直线距离
+    - A 值：AD 点到 Ba-Ar 参考线的垂直距离
+    """
+    # 需要同时获取：AD, D'（11点）以及 PNS, Ba, Ar（25点）
+    required = ["AD", "D'", "PNS", "Ba", "Ar"]
+    if not _has_points(landmarks, required):
         return None
-    elements = [_line("PNS", "PNS", "Dashed", "Reference")]
-    return {"VirtualPoints": None, "Elements": elements}
+
+    ad, dprime, pns, ba, ar = (landmarks[k] for k in required)
+
+    # 计算 AD 点到 Ba-Ar 直线的垂足
+    foot = _project_point_onto_line(ad, ba, ar)
+    foot_fmt = _format_point(foot)
+    if foot_fmt is None:
+        return None
+
+    virtual_points = {"v_ad_on_baar": foot_fmt}
+    elements = [
+        _line("PNS", "D'", "Solid", "Measurement"),         # N 值：PNS-D'
+        _line("Ba", "Ar", "Solid", "Reference"),            # 参考线：Ba-Ar
+        _line("AD", "v_ad_on_baar", "Dashed", "Measurement"),  # A 值：AD 到 Ba-Ar 垂足
+    ]
+    return {"VirtualPoints": virtual_points, "Elements": elements}
 
 
 def _line(from_label: str, to_label: str, style: str, role: str) -> Dict[str, str]:
