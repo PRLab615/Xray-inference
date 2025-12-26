@@ -87,6 +87,19 @@ DEFAULT_SPACING_MM_PER_PIXEL = 0.1
 # 新增
 
 
+def _project_point_onto_line(point: np.ndarray, line_start: np.ndarray, line_end: np.ndarray) -> np.ndarray:
+    """计算 point 在 line_start-line_end 直线上的投影点（垂足）。
+
+    退化情况（line_start≈line_end）返回 line_start。
+    """
+    vec = line_end - line_start
+    denom = float(np.dot(vec, vec))
+    if denom < 1e-8:
+        return line_start
+    ratio = float(np.dot(point - line_start, vec) / denom)
+    return line_start + ratio * vec
+
+
 THRESHOLDS = {
 
     "ANB": {
@@ -258,6 +271,9 @@ def calculate_measurements(
     # 记录使用的参数（用于排查问题）
     logger.info(f"[计算参数] 性别: {sex}, 牙列期: {dentition}, spacing: {spacing} mm/pixel")
 
+    # === 纯可视化项（无数值）===
+    measurements["Reference_Planes"] = _reference_planes_payload(landmarks)
+
     # === 角度测量（不需要 spacing）===
     measurements["ANB_Angle"] = _compute_anb(landmarks, sex=sex, dentition=dentition)
     measurements["FH_MP_Angle"] = _compute_fh_mp(landmarks, sex=sex, dentition=dentition)
@@ -297,6 +313,24 @@ def calculate_measurements(
     measurements["Jaw_Development_Coordination"] = _compute_jaw_coordination(measurements)
 
     return measurements
+
+def _reference_planes_payload(landmarks: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    """Reference_Planes：纯可视化项，用于绘制常用参考平面。
+
+    注意：该项不产生数值，仅用于前端 Visualization。
+    """
+    required = ["P1", "P2", "P3", "P4", "P14", "P13", "P10", "P8"]  # S,N,Or,Po,ANS,PNS,Go,Me
+    if not _has_points(landmarks, required):
+        # 仍然用标准 missing_landmarks 结构，便于上层统一处理
+        return _missing_measurement("none", required, landmarks)
+
+    return {
+        "value": None,
+        "unit": "none",
+        "conclusion": None,
+        "status": "ok",
+    }
+
 
 def _compute_anb(landmarks: Dict[str, np.ndarray], sex: str = "male", dentition: str = "permanent") -> Dict[str, Any]:
     """
@@ -383,12 +417,26 @@ def _compute_sgo_nme(landmarks: Dict[str, np.ndarray], sex: str = "male", dentit
     }
 
 
-def _compute_ptmans_length(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
-    required = ["P17", "P14"]  # PTM-ANS
+def _compute_ptmans_length(
+    landmarks: Dict[str, np.ndarray],
+    sex: str = "male",
+    dentition: str = "permanent",
+    spacing: float = DEFAULT_SPACING_MM_PER_PIXEL,
+) -> Dict[str, Any]:
+    """PTM-ANS：基于 FH 平面(Po-Or)的水平投影距离。"""
+    required = ["P17", "P14", "P3", "P4"]  # PTM, ANS, Or, Po
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length_px = np.linalg.norm(landmarks["P17"] - landmarks["P14"])
-    length_mm = length_px * spacing  # 像素转毫米
+
+    ptm = landmarks["P17"]
+    ans = landmarks["P14"]
+    or_pt = landmarks["P3"]
+    po = landmarks["P4"]
+
+    v_ptm = _project_point_onto_line(ptm, po, or_pt)
+    v_ans = _project_point_onto_line(ans, po, or_pt)
+    length_px = np.linalg.norm(v_ptm - v_ans)
+    length_mm = float(length_px * spacing)
 
     level = _evaluate_by_threshold("PtmANS_Length", length_mm, sex, dentition)
     return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
@@ -441,34 +489,56 @@ def _compute_snb(landmarks, sex: str = "male", dentition: str = "permanent"):
     level = _evaluate_by_threshold("SNB", snb, sex, dentition)  # MODIFIED
     return {"value": float(snb), "unit": "degrees", "conclusion": level, "status": "ok"}
 
-def _compute_ptm_s(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
-    required = ["P17", "P1"]
+def _compute_ptm_s(
+    landmarks: Dict[str, np.ndarray],
+    sex: str = "male",
+    dentition: str = "permanent",
+    spacing: float = DEFAULT_SPACING_MM_PER_PIXEL,
+) -> Dict[str, Any]:
+    """Upper_Jaw_Position (PTM-S)：基于 FH 平面(Po-Or)的水平投影距离。"""
+    required = ["P17", "P1", "P3", "P4"]  # PTM, S, Or, Po
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length_px = np.linalg.norm(landmarks["P17"] - landmarks["P1"])
-    length_mm = length_px * spacing  # 像素转毫米
+
+    ptm = landmarks["P17"]
+    s = landmarks["P1"]
+    or_pt = landmarks["P3"]
+    po = landmarks["P4"]
+
+    v_ptm = _project_point_onto_line(ptm, po, or_pt)
+    v_s = _project_point_onto_line(s, po, or_pt)
+    length_px = np.linalg.norm(v_ptm - v_s)
+    length_mm = float(length_px * spacing)
+
     level = _evaluate_by_threshold("Upper_Jaw_Position", length_mm, sex, dentition)
     return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_pcd_s(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
-    """
-    Pcd-S 距离：蝶鞍点到髁突后点的距离
-    
+def _compute_pcd_s(
+    landmarks: Dict[str, np.ndarray],
+    sex: str = "male",
+    dentition: str = "permanent",
+    spacing: float = DEFAULT_SPACING_MM_PER_PIXEL,
+) -> Dict[str, Any]:
+    """Pcd-S：基于 FH 平面(Po-Or)的水平投影距离。
+
     解剖说明：
     - S (Sella): 蝶鞍中心点，位于颅底中央
     - Pcd (Posterior Condylion): 髁突后点，下颌关节的后缘
-    - Pcd 位于 S 点的后下方
-    
-    几何逻辑（反向指标）：
-    - 距离增大 (>22mm) → 髁突过于靠后 → 下颌关节后移 → 下颌整体后缩 (Level=1)
-    - 距离减小 (<16mm) → 髁突过于靠前 → 下颌关节前移 → 下颌整体前突 (Level=2)
-    - 正常范围：16-22mm (男性恒牙期 19±3mm)
     """
-    required = ["P25", "P1"]  # Pcd, S
+    required = ["P25", "P1", "P3", "P4"]  # Pcd, S, Or, Po
     if not _has_points(landmarks, required):
         return _missing_measurement("mm", required, landmarks)
-    length_px = np.linalg.norm(landmarks["P25"] - landmarks["P1"])
-    length_mm = length_px * spacing  # 像素转毫米
+
+    pcd = landmarks["P25"]
+    s = landmarks["P1"]
+    or_pt = landmarks["P3"]
+    po = landmarks["P4"]
+
+    v_pcd = _project_point_onto_line(pcd, po, or_pt)
+    v_s = _project_point_onto_line(s, po, or_pt)
+    length_px = np.linalg.norm(v_pcd - v_s)
+    length_mm = float(length_px * spacing)
+
     level = _evaluate_by_threshold("Pcd_Lower_Position", length_mm, sex, dentition)
     return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 

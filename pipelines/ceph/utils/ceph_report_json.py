@@ -68,6 +68,7 @@ LABEL_FULL_NAMES = {
 }
 
 MEASUREMENT_ORDER = [
+    "Reference_Planes",
     "ANB_Angle",
     "PtmANS_Length",
     "GoPo_Length",
@@ -112,6 +113,7 @@ CERVICAL_VERTEBRAL_MEASUREMENTS = {"Cervical_Vertebral_Maturity_Stage"}
 
 # 测量项分类：用于将测量项分组到不同的类别
 CEPHALOMETRIC_MEASUREMENT_NAMES = {
+    "Reference_Planes",
     "ANB_Angle",
     "PtmANS_Length",
     "GoPo_Length",
@@ -250,6 +252,7 @@ def generate_standard_output(
             "InterpolationAllowed": False,
         },
         "StatisticalFields": {
+            "TotalLandmarks": total_landmarks,
             "ProcessedLandmarks": detected_landmarks,
             "MissingLandmarks": total_landmarks - detected_landmarks,
             "AverageConfidence": round(average_confidence, 2),
