@@ -99,7 +99,9 @@ const CONFIG = {
     // 'prefer_coordinates'：总是使用 Coordinates（若缺失再退化）
     AIRWAY_SOURCE: 'auto',
     AIRWAY_DEBUG_POINTS: false,
-    AIRWAY_POINT_RADIUS: 2.2
+    AIRWAY_POINT_RADIUS: 2.2,
+    // 参考平面线条颜色
+    REFERENCE_PLANE_COLOR: '#ff69b4' // HotPink, 高对比度
 };
 
 // 页面加载完成后初始化
@@ -554,6 +556,75 @@ function renderMeasurementVisualization(measurement) {
         return; // 气道分支不再走通用测量线逻辑
     }
     
+    // 特殊处理：参考平面（单独图层 + 淡紫色）
+    if (measurement.Label === 'Reference_Planes') {
+        const refLayer = ensureLayer('referencePlanes');
+        if (!refLayer) return;
+
+        // 确保参考平面在 measurementLines 之下，但仍在 background 之上（避免被背景遮住）
+        // Konva 的绘制顺序由 stage.children 顺序决定。
+        // 规则：background (最底) < referencePlanes < measurementLines
+        const bg = appState.konvaLayers.background;
+        const measurement = appState.konvaLayers.measurementLines;
+        if (bg && refLayer) {
+            // 先确保不在 background 之下
+            // Konva: 确保参考平面图层在背景之上
+            refLayer.moveToTop();
+        }
+        if (measurement && refLayer) {
+            // 确保参考平面总是显示在测量线之上，以免被覆盖
+            // 使用较高 ZIndex 保证在测量线上方
+            refLayer.setZIndex((measurement ? measurement.getZIndex() : 1) + 1);
+        }
+
+        refLayer.destroyChildren();
+
+        const pointMap = { ...appState.cephLandmarks };
+        if (vis.VirtualPoints && typeof vis.VirtualPoints === 'object') {
+            Object.entries(vis.VirtualPoints).forEach(([k, v]) => {
+                if (Array.isArray(v) && v.length >= 2) {
+                    pointMap[k] = v;
+                }
+            });
+        }
+
+        const elements = Array.isArray(vis.Elements) ? vis.Elements : [];
+        let drawCount = 0;
+
+        elements.forEach(el => {
+            if (!el || el.Type !== 'Line') return;
+            const from = pointMap[el.From];
+            const to = pointMap[el.To];
+            if (!from || !to) return;
+
+            const style = el.Style === 'Dashed' ? [6, 4] : [];
+            const line = new Konva.Line({
+                points: [from[0] * scale, from[1] * scale, to[0] * scale, to[1] * scale],
+                stroke: '#FFFFCC',
+                strokeWidth: 1.4,
+                dash: style,
+                lineCap: 'round',
+                lineJoin: 'round',
+                listening: false
+            });
+            refLayer.add(line);
+            drawCount++;
+        });
+
+        refLayer.draw();
+        appState.konvaLayers.referencePlanes = refLayer;
+        appState.layerVisibility.referencePlanes = true;
+        initLayerControlPanel();
+
+        if (drawCount === 0) {
+            console.warn('参考平面可视化元素为空或坐标缺失，未绘制任何线段');
+        }
+
+        const tools = document.getElementById('measurementTools');
+        if (tools) tools.classList.remove('hidden');
+        return;
+    }
+
     // 常规测量线渲染
     const layer = ensureLayer('measurementLines');
     if (!layer) return;
@@ -1912,6 +1983,20 @@ const LANDMARK_FULL_NAMES = {
     'Ba': '颅底点',
     'Bo': '颅底角点',
     'Pcd': '下颌髁突后缘切点',
+
+    // 11点（气道/腺体）完整英文名称 -> 中文
+    'Uvula tip': '悬雍垂尖',
+    'Vallecula': '会厌谷点',
+    'Upper Pharyngeal Wall': '上咽壁点',
+    'Soft Palate Point': '软腭前点',
+    'Soft Palate Pharyngeal Wall': '软腭后咽壁点',
+    'Middle Pharyngeal Wall': '中咽壁点',
+    'Lower Pharyngeal Wall': '下咽壁点',
+    'Tongue Base': '舌根点',
+    'Tongue Posterior Pharyngeal Wall': '舌咽部后气道点',
+    'Adenoid': '腺样体最凸点',
+    'D prime': '翼板与颅底交点',
+
     // 兼容旧格式简称
     'S': '蝶鞍点',
     'N': '鼻根点',
@@ -1923,11 +2008,24 @@ const LANDMARK_FULL_NAMES = {
     'Me': '颏下点',
     'Gn': '颏顶点',
     'Go': '下颌角点',
-    'L1': '下中切牙点',
+    'L1': '下中切牙切点',
     'UI': '上中切牙切点',
     'PNS': '后鼻棘点',
     'ANS': '前鼻棘点',
-    'Ar': '关节点'
+    'Ar': '关节点',
+
+    // 兼容11点短标签
+    'U': '悬雍垂尖',
+    'V': '会厌谷点',
+    'UPW': '上咽壁点',
+    'SPP': '软腭前点',
+    'SPPW': '软腭后咽壁点',
+    'MPW': '中咽壁点',
+    'LPW': '下咽壁点',
+    'TB': '舌根点',
+    'TPPW': '舌咽部后气道点',
+    'AD': '腺样体最凸点',
+    "D'": '翼板与颅底交点'
 };
 
 /**
@@ -2708,7 +2806,8 @@ function buildCephReport(data) {
         
         // 已检测关键点：显示具体点列表
         const detectedCount = data.StatisticalFields.ProcessedLandmarks || 0;
-        const totalCount = data.LandmarkPositions?.TotalLandmarks || 0;
+        // 新版接口：TotalLandmarks 在 data.StatisticalFields；旧版/兼容：可能在 data.LandmarkPositions
+        const totalCount = data.StatisticalFields.TotalLandmarks || data.LandmarkPositions?.TotalLandmarks || 0;
         const detectedPointsDiv = document.createElement('div');
         detectedPointsDiv.className = 'key-value-item';
         detectedPointsDiv.innerHTML = `<span class="key">已检测关键点:</span> <span class="value">${detectedCount}/${totalCount}</span>`;
@@ -3041,6 +3140,7 @@ function getLevelText(label, level) {
 function getMeasurementLabel(label) {
     // 后端字段名已修正，前端直接显示即可
     // 保留此函数以备将来扩展
+    if (label === 'Reference_Planes') return '参考平面';
     return label;
 }
 
@@ -5421,6 +5521,7 @@ function addReportCardHoverEffects() {
 const LAYER_CONFIG = {
     // 侧位片图层
     landmarks: { name: '关键点', taskType: 'cephalometric' },
+    referencePlanes: { name: '参考平面', taskType: 'cephalometric' },
     cvm: { name: '颈椎成熟度', taskType: 'cephalometric' },
     measurementLines: { name: '测量线', taskType: 'cephalometric' },
     airway: { name: '气道', taskType: 'cephalometric' },
