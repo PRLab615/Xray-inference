@@ -1,4 +1,4 @@
-# 文件名: teeth_attribute1_predictor.py
+# 文件名: teeth_attribute0_predictor.py
 """牙齿属性检测模块 - YOLOv11 检测模型实现"""
 
 import sys
@@ -18,7 +18,6 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
-#from pipelines.pano.modules.teeth_attribute1.pre_post import process_teeth_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +57,13 @@ class TeethAttributeModule:
 
         # 有用标签与过滤标签
         self.useful_labels = {
-            0: 'restored_tooth',
-            5: 'embedded_tooth',
-            11: 'to_be_erupted',
-            12: 'tooth_germ'
+            0: 'residual_root',
+            1: 'wisdom_impaction',
+            2: 'to_be_erupted',
+            3: 'residual_crown',
+            4: 'carious_lesion'
         }
-        self.filtered_indices = set([1,2,3,4, 6, 7,8, 9,10])
+        self.filtered_indices = set([5])  # 过滤掉 embedded_tooth
 
     def _resolve_weights_path(self) -> str:
         env_weights = os.getenv("PANO_TEETH_ATTR_WEIGHTS")
@@ -158,5 +158,3 @@ class TeethAttributeModule:
         except Exception as e:
             logger.error(f"Teeth attribute detection inference failed: {e}")
             raise
-
-
