@@ -22,6 +22,7 @@ from pipelines.pano.modules.rootTipDensity_detect import RootTipDensityPredictor
 from pipelines.pano.modules.sinus_seg.sinus_seg_predictor import SinusSegPredictor
 from pipelines.pano.modules.sinus_class.sinus_class_predictor import SinusClassPredictor
 # 导入牙齿属性检测模块
+from pipelines.pano.modules.teeth_attribute0.teeth_attribute0_predictor import TeethAttributeModule as TeethAttribute0Module
 from pipelines.pano.modules.teeth_attribute1.teeth_attribute1_predictor import TeethAttributeModule
 from pipelines.pano.modules.teeth_attribute2.teeth_attribute2_predictor import TeethAttribute2Module
 from pipelines.pano.modules.curved_short_root.curved_short_root_predictor import CurvedShortRootModule
@@ -64,12 +65,12 @@ ATTRIBUTE_DESCRIPTION_MAP = {
     "root_absorption": "牙根吸收",
     "to_be_erupted": "待萌出",
     "tooth_germ": "牙胚",
-    "wisdom_tooth_impaction": "智齿阻生",
+    "wisdom_impaction": "智齿阻生",
 }
 
 # 与 code/config.py 一致的阈值设置
-CONF_THRESHOLD = 0.3
-IOU_THRESHOLD = 0.5
+CONF_THRESHOLD = 0.2
+IOU_THRESHOLD = 0.2
 
 
 class PanoPipeline(BasePipeline):
@@ -128,6 +129,23 @@ class PanoPipeline(BasePipeline):
         exclude_keys = {'description'}
         return {k: v for k, v in config.items() if k not in exclude_keys}
 
+    def _log_weights_info(self):
+        """记录所有模块的权重信息"""
+        logger.info("=" * 60)
+        logger.info("PanoPipeline Weights Information:")
+        logger.info(f"Total modules loaded: {len(self.modules)}")
+        logger.info("=" * 60)
+
+        for module_name, module in sorted(self.modules.items()):
+            if hasattr(module, 'weights_path') and module.weights_path:
+                logger.info(f"  {module_name}: {module.weights_path}")
+            elif hasattr(module, 'weights_path'):
+                logger.info(f"  {module_name}: weights_path is None/empty")
+            else:
+                logger.info(f"  {module_name}: No weights_path attribute")
+
+        logger.info("=" * 60)
+
     def _initialize_modules(self):
         """初始化所有模块，从配置中读取参数"""
         from tools.weight_fetcher import WeightFetchError
@@ -169,35 +187,43 @@ class PanoPipeline(BasePipeline):
             logger.info("  ✓ Sinus Classification module loaded")
 
 
-            # 8. 牙齿属性检测模块1 (teeth_attribute1)
+            # 8. 牙齿属性检测模块0 (teeth_attribute0)
+            teeth_attr0_cfg = self._get_module_config('teeth_attribute0')
+            self.modules['teeth_attribute0'] = TeethAttribute0Module(**teeth_attr0_cfg)
+            logger.info("  ✓ Teeth Attribute0 module loaded")
+
+            # 9. 牙齿属性检测模块1 (teeth_attribute1)
             teeth_attr1_cfg = self._get_module_config('teeth_attribute1')
             self.modules['teeth_attribute1'] = TeethAttributeModule(**teeth_attr1_cfg)
             logger.info("  ✓ Teeth Attribute1 module loaded")
 
-            # 9. 牙齿属性检测模块2 (teeth_attribute2)
+            # 10. 牙齿属性检测模块2 (teeth_attribute2)
             teeth_attr2_cfg = self._get_module_config('teeth_attribute2')
             self.modules['teeth_attribute2'] = TeethAttribute2Module(**teeth_attr2_cfg)
             logger.info("  ✓ Teeth Attribute2 module loaded")
 
-            # 10. 牙齿属性检测模块3-压根形态弯曲短小 (curved_short_root)
+            # 11. 牙齿属性检测模块3-压根形态弯曲短小 (curved_short_root)
             teeth_attr3_cfg = self._get_module_config('curved_short_root')
             self.modules['curved_short_root'] = CurvedShortRootModule(**teeth_attr3_cfg)
             logger.info("  ✓ curved_short_root module loaded")
 
-            # 11. 牙齿属性检测模块4-智齿已萌出 (erupted_wisdomteeth)
+            # 12. 牙齿属性检测模块4-智齿已萌出 (erupted_wisdomteeth)
             teeth_attr4_cfg = self._get_module_config('erupted_wisdomteeth')
             self.modules['erupted_wisdomteeth'] = EruptedModule(**teeth_attr4_cfg)
             logger.info("  ✓ erupted_wisdomteeth module loaded")
 
-            # 12. 根尖低密度影检测模块 (rootTipDensity_detect)
+            # 13. 根尖低密度影检测模块 (rootTipDensity_detect)
             rootTipDensity_cfg = self._get_module_config('rootTipDensity_detect')
             self.modules['rootTipDensity_detect'] = RootTipDensityPredictor(**rootTipDensity_cfg)
             logger.info("  ✓ RootTipDensity Detection module loaded")
 
-            # 13. 牙周吸收检测模块 (periodontal_detect)
+            # 14. 牙周吸收检测模块 (periodontal_detect)
             periodontal_cfg = self._get_module_config('periodontal_detect')
             self.modules['periodontal_detect'] = PeriodontalPredictor(**periodontal_cfg)
             logger.info("  ✓ Periodontal Detection module loaded")
+
+            # 显示权重信息
+            self._log_weights_info()
 
 
         except (WeightFetchError, FileNotFoundError) as e:
@@ -205,9 +231,14 @@ class PanoPipeline(BasePipeline):
             logger.error(f"Failed to load model weights: {e}")
             logger.warning("Entering MOCK MODE: Will return example JSON data for all inference requests")
             self.is_mock_mode = True
+
+            # 在mock模式下也要显示权重信息
+            self._log_weights_info()
         except Exception as e:
             # 其他初始化错误仍然抛出（不通过错误消息判断，避免误判）
             logger.error(f"Failed to initialize some modules: {e}")
+            # 即使初始化失败，也显示已加载模块的权重信息
+            self._log_weights_info()
             raise
 
     def run(
@@ -287,19 +318,22 @@ class PanoPipeline(BasePipeline):
             # 2.5 牙齿分割
             teeth_results = self._run_teeth_seg(image_path)
 
-            # 2.6 牙齿属性检测1
+            # 2.6 牙齿属性检测0
+            teeth_attribute0_results = self._run_teeth_attribute0(image_path)
+
+            # 2.7 牙齿属性检测1
             teeth_attribute1_results = self._run_teeth_attribute1(image_path)
 
-            # 2.7 牙齿属性检测2
+            # 2.8 牙齿属性检测2
             teeth_attribute2_results = self._run_teeth_attribute2(image_path)
 
-            # 2.8 牙齿属性检测3-压根形态弯曲短小
+            # 2.9 牙齿属性检测3-压根形态弯曲短小
             curved_short_root_results = self._run_curved_short_root(image_path)
 
-            # 2.9 牙齿属性检测4-智齿已萌出
+            # 2.10 牙齿属性检测4-智齿已萌出
             erupted_wisdomteeth_results = self._run_erupted_wisdomteeth(image_path)
 
-            # 2.10 上颌窦分析 (分割 + 分类 + 气化判断)
+            # 2.11 上颌窦分析 (分割 + 分类 + 气化判断)
             # 需要传入牙齿分割结果和比例尺，用于计算上颌窦气化类型
             sinus_results = self._run_sinus_workflow(
                 image_path, 
@@ -322,6 +356,7 @@ class PanoPipeline(BasePipeline):
         try:
             teeth_analysis = self._analyze_teeth_and_attributes(
                 teeth_results or {},
+                teeth_attribute0_results or {},
                 teeth_attribute1_results or {},
                 teeth_attribute2_results or {},
                 curved_short_root_results or {},
@@ -345,6 +380,7 @@ class PanoPipeline(BasePipeline):
         logger.debug(f"[Pipeline] mandible_results keys: {list(mandible_results.keys()) if mandible_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] implant_results keys: {list(implant_results.keys()) if implant_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] teeth_results keys: {list(teeth_results.keys()) if teeth_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] teeth_attribute0_results keys: {list(teeth_attribute0_results.keys()) if teeth_attribute0_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] teeth_attribute1_results keys: {list(teeth_attribute1_results.keys()) if teeth_attribute1_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] teeth_attribute2_results keys: {list(teeth_attribute2_results.keys()) if teeth_attribute2_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] curved_short_root_results keys: {list(curved_short_root_results.keys()) if curved_short_root_results else 'EMPTY'}")
@@ -363,6 +399,7 @@ class PanoPipeline(BasePipeline):
             implant=implant_results,
             teeth=teeth_results,
             sinus=sinus_results,  # 加入上颌窦结果
+            teeth_attribute0=teeth_attribute0_results,
             teeth_attribute1=teeth_attribute1_results,
             teeth_attribute2=teeth_attribute2_results,
             curved_short_root=curved_short_root_results,
@@ -569,6 +606,34 @@ class PanoPipeline(BasePipeline):
             return processed_results
         except Exception as e:
             logger.error(f"Teeth segmentation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+
+    def _run_teeth_attribute0(self, image_path: str) -> dict:
+        """ 执行牙齿属性0检测
+        Args:
+            image_path: 图像文件路径
+        Returns:
+            dict: 牙齿属性0检测结果
+        """
+        self._log_step("牙齿属性检测0", "使用 YOLOv11 进行属性检测")
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting teeth attribute0 detection for: {image_path}")
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            # 执行推理
+            raw_results = self.modules['teeth_attribute0'].predict(image)
+            elapsed = time.time() - start_time
+            logger.info(f"Teeth attribute0 detection completed in {elapsed:.2f}s")
+            return raw_results
+        except Exception as e:
+            logger.error(f"Teeth attribute0 detection failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {}
@@ -1339,11 +1404,12 @@ class PanoPipeline(BasePipeline):
     def _analyze_teeth_and_attributes(
             self,
             teeth_results: dict,
+            teeth_attr0: dict,
             teeth_attr1: dict,
             teeth_attr2: dict,
             curved_short_root: dict,
             erupted_wisdomteeth: dict,
-            iou_threshold: float = 0.5,
+            iou_threshold: float = 0.2,
     ) -> dict:
         """
         牙位-属性绑定、缺失牙、智齿状态分析
@@ -1501,6 +1567,16 @@ class PanoPipeline(BasePipeline):
         # ------------------------------------------------------------------
         all_attr_boxes = []  # [(bbox, attribute_name), ...]
 
+        # 从 teeth_attr0 提取属性框
+        if teeth_attr0:
+            boxes = teeth_attr0.get("boxes", [])
+            attr_names = teeth_attr0.get("attribute_names", [])
+            if isinstance(boxes, np.ndarray):
+                boxes = boxes.tolist()
+            for i, box in enumerate(boxes):
+                if i < len(attr_names):
+                    all_attr_boxes.append((box, attr_names[i]))
+
         # 从 teeth_attr1 提取属性框
         if teeth_attr1:
             boxes = teeth_attr1.get("boxes", [])
@@ -1624,7 +1700,7 @@ class PanoPipeline(BasePipeline):
                         "Detail": "已萌出",
                         "Confidence": 0.85
                     }
-                elif "wisdom_tooth_impaction" in attrs or "impacted" in attrs:
+                elif "wisdom_impaction" in attrs or "impacted" in attrs:
                     # 阻生
                     third_molar_summary[fdi] = {
                         "Level": 1,
@@ -1707,6 +1783,7 @@ class PanoPipeline(BasePipeline):
             "mandible": module_results.get("mandible", {}),
             "implant": module_results.get("implant", {}),
             "teeth": module_results.get("teeth", {}),
+            "teeth_attribute0": module_results.get("teeth_attribute0", {}),
             "teeth_attribute1": module_results.get("teeth_attribute1", {}),
             "teeth_attribute2": module_results.get("teeth_attribute2", {}),
             "curved_short_root": module_results.get("curved_short_root", {}),

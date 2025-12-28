@@ -61,6 +61,14 @@ pipelines:
         conf: 0.25
         iou: 0.45
 
+      teeth_attribute0:
+        description: "牙齿属性1模块（YOLOv11）"
+        weights_key: "weights/panoramic/model0.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.45
+
       teeth_attribute1:
         description: "牙齿属性1模块（YOLOv11）"
         weights_key: "weights/panoramic/model1.pt"
