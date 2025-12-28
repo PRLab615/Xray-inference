@@ -59,7 +59,7 @@ ATTRIBUTE_DESCRIPTION_MAP = {
     "root_absorption": "牙根吸收",
     "to_be_erupted": "待萌出",
     "tooth_germ": "牙胚",
-    "wisdom_tooth_impaction": "智齿阻生",
+    "wisdom_impaction": "智齿阻生",
 }
 
 
@@ -102,6 +102,7 @@ def generate_standard_output(
     teeth_res = inference_results.get("teeth", {})
     sinus_res = inference_results.get("sinus", {})
     # 新增：提取单独的牙齿属性模块结果
+    teeth_attribute0_res = inference_results.get("teeth_attribute0", {})
     teeth_attribute1_res = inference_results.get("teeth_attribute1", {})
     teeth_attribute2_res = inference_results.get("teeth_attribute2", {})
     curved_short_root_res = inference_results.get("curved_short_root", {})
@@ -193,16 +194,17 @@ def generate_standard_output(
         implant_data = format_implant_report(implant_res)
         report["ImplantAnalysis"] = implant_data
 
-    # 6. 组装牙齿分割结果 (MissingTeeth, ThirdMolarSummary, ToothAnalysis) - 真实数据
-    if teeth_res:
-        # 传递单独的牙齿属性模块结果到 format_teeth_report（内部进行IoU匹配整合）
-        teeth_data = format_teeth_report(
-            teeth_res,
-            teeth_attribute1_res,
-            teeth_attribute2_res,
-            curved_short_root_res,
-            erupted_wisdomteeth_res
-        )
+        # 6. 组装牙齿分割结果 (MissingTeeth, ThirdMolarSummary, ToothAnalysis) - 真实数据
+        if teeth_res:
+            # 传递单独的牙齿属性模块结果到 format_teeth_report（内部进行IoU匹配整合）
+            teeth_data = format_teeth_report(
+                teeth_res,
+                teeth_attribute0_res,
+                teeth_attribute1_res,
+                teeth_attribute2_res,
+                curved_short_root_res,
+                erupted_wisdomteeth_res
+            )
         report["MissingTeeth"] = teeth_data["MissingTeeth"]
         report["ThirdMolarSummary"] = teeth_data["ThirdMolarSummary"]
         report["ToothAnalysis"] = teeth_data["ToothAnalysis"]
@@ -559,6 +561,7 @@ def format_teeth_report(
             'segments': np.ndarray,  # [N, num_points, 2] 多边形坐标（原始图像坐标）
             'original_shape': tuple  # (H, W)
         }
+        teeth_attribute0_res: 牙齿属性检测结果0 {'instances': [{'label': str, 'bbox': [x1,y1,x2,y2], 'score': float}, ...]}
         teeth_attribute1_res: 牙齿属性检测结果1 {'instances': [{'label': str, 'bbox': [x1,y1,x2,y2], 'score': float}, ...]}
         teeth_attribute2_res: 牙齿属性检测结果2 {'instances': [{'label': str, 'bbox': [x1,y1,x2,y2], 'score': float}, ...]}
         curved_short_root_res: 牙根形态弯曲短小检测 {'instances': [{'label': str, 'bbox': [x1,y1,x2,y2], 'score': float}, ...]}

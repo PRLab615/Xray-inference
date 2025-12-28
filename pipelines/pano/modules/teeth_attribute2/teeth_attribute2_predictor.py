@@ -58,10 +58,10 @@ class TeethAttribute2Module:
         # 有用标签与过滤标签
         self.useful_labels = {
             0: 'rct_treated',
-            1: 'root_absorption',
-            2: 'wisdom_tooth_impaction'
+            1: 'root_absorption'
+
         }
-        self.filtered_indices = set()  # 假设新模型仅包含有用标签，无需过滤
+        self.filtered_indices = set([2])
 
     def _resolve_weights_path(self) -> str:
         env_weights = os.getenv("PANO_TEETH_ATTR2_WEIGHTS")
