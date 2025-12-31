@@ -186,6 +186,9 @@ class TeethSegmentationModule:
                 # classes: class indices [N]
                 class_indices = results[0].boxes.cls.cpu().numpy() if results[0].boxes is not None else np.array([])
 
+                # confidences: detection confidences [N]
+                confidences = results[0].boxes.conf.cpu().numpy() if results[0].boxes is not None else np.array([])
+
                 # class names: 从模型 names 字典获取 (假设 names = {0: 'tooth-11', 1: 'tooth-12', ...})
                 class_names = [self.model.names[int(idx)] for idx in class_indices] if len(class_indices) > 0 else []
 
@@ -195,6 +198,7 @@ class TeethSegmentationModule:
                 "masks": masks,  # [N, H, W] binary masks (已经是原始图像尺寸)
                 "segments": segments,  # [N, num_points, 2] 多边形坐标（原始图像坐标）
                 "class_names": class_names,  # [N] strings like "tooth-11"
+                "confidences": confidences,  # [N] detection confidences
                 "original_shape": original_shape
             }
 
@@ -208,9 +212,10 @@ def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
     调用后处理，生成缺牙/智齿/乳牙报告，并保留原始掩码数据和segments。
     """
     processed_results = process_teeth_masks(
-        raw_results["masks"], 
-        raw_results["class_names"], 
-        raw_results["original_shape"]
+        raw_results["masks"],
+        raw_results["class_names"],
+        raw_results["original_shape"],
+        raw_results.get("confidences")  # 传递置信度信息
     )
     
     # 保留原始掩码数据和segments，以便后续生成 ToothAnalysis

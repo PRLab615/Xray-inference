@@ -80,6 +80,12 @@ class TeethAttributeModule:
                 logger.info(f"Using local weights file: {candidate} (from {origin})")
                 return candidate
 
+            # 尝试本地缓存路径
+            local_cache_path = os.path.join("cached_weights", candidate)
+            if os.path.exists(local_cache_path):
+                logger.info(f"Using cached weights file: {local_cache_path} (from {origin})")
+                return local_cache_path
+
             if origin == "weights_key":
                 try:
                     downloaded = ensure_weight_file(candidate, force_download=self.weights_force_download)
@@ -133,17 +139,34 @@ class TeethAttributeModule:
                 logger.warning("No teeth attributes detected.")
                 return {"boxes": [], "attribute_names": [], "original_shape": original_shape}
 
-            boxes_xyxy = results[0].boxes.xyxy.cpu().numpy() if results[0].boxes else np.array([])
+            boxes_xyxy = results[0].boxes.xyxy.cpu().numpy() if results[0].boxes else np.array([]).reshape(0, 4)
             class_indices = results[0].boxes.cls.cpu().numpy() if results[0].boxes else np.array([])
+            confidences = results[0].boxes.conf.cpu().numpy() if results[0].boxes else np.array([])
+
+            # 数据一致性检查
+            if results[0].boxes:
+                n_boxes = len(boxes_xyxy)
+                n_classes = len(class_indices)
+                n_confs = len(confidences)
+
+                if n_boxes != n_classes or n_boxes != n_confs:
+                    logger.warning(f"YOLO output inconsistency detected: boxes={n_boxes}, classes={n_classes}, confidences={n_confs}")
+                    # 使用最小长度确保数据一致
+                    min_len = min(n_boxes, n_classes, n_confs)
+                    boxes_xyxy = boxes_xyxy[:min_len]
+                    class_indices = class_indices[:min_len]
+                    confidences = confidences[:min_len]
 
             attribute_names = []
             filtered_boxes = []
+            filtered_confidences = []
 
-            for box, cls in zip(boxes_xyxy, class_indices):
+            for i, (box, cls) in enumerate(zip(boxes_xyxy, class_indices)):
                 cls = int(cls)
                 if cls not in self.filtered_indices and cls in self.useful_labels:
                     filtered_boxes.append(box)
                     attribute_names.append(self.useful_labels[cls])
+                    filtered_confidences.append(confidences[i] if i < len(confidences) else 0.5)
 
             logger.info(f"Detected {len(filtered_boxes)} useful detections.")
             logger.info(f"Useful attribute names: {attribute_names}")
@@ -152,6 +175,7 @@ class TeethAttributeModule:
             return {
                 "boxes": np.array(filtered_boxes),
                 "attribute_names": attribute_names,
+                "confidences": np.array(filtered_confidences),
                 "original_shape": original_shape
             }
 
