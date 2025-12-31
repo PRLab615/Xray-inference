@@ -36,14 +36,14 @@ logger = logging.getLogger(__name__)
 # 注意：这些常量后续 code 目录删除后，仍然以此处为“单一事实来源”
 
 # 智齿 FDI
-WISDOM_TEETH_FDI = ["18", "28", "38", "48"]
+WISDOM_TEETH_FDI = [18, 28, 38, 48]
 
 # 所有恒牙 FDI
 ALL_PERMANENT_TEETH_FDI = [
-    "11", "12", "13", "14", "15", "16", "17", "18",
-    "21", "22", "23", "24", "25", "26", "27", "28",
-    "31", "32", "33", "34", "35", "36", "37", "38",
-    "41", "42", "43", "44", "45", "46", "47", "48",
+    11, 12, 13, 14, 15, 16, 17, 18,
+    21, 22, 23, 24, 25, 26, 27, 28,
+    31, 32, 33, 34, 35, 36, 37, 38,
+    41, 42, 43, 44, 45, 46, 47, 48,
 ]
 
 # 属性到中文描述映射（复制自 code/config.py）
@@ -784,8 +784,8 @@ class PanoPipeline(BasePipeline):
         # 右侧上颌后牙：14-18（图像左侧 = 患者右侧）
         # 左侧上颌后牙：24-28（图像右侧 = 患者左侧）
         UPPER_POSTERIOR_TEETH = {
-            "right": ["14", "15", "16", "17", "18"],  # 患者右侧
-            "left": ["24", "25", "26", "27", "28"]    # 患者左侧
+            "right": [14, 15, 16, 17, 18],  # 患者右侧
+            "left": [24, 25, 26, 27, 28]    # 患者左侧
         }
 
         try:
@@ -842,7 +842,7 @@ class PanoPipeline(BasePipeline):
                 detected_teeth = teeth_results.get("detected_teeth", [])
                 all_fdi = [t.get("fdi") for t in detected_teeth]
                 logger.info(f"[DEBUG] All detected teeth FDI: {all_fdi}")
-                upper_posterior_fdi = [f for f in all_fdi if f in ["14","15","16","17","18","24","25","26","27","28"]]
+                upper_posterior_fdi = [f for f in all_fdi if f in [14,15,16,17,18,24,25,26,27,28]]
                 logger.info(f"[DEBUG] Upper posterior teeth in detection: {upper_posterior_fdi}")
 
             # 获取比例尺（默认 0.1 mm/pixel）
@@ -1563,72 +1563,130 @@ class PanoPipeline(BasePipeline):
                     f"[DEBUG] 缩放后牙齿 [{fdi}] bbox: [{bbox[0]:.1f}, {bbox[1]:.1f}, {bbox[2]:.1f}, {bbox[3]:.1f}]")
 
         # ------------------------------------------------------------------
-        # 2. 收集所有属性检测框
+        # 2. 收集所有属性检测框（包含置信度）
         # ------------------------------------------------------------------
-        all_attr_boxes = []  # [(bbox, attribute_name), ...]
+        all_attr_boxes = []  # [(bbox, attribute_name, confidence), ...]
 
         # 从 teeth_attr0 提取属性框
         if teeth_attr0:
             boxes = teeth_attr0.get("boxes", [])
             attr_names = teeth_attr0.get("attribute_names", [])
+            confidences = teeth_attr0.get("confidences", [])
             if isinstance(boxes, np.ndarray):
                 boxes = boxes.tolist()
-            for i, box in enumerate(boxes):
-                if i < len(attr_names):
-                    all_attr_boxes.append((box, attr_names[i]))
+            if isinstance(confidences, np.ndarray):
+                confidences = confidences.tolist()
+
+            # 验证数据一致性
+            min_length = min(len(boxes), len(attr_names), len(confidences))
+            if min_length != len(boxes) or min_length != len(attr_names) or min_length != len(confidences):
+                logger.warning(f"[teeth_attr0] 数据不一致: boxes={len(boxes)}, attr_names={len(attr_names)}, confidences={len(confidences)}，使用前{min_length}个有效数据")
+
+            for i in range(min_length):
+                confidence = float(confidences[i])
+                all_attr_boxes.append((boxes[i], attr_names[i], confidence))
 
         # 从 teeth_attr1 提取属性框
         if teeth_attr1:
             boxes = teeth_attr1.get("boxes", [])
             attr_names = teeth_attr1.get("attribute_names", [])
+            confidences = teeth_attr1.get("confidences", [])
+
             # 兼容旧格式
             if not attr_names:
                 attributes_detected = teeth_attr1.get("attributes_detected", [])
-                for i, attr_info in enumerate(attributes_detected):
-                    if i < len(boxes):
-                        attr_name = attr_info.get("attribute", "unknown")
-                        all_attr_boxes.append((boxes[i], attr_name))
+                if isinstance(boxes, np.ndarray):
+                    boxes = boxes.tolist()
+                if isinstance(confidences, np.ndarray):
+                    confidences = confidences.tolist()
+
+                # 验证数据一致性
+                min_length = min(len(boxes), len(attributes_detected), len(confidences))
+                if min_length != len(boxes) or min_length != len(attributes_detected) or min_length != len(confidences):
+                    logger.warning(f"[teeth_attr1 old format] 数据不一致: boxes={len(boxes)}, attributes_detected={len(attributes_detected)}, confidences={len(confidences)}，使用前{min_length}个有效数据")
+
+                for i in range(min_length):
+                    attr_name = attributes_detected[i].get("attribute", "unknown")
+                    confidence = float(confidences[i])
+                    all_attr_boxes.append((boxes[i], attr_name, confidence))
             else:
-                for i, box in enumerate(boxes):
-                    if i < len(attr_names):
-                        all_attr_boxes.append((box, attr_names[i]))
+                if isinstance(boxes, np.ndarray):
+                    boxes = boxes.tolist()
+                if isinstance(confidences, np.ndarray):
+                    confidences = confidences.tolist()
+
+                # 验证数据一致性
+                min_length = min(len(boxes), len(attr_names), len(confidences))
+                if min_length != len(boxes) or min_length != len(attr_names) or min_length != len(confidences):
+                    logger.warning(f"[teeth_attr1 new format] 数据不一致: boxes={len(boxes)}, attr_names={len(attr_names)}, confidences={len(confidences)}，使用前{min_length}个有效数据")
+
+                for i in range(min_length):
+                    confidence = float(confidences[i])
+                    all_attr_boxes.append((boxes[i], attr_names[i], confidence))
 
         # 从 teeth_attr2 提取属性框
         if teeth_attr2:
             boxes = teeth_attr2.get("boxes", [])
             attr_names = teeth_attr2.get("attribute_names", [])
+            confidences = teeth_attr2.get("confidences", [])
             if isinstance(boxes, np.ndarray):
                 boxes = boxes.tolist()
-            for i, box in enumerate(boxes):
-                if i < len(attr_names):
-                    all_attr_boxes.append((box, attr_names[i]))
+            if isinstance(confidences, np.ndarray):
+                confidences = confidences.tolist()
+
+            # 验证数据一致性
+            min_length = min(len(boxes), len(attr_names), len(confidences))
+            if min_length != len(boxes) or min_length != len(attr_names) or min_length != len(confidences):
+                logger.warning(f"[teeth_attr2] 数据不一致: boxes={len(boxes)}, attr_names={len(attr_names)}, confidences={len(confidences)}，使用前{min_length}个有效数据")
+
+            for i in range(min_length):
+                confidence = float(confidences[i])
+                all_attr_boxes.append((boxes[i], attr_names[i], confidence))
 
         # 从 curved_short_root 提取属性框
         if curved_short_root:
             boxes = curved_short_root.get("boxes", [])
             attr_names = curved_short_root.get("attribute_names", [])
+            confidences = curved_short_root.get("confidences", [])
             if isinstance(boxes, np.ndarray):
                 boxes = boxes.tolist()
-            for i, box in enumerate(boxes):
-                if i < len(attr_names):
-                    all_attr_boxes.append((box, attr_names[i]))
+            if isinstance(confidences, np.ndarray):
+                confidences = confidences.tolist()
+
+            # 验证数据一致性
+            min_length = min(len(boxes), len(attr_names), len(confidences))
+            if min_length != len(boxes) or min_length != len(attr_names) or min_length != len(confidences):
+                logger.warning(f"[curved_short_root] 数据不一致: boxes={len(boxes)}, attr_names={len(attr_names)}, confidences={len(confidences)}，使用前{min_length}个有效数据")
+
+            for i in range(min_length):
+                confidence = float(confidences[i])
+                all_attr_boxes.append((boxes[i], attr_names[i], confidence))
 
         # 从 erupted_wisdomteeth 提取属性框
         if erupted_wisdomteeth:
             boxes = erupted_wisdomteeth.get("boxes", [])
             attr_names = erupted_wisdomteeth.get("attribute_names", [])
+            confidences = erupted_wisdomteeth.get("confidences", [])
             if isinstance(boxes, np.ndarray):
                 boxes = boxes.tolist()
-            for i, box in enumerate(boxes):
-                if i < len(attr_names):
-                    all_attr_boxes.append((box, attr_names[i]))
+            if isinstance(confidences, np.ndarray):
+                confidences = confidences.tolist()
+
+            # 验证数据一致性
+            min_length = min(len(boxes), len(attr_names), len(confidences))
+            if min_length != len(boxes) or min_length != len(attr_names) or min_length != len(confidences):
+                logger.warning(f"[erupted_wisdomteeth] 数据不一致: boxes={len(boxes)}, attr_names={len(attr_names)}, confidences={len(confidences)}，使用前{min_length}个有效数据")
+
+            for i in range(min_length):
+                confidence = float(confidences[i])
+                all_attr_boxes.append((boxes[i], attr_names[i], confidence))
 
         logger.info(f"[DEBUG] 收集到 {len(all_attr_boxes)} 个属性框")
 
         # ------------------------------------------------------------------
-        # 3. IoU 匹配：属性框 -> 牙齿
+        # 3. IoU 匹配：属性框 -> 牙齿（包含置信度）
         # ------------------------------------------------------------------
-        tooth_attributes = defaultdict(set)  # FDI -> set of attribute names
+        tooth_attributes = defaultdict(list)  # FDI -> list of (attr_name, confidence)
 
         def bbox_iou(box1, box2) -> float:
             """计算两个 bbox 的 IoU"""
@@ -1648,7 +1706,7 @@ class PanoPipeline(BasePipeline):
             union = area1 + area2 - inter_area
             return inter_area / union if union > 0 else 0.0
 
-        for attr_box, attr_name in all_attr_boxes:
+        for attr_box, attr_name, attr_confidence in all_attr_boxes:
             best_fdi = None
             best_iou = 0.0
             for fdi, tooth_box in tooth_bboxes.items():
@@ -1658,28 +1716,27 @@ class PanoPipeline(BasePipeline):
                     best_fdi = fdi
 
             if best_fdi and best_iou >= iou_threshold:
-                tooth_attributes[best_fdi].add(attr_name)
-                logger.debug(f"[DEBUG] 属性 '{attr_name}' 匹配到牙齿 {best_fdi}，IoU={best_iou:.3f}")
+                tooth_attributes[best_fdi].append((attr_name, attr_confidence))
+                logger.debug(f"[DEBUG] 属性 '{attr_name}' (conf={attr_confidence:.2f}) 匹配到牙齿 {best_fdi}，IoU={best_iou:.3f}")
             elif best_fdi:
-                logger.debug(f"[DEBUG] 属性 '{attr_name}' 最佳匹配 {best_fdi}，但 IoU={best_iou:.3f} < {iou_threshold}")
+                logger.debug(f"[DEBUG] 属性 '{attr_name}' (conf={attr_confidence:.2f}) 最佳匹配 {best_fdi}，但 IoU={best_iou:.3f} < {iou_threshold}")
 
         logger.info(f"[DEBUG] 成功匹配属性的牙齿数: {len(tooth_attributes)}")
 
         # ------------------------------------------------------------------
-        # 4. 分析缺失牙
+        # 4. 分析缺失牙 (包括智齿)
         # ------------------------------------------------------------------
         detected_fdi_set = set(tooth_bboxes.keys())
         missing_teeth = []
 
         for fdi in ALL_PERMANENT_TEETH_FDI:
             if fdi not in detected_fdi_set:
-                # 排除智齿（智齿缺失不算缺牙）
-                if fdi not in WISDOM_TEETH_FDI:
-                    missing_teeth.append({
-                        "FDI": fdi,
-                        "Reason": "missing",
-                        "Detail": f"牙位 {fdi} 未检测到"
-                    })
+                # 所有恒牙 FDI 未检测到都算缺失，包括智齿
+                missing_teeth.append({
+                    "FDI": fdi,
+                    "Reason": "missing",
+                    "Detail": f"牙位 {fdi} 未检测到"
+                })
 
         logger.info(f"[DEBUG] 缺失牙数量: {len(missing_teeth)}")
 
@@ -1730,10 +1787,22 @@ class PanoPipeline(BasePipeline):
         # ------------------------------------------------------------------
         # 6. 返回结果
         # ------------------------------------------------------------------
+        # 将属性列表转换为规范格式
+        tooth_attributes_formatted = {}
+        for fdi, attr_list in tooth_attributes.items():
+            formatted_attrs = []
+            for attr_name, confidence in attr_list:
+                formatted_attrs.append({
+                    "Value": attr_name,
+                    "Description": ATTRIBUTE_DESCRIPTION_MAP.get(attr_name, attr_name),
+                    "Confidence": round(float(confidence), 2)
+                })
+            tooth_attributes_formatted[fdi] = formatted_attrs
+
         result = {
             "MissingTeeth": missing_teeth,
             "ThirdMolarSummary": third_molar_summary,
-            "ToothAttributes": {fdi: list(attrs) for fdi, attrs in tooth_attributes.items()}
+            "ToothAttributes": tooth_attributes_formatted
         }
 
         logger.info("=" * 60)

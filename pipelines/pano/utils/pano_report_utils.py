@@ -630,27 +630,15 @@ def format_teeth_report(
     for tooth_info in detected_teeth_list:
         fdi = tooth_info.get("fdi", "")
         mask_index = tooth_info.get("mask_index", -1)
+        # 获取真实置信度，如果没有则使用默认值
+        confidence = tooth_info.get("confidence", 0.85)
 
         if not fdi:
             logger.warning(f"[format_teeth_report] 牙齿信息缺少FDI，跳过: {tooth_info}")
             continue
 
-        # 构建属性列表：优先使用 Pipeline 已经绑定好的属性
-        # 将属性名称转换为符合规范的对象格式: {"Value": str, "Description": str, "Confidence": float}
-        raw_properties = tooth_attributes_map.get(fdi, [])
-        properties = []
-        for attr_name in raw_properties:
-            # 如果已经是字典格式，直接使用
-            if isinstance(attr_name, dict):
-                properties.append(attr_name)
-            else:
-                # 转换字符串为标准格式
-                description = ATTRIBUTE_DESCRIPTION_MAP.get(attr_name, attr_name)
-                properties.append({
-                    "Value": attr_name,
-                    "Description": description,
-                    "Confidence": 0.85  # 默认置信度，后续可从模型输出获取
-                })
+        # 使用 Pipeline 已经绑定好的属性（包含真实置信度）
+        properties = tooth_attributes_map.get(fdi, [])
 
         # 提取轮廓坐标：使用YOLO直接输出的segments（格式: [N, num_points, 2]）
         # 目标格式: [[x, y], [x, y], ...] 符合前端期望和规范
@@ -702,7 +690,7 @@ def format_teeth_report(
         # 构建 ToothAnalysis 项
         tooth_analysis.append({
             "FDI": fdi,
-            "Confidence": 0.85,  # Mock: 需要从模型输出获取实际置信度
+            "Confidence": round(float(confidence), 2),  # 使用真实的检测置信度
             "SegmentationMask": {
                 "Type": "Polygon",
                 "Coordinates": coordinates,
