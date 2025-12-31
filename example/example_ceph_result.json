@@ -282,6 +282,260 @@
         "Confidence": 1,
         "Status": "Detected"
       }
+    ],
+    "Landmarks": [
+      {
+        "Label": "Sella",
+        "X": 811,
+        "Y": 1014,
+        "Confidence": 0.86,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Nasion",
+        "X": 1462,
+        "Y": 992,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Orbitale",
+        "X": 1329,
+        "Y": 1263,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Porion",
+        "X": 557,
+        "Y": 1190,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Subspinale",
+        "X": 1388,
+        "Y": 1629,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Supramentale",
+        "X": 1343,
+        "Y": 2022,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Pogonion",
+        "X": 1311,
+        "Y": 2171,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Menton",
+        "X": 1241,
+        "Y": 2236,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Gnathion",
+        "X": 1294,
+        "Y": 2212,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Gonion",
+        "X": 661,
+        "Y": 1814,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Incision inferius",
+        "X": 1433,
+        "Y": 1846,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Incision superius",
+        "X": 1432,
+        "Y": 1845,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Posterior nasal spine",
+        "X": 953,
+        "Y": 1477,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Anterior nasal spine",
+        "X": 1417,
+        "Y": 1536,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Articulare",
+        "X": 633,
+        "Y": 1328,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Co",
+        "X": 665,
+        "Y": 1175,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "PTM",
+        "X": 948,
+        "Y": 1332,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Pt",
+        "X": 948,
+        "Y": 1161,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "U1A",
+        "X": 1330,
+        "Y": 1631,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "L1A",
+        "X": 1290,
+        "Y": 2024,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "U6",
+        "X": 1161,
+        "Y": 1768,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "L6",
+        "X": 1177,
+        "Y": 1797,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Ba",
+        "X": 522,
+        "Y": 1388,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Bo",
+        "X": 177,
+        "Y": 1325,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Pcd",
+        "X": 627,
+        "Y": 1237,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Uvula tip",
+        "X": 764,
+        "Y": 1722,
+        "Confidence": 0.93,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Vallecula",
+        "X": 732,
+        "Y": 2076,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Upper Pharyngeal Wall",
+        "X": 726,
+        "Y": 1474,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Soft Palate Point",
+        "X": 810,
+        "Y": 1590,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Soft Palate Pharyngeal Wall",
+        "X": 687,
+        "Y": 1532,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Middle Pharyngeal Wall",
+        "X": 649,
+        "Y": 1699,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Lower Pharyngeal Wall",
+        "X": 578,
+        "Y": 2045,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Tongue Base",
+        "X": 765,
+        "Y": 1810,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Tongue Posterior Pharyngeal Wall",
+        "X": 633,
+        "Y": 1783,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "Adenoid",
+        "X": 781,
+        "Y": 1419,
+        "Confidence": 1,
+        "Status": "Detected"
+      },
+      {
+        "Label": "D prime",
+        "X": 766,
+        "Y": 1272,
+        "Confidence": 1,
+        "Status": "Detected"
+      }
     ]
   },
   "Measurements": {
@@ -335,13 +589,6 @@
           "Elements": [
             {
               "Type": "Line",
-              "From": "S",
-              "To": "N",
-              "Style": "Solid",
-              "Role": "Reference"
-            },
-            {
-              "Type": "Line",
               "From": "N",
               "To": "A",
               "Style": "Solid",
@@ -352,6 +599,13 @@
               "From": "N",
               "To": "B",
               "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "A",
+              "Point2": "B",
               "Role": "Measurement"
             }
           ]
@@ -498,7 +752,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_int": [
+              -312.03,
+              1108.94
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -513,6 +772,27 @@
               "To": "Me",
               "Style": "Solid",
               "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "Go",
+              "Role": "Measurement"
             }
           ]
         }
@@ -557,6 +837,13 @@
               "To": "v_int",
               "Style": "Dashed",
               "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Me",
+              "Point2": "L1A",
+              "Role": "Measurement"
             }
           ]
         }
@@ -581,6 +868,13 @@
               "From": "N",
               "To": "A",
               "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "A",
               "Role": "Measurement"
             }
           ]
@@ -647,6 +941,13 @@
               "From": "N",
               "To": "B",
               "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "B",
               "Role": "Measurement"
             }
           ]
@@ -730,6 +1031,13 @@
               "To": "v_b_on_fh",
               "Style": "Dashed",
               "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "v_a_on_fh",
+              "To": "v_b_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
             }
           ]
         }
@@ -774,6 +1082,13 @@
               "To": "v_int",
               "Style": "Dashed",
               "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "U1A",
+              "Role": "Measurement"
             }
           ]
         }
@@ -818,6 +1133,13 @@
               "To": "v_int",
               "Style": "Dashed",
               "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "A",
+              "Point2": "U1A",
+              "Role": "Measurement"
             }
           ]
         }
@@ -892,6 +1214,13 @@
               "To": "v_int",
               "Style": "Dashed",
               "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "L1A",
+              "Role": "Measurement"
             }
           ]
         }
@@ -902,7 +1231,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_int": [
+              1351.96,
+              1947.4
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -916,6 +1250,27 @@
               "From": "L1",
               "To": "L1A",
               "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "B",
+              "Point2": "L1A",
               "Role": "Measurement"
             }
           ]
@@ -957,7 +1312,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_int": [
+              1433.19,
+              1846.28
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -972,6 +1332,27 @@
               "To": "L1A",
               "Style": "Solid",
               "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "U1A",
+              "Point2": "L1A",
+              "Role": "Measurement"
             }
           ]
         }
@@ -982,7 +1363,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_int": [
+              895.53,
+              1222.82
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -997,6 +1383,27 @@
               "To": "Po",
               "Style": "Dashed",
               "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Gn",
+              "Point2": "Or",
+              "Role": "Measurement"
             }
           ]
         }
@@ -1007,7 +1414,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_int": [
+              961.83,
+              1203.21
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -1022,6 +1434,27 @@
               "To": "Gn",
               "Style": "Solid",
               "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Gn",
+              "Role": "Measurement"
             }
           ]
         }
@@ -1032,7 +1465,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_int": [
+              -385.39,
+              1055.71
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -1047,6 +1485,27 @@
               "To": "Me",
               "Style": "Solid",
               "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Me",
+              "Role": "Measurement"
             }
           ]
         }
@@ -1057,7 +1516,12 @@
         "Level": 0,
         "Confidence": 0,
         "Visualization": {
-          "VirtualPoints": null,
+          "VirtualPoints": {
+            "v_u1_on_pp": [
+              1471.28,
+              1543.73
+            ]
+          },
           "Elements": [
             {
               "Type": "Line",
@@ -1069,7 +1533,7 @@
             {
               "Type": "Line",
               "From": "UI",
-              "To": "ANS",
+              "To": "v_u1_on_pp",
               "Style": "Dashed",
               "Role": "Measurement"
             }
@@ -1201,6 +1665,27 @@
               "To": "Me",
               "Style": "Solid",
               "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "S",
+              "Point1": "N",
+              "Point2": "Ar",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Ar",
+              "Point1": "S",
+              "Point2": "Go",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Go",
+              "Point1": "Ar",
+              "Point2": "Me",
+              "Role": "Measurement"
             }
           ]
         }
@@ -1378,6 +1863,3978 @@
             }
           ]
         }
+      }
+    ],
+    "AllMeasurements": [
+      {
+        "Label": "Reference_Planes",
+        "Angle": null,
+        "Level": -1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "ANB_Angle",
+        "Angle": 0.01,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "A",
+              "Point2": "B",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "PtmANS_Length",
+        "Length_mm": 48.61,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_ptm_on_fh": [
+              958.64,
+              1228.77
+            ],
+            "v_ans_on_fh": [
+              1442.64,
+              1274.42
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PTM",
+              "To": "v_ptm_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "v_ans_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_ptm_on_fh",
+              "To": "v_ans_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "GoPo_Length",
+        "Length_mm": 73.57,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_pog_on_mp": [
+              1256.54,
+              2246.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pog",
+              "To": "v_pog_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "PoNB_Length",
+        "Length_mm": 1.49,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_pog_on_nb": [
+              1325.92,
+              2173.36
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pog",
+              "To": "v_pog_on_nb",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Jaw_Development_Coordination",
+        "Type": "MultiSelect",
+        "Level": [
+          0,
+          0
+        ],
+        "Confidence": 0
+      },
+      {
+        "Label": "SGo_NMe_Ratio",
+        "Ratio": 64.46,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Go",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "FH_MP_Angle",
+        "Angle": 30.57,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              -312.03,
+              1108.94
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "Go",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "IMPA_Angle",
+        "Angle": 92.81,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1164.82,
+              2180.38
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Me",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SNA_Angle",
+        "Angle": 81.47,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Upper_Jaw_Position",
+        "Length_mm": 16.64,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_s_on_fh": [
+              792.96,
+              1213.15
+            ],
+            "v_ptm_on_fh": [
+              958.64,
+              1228.77
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "v_s_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "PTM",
+              "To": "v_ptm_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_s_on_fh",
+              "To": "v_ptm_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SNB_Angle",
+        "Angle": 81.46,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "B",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Pcd_Lower_Position",
+        "Length_mm": 16.21,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_s_on_fh": [
+              792.96,
+              1213.15
+            ],
+            "v_pcd_on_fh": [
+              631.61,
+              1197.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "v_s_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pcd",
+              "To": "v_pcd_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_s_on_fh",
+              "To": "v_pcd_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Distance_Witsmm",
+        "Length_mm": 0.84,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_a_on_fh": [
+              1422.42,
+              1272.51
+            ],
+            "v_b_on_fh": [
+              1414.11,
+              1271.73
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "A",
+              "To": "v_a_on_fh",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_b_on_fh",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "v_a_on_fh",
+              "To": "v_b_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_SN_Angle",
+        "Angle": 113.47,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1033.95,
+              1006.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "U1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_NA_Angle",
+        "Angle": 32,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1377.33,
+              1728.85
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "A",
+              "Point2": "U1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_NA_Incisor_Length",
+        "Length_mm": 6.85,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u1_on_na": [
+              1364.81,
+              1837.72
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "v_u1_on_na",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "FMIA_Angle",
+        "Angle": 56.61,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1860.86,
+              1313.86
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_NB_Angle",
+        "Angle": 32.2,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1351.96,
+              1947.4
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "B",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_NB_Distance",
+        "Length_mm": 6.9,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l1_on_nb": [
+              1364.5,
+              1838.59
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "v_l1_on_nb",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_L1_Inter_Incisor_Angle",
+        "Angle": 115.79,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1433.19,
+              1846.28
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "U1A",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Y_Axis_Angle",
+        "Angle": 62.68,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              895.53,
+              1222.82
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Gn",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "Po",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Gn",
+              "Point2": "Or",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Mandibular_Growth_Angle",
+        "Angle": 85.35,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              961.83,
+              1203.21
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Ba",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pt",
+              "To": "Gn",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Gn",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SN_MP_Angle",
+        "Angle": 37.93,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              -385.39,
+              1055.71
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Me",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_PP_Upper_Anterior_Alveolar_Height",
+        "Length_mm": 30.43,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u1_on_pp": [
+              1471.28,
+              1543.73
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "v_u1_on_pp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_MP_Lower_Anterior_Alveolar_Height",
+        "Length_mm": 42.78,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l1_on_mp": [
+              1181.83,
+              2192.72
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "v_l1_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U6_PP_Upper_Posterior_Alveolar_Height",
+        "Length_mm": 26.24,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u6_on_pp": [
+              1194.78,
+              1508.51
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U6",
+              "To": "v_u6_on_pp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L6_MP_Lower_Posterior_Alveolar_Height",
+        "Length_mm": 31.71,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l6_on_mp": [
+              991.23,
+              2054.44
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L6",
+              "To": "v_l6_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Mandibular_Growth_Type_Angle",
+        "Angle": 397.93,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Ar",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Ar",
+              "To": "Go",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "S",
+              "Point1": "N",
+              "Point2": "Ar",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Ar",
+              "Point1": "S",
+              "Point2": "Go",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Go",
+              "Point1": "Ar",
+              "Point2": "Me",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "S_N_Anterior_Cranial_Base_Length",
+        "Length_mm": 65.07,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Go_Me_Length",
+        "Length_mm": 71.77,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Airway_Gap",
+        "PNS-UPW": 22.63,
+        "SPP-SPPW": 13.63,
+        "U-MPW": 11.82,
+        "TB-TPPW": 13.4,
+        "V-LPW": 15.76,
+        "Level": false,
+        "Confidence": 1,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "UPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "SPP",
+              "To": "SPPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U",
+              "To": "MPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "TB",
+              "To": "TPPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "V",
+              "To": "LPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ],
+          "Polygon": [
+            687.75,
+            1532.55,
+            726.9,
+            1474.56,
+            766.48,
+            1273,
+            781.37,
+            1419.76,
+            810.93,
+            1590.84,
+            764.92,
+            1722.7,
+            765.12,
+            1810.58,
+            732.52,
+            2076.88,
+            578.19,
+            2045.05,
+            633.85,
+            1783.69,
+            649.01,
+            1699.52
+          ]
+        }
+      },
+      {
+        "Label": "Adenoid_Index",
+        "Value": 0.54,
+        "Level": true,
+        "Confidence": 0.85,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_ad_on_baar": [
+              709.84,
+              1287.31
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "D'",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Ba",
+              "To": "Ar",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "AD",
+              "To": "v_ad_on_baar",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Cervical_Vertebral_Maturity_Stage",
+        "Coordinates": [
+          [
+            317,
+            1455
+          ],
+          [
+            593,
+            1455
+          ],
+          [
+            593,
+            2197
+          ],
+          [
+            317,
+            2197
+          ]
+        ],
+        "Level": 5,
+        "Confidence": 0.94
+      }
+    ]
+  },
+  "CephalometricMeasurements": {
+    "CephalometricMeasurements": [
+      {
+        "Label": "Reference_Planes",
+        "Angle": null,
+        "Level": -1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "ANB_Angle",
+        "Angle": 0.01,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "A",
+              "Point2": "B",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "PtmANS_Length",
+        "Length_mm": 48.61,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_ptm_on_fh": [
+              958.64,
+              1228.77
+            ],
+            "v_ans_on_fh": [
+              1442.64,
+              1274.42
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PTM",
+              "To": "v_ptm_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "v_ans_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_ptm_on_fh",
+              "To": "v_ans_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "GoPo_Length",
+        "Length_mm": 73.57,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_pog_on_mp": [
+              1256.54,
+              2246.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pog",
+              "To": "v_pog_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "PoNB_Length",
+        "Length_mm": 1.49,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_pog_on_nb": [
+              1325.92,
+              2173.36
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pog",
+              "To": "v_pog_on_nb",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Jaw_Development_Coordination",
+        "Type": "MultiSelect",
+        "Level": [
+          0,
+          0
+        ],
+        "Confidence": 0
+      },
+      {
+        "Label": "SGo_NMe_Ratio",
+        "Ratio": 64.46,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Go",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "FH_MP_Angle",
+        "Angle": 30.57,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              -312.03,
+              1108.94
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "Go",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "IMPA_Angle",
+        "Angle": 92.81,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1164.82,
+              2180.38
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Me",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SNA_Angle",
+        "Angle": 81.47,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Upper_Jaw_Position",
+        "Length_mm": 16.64,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_s_on_fh": [
+              792.96,
+              1213.15
+            ],
+            "v_ptm_on_fh": [
+              958.64,
+              1228.77
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "v_s_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "PTM",
+              "To": "v_ptm_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_s_on_fh",
+              "To": "v_ptm_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SNB_Angle",
+        "Angle": 81.46,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "B",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Pcd_Lower_Position",
+        "Length_mm": 16.21,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_s_on_fh": [
+              792.96,
+              1213.15
+            ],
+            "v_pcd_on_fh": [
+              631.61,
+              1197.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "v_s_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pcd",
+              "To": "v_pcd_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_s_on_fh",
+              "To": "v_pcd_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Distance_Witsmm",
+        "Length_mm": 0.84,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_a_on_fh": [
+              1422.42,
+              1272.51
+            ],
+            "v_b_on_fh": [
+              1414.11,
+              1271.73
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "A",
+              "To": "v_a_on_fh",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_b_on_fh",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "v_a_on_fh",
+              "To": "v_b_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_SN_Angle",
+        "Angle": 113.47,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1033.95,
+              1006.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "U1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_NA_Angle",
+        "Angle": 32,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1377.33,
+              1728.85
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "A",
+              "Point2": "U1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_NA_Incisor_Length",
+        "Length_mm": 6.85,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u1_on_na": [
+              1364.81,
+              1837.72
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "v_u1_on_na",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "FMIA_Angle",
+        "Angle": 56.61,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1860.86,
+              1313.86
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_NB_Angle",
+        "Angle": 32.2,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1351.96,
+              1947.4
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "B",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_NB_Distance",
+        "Length_mm": 6.9,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l1_on_nb": [
+              1364.5,
+              1838.59
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "v_l1_on_nb",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_L1_Inter_Incisor_Angle",
+        "Angle": 115.79,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1433.19,
+              1846.28
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "U1A",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Y_Axis_Angle",
+        "Angle": 62.68,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              895.53,
+              1222.82
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Gn",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "Po",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Gn",
+              "Point2": "Or",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Mandibular_Growth_Angle",
+        "Angle": 85.35,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              961.83,
+              1203.21
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Ba",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pt",
+              "To": "Gn",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Gn",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SN_MP_Angle",
+        "Angle": 37.93,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              -385.39,
+              1055.71
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Me",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_PP_Upper_Anterior_Alveolar_Height",
+        "Length_mm": 30.43,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u1_on_pp": [
+              1471.28,
+              1543.73
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "v_u1_on_pp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_MP_Lower_Anterior_Alveolar_Height",
+        "Length_mm": 42.78,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l1_on_mp": [
+              1181.83,
+              2192.72
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "v_l1_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U6_PP_Upper_Posterior_Alveolar_Height",
+        "Length_mm": 26.24,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u6_on_pp": [
+              1194.78,
+              1508.51
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U6",
+              "To": "v_u6_on_pp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L6_MP_Lower_Posterior_Alveolar_Height",
+        "Length_mm": 31.71,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l6_on_mp": [
+              991.23,
+              2054.44
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L6",
+              "To": "v_l6_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Mandibular_Growth_Type_Angle",
+        "Angle": 397.93,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Ar",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Ar",
+              "To": "Go",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "S",
+              "Point1": "N",
+              "Point2": "Ar",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Ar",
+              "Point1": "S",
+              "Point2": "Go",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Go",
+              "Point1": "Ar",
+              "Point2": "Me",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "S_N_Anterior_Cranial_Base_Length",
+        "Length_mm": 65.07,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Go_Me_Length",
+        "Length_mm": 71.77,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      }
+    ],
+    "BoneAgeMeasurements": [
+      {
+        "Label": "Cervical_Vertebral_Maturity_Stage",
+        "Coordinates": [
+          [
+            317,
+            1455
+          ],
+          [
+            593,
+            1455
+          ],
+          [
+            593,
+            2197
+          ],
+          [
+            317,
+            2197
+          ]
+        ],
+        "Level": 5,
+        "Confidence": 0.94
+      }
+    ],
+    "AirwayMeasurements": [
+      {
+        "Label": "Airway_Gap",
+        "PNS-UPW": 22.63,
+        "SPP-SPPW": 13.63,
+        "U-MPW": 11.82,
+        "TB-TPPW": 13.4,
+        "V-LPW": 15.76,
+        "Level": false,
+        "Confidence": 1,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "UPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "SPP",
+              "To": "SPPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U",
+              "To": "MPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "TB",
+              "To": "TPPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "V",
+              "To": "LPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ],
+          "Polygon": [
+            687.75,
+            1532.55,
+            726.9,
+            1474.56,
+            766.48,
+            1273,
+            781.37,
+            1419.76,
+            810.93,
+            1590.84,
+            764.92,
+            1722.7,
+            765.12,
+            1810.58,
+            732.52,
+            2076.88,
+            578.19,
+            2045.05,
+            633.85,
+            1783.69,
+            649.01,
+            1699.52
+          ]
+        }
+      },
+      {
+        "Label": "Adenoid_Index",
+        "Value": 0.54,
+        "Level": true,
+        "Confidence": 0.85,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_ad_on_baar": [
+              709.84,
+              1287.31
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "D'",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Ba",
+              "To": "Ar",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "AD",
+              "To": "v_ad_on_baar",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      }
+    ],
+    "AllMeasurements": [
+      {
+        "Label": "Reference_Planes",
+        "Angle": null,
+        "Level": -1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "ANB_Angle",
+        "Angle": 0.01,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "A",
+              "Point2": "B",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "PtmANS_Length",
+        "Length_mm": 48.61,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_ptm_on_fh": [
+              958.64,
+              1228.77
+            ],
+            "v_ans_on_fh": [
+              1442.64,
+              1274.42
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PTM",
+              "To": "v_ptm_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "v_ans_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_ptm_on_fh",
+              "To": "v_ans_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "GoPo_Length",
+        "Length_mm": 73.57,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_pog_on_mp": [
+              1256.54,
+              2246.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pog",
+              "To": "v_pog_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "PoNB_Length",
+        "Length_mm": 1.49,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_pog_on_nb": [
+              1325.92,
+              2173.36
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pog",
+              "To": "v_pog_on_nb",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Jaw_Development_Coordination",
+        "Type": "MultiSelect",
+        "Level": [
+          0,
+          0
+        ],
+        "Confidence": 0
+      },
+      {
+        "Label": "SGo_NMe_Ratio",
+        "Ratio": 64.46,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Go",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "FH_MP_Angle",
+        "Angle": 30.57,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              -312.03,
+              1108.94
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "Go",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "IMPA_Angle",
+        "Angle": 92.81,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1164.82,
+              2180.38
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Me",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SNA_Angle",
+        "Angle": 81.47,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Upper_Jaw_Position",
+        "Length_mm": 16.64,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_s_on_fh": [
+              792.96,
+              1213.15
+            ],
+            "v_ptm_on_fh": [
+              958.64,
+              1228.77
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "v_s_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "PTM",
+              "To": "v_ptm_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_s_on_fh",
+              "To": "v_ptm_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SNB_Angle",
+        "Angle": 81.46,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "N",
+              "Point1": "S",
+              "Point2": "B",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Pcd_Lower_Position",
+        "Length_mm": 16.21,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_s_on_fh": [
+              792.96,
+              1213.15
+            ],
+            "v_pcd_on_fh": [
+              631.61,
+              1197.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "v_s_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pcd",
+              "To": "v_pcd_on_fh",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "v_s_on_fh",
+              "To": "v_pcd_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Distance_Witsmm",
+        "Length_mm": 0.84,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_a_on_fh": [
+              1422.42,
+              1272.51
+            ],
+            "v_b_on_fh": [
+              1414.11,
+              1271.73
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "A",
+              "To": "v_a_on_fh",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_b_on_fh",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "v_a_on_fh",
+              "To": "v_b_on_fh",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_SN_Angle",
+        "Angle": 113.47,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1033.95,
+              1006.93
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "U1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_NA_Angle",
+        "Angle": 32,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1377.33,
+              1728.85
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "A",
+              "Point2": "U1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_NA_Incisor_Length",
+        "Length_mm": 6.85,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u1_on_na": [
+              1364.81,
+              1837.72
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "A",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "v_u1_on_na",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "FMIA_Angle",
+        "Angle": 56.61,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1860.86,
+              1313.86
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Po",
+              "To": "Or",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Or",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_NB_Angle",
+        "Angle": 32.2,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1351.96,
+              1947.4
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "B",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "B",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_NB_Distance",
+        "Length_mm": 6.9,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l1_on_nb": [
+              1364.5,
+              1838.59
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "B",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "v_l1_on_nb",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_L1_Inter_Incisor_Angle",
+        "Angle": 115.79,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              1433.19,
+              1846.28
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "U1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "L1A",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1A",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "U1A",
+              "Point2": "L1A",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Y_Axis_Angle",
+        "Angle": 62.68,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              895.53,
+              1222.82
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Gn",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "Po",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Or",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "Gn",
+              "Point2": "Or",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Mandibular_Growth_Angle",
+        "Angle": 85.35,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              961.83,
+              1203.21
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Ba",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Pt",
+              "To": "Gn",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Gn",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Gn",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "SN_MP_Angle",
+        "Angle": 37.93,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_int": [
+              -385.39,
+              1055.71
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "N",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Me",
+              "To": "v_int",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "v_int",
+              "Point1": "N",
+              "Point2": "Me",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U1_PP_Upper_Anterior_Alveolar_Height",
+        "Length_mm": 30.43,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u1_on_pp": [
+              1471.28,
+              1543.73
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "UI",
+              "To": "v_u1_on_pp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L1_MP_Lower_Anterior_Alveolar_Height",
+        "Length_mm": 42.78,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l1_on_mp": [
+              1181.83,
+              2192.72
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L1",
+              "To": "v_l1_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "U6_PP_Upper_Posterior_Alveolar_Height",
+        "Length_mm": 26.24,
+        "Level": 1,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_u6_on_pp": [
+              1194.78,
+              1508.51
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "ANS",
+              "To": "PNS",
+              "Style": "Dashed",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "U6",
+              "To": "v_u6_on_pp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "L6_MP_Lower_Posterior_Alveolar_Height",
+        "Length_mm": 31.71,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_l6_on_mp": [
+              991.23,
+              2054.44
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "L6",
+              "To": "v_l6_on_mp",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Mandibular_Growth_Type_Angle",
+        "Angle": 397.93,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "Ar",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Ar",
+              "To": "Go",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "S",
+              "Point1": "N",
+              "Point2": "Ar",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Ar",
+              "Point1": "S",
+              "Point2": "Go",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Angle",
+              "Vertex": "Go",
+              "Point1": "Ar",
+              "Point2": "Me",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "S_N_Anterior_Cranial_Base_Length",
+        "Length_mm": 65.07,
+        "Level": 0,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "S",
+              "To": "N",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Go_Me_Length",
+        "Length_mm": 71.77,
+        "Level": 2,
+        "Confidence": 0,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "Go",
+              "To": "Me",
+              "Style": "Solid",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Airway_Gap",
+        "PNS-UPW": 22.63,
+        "SPP-SPPW": 13.63,
+        "U-MPW": 11.82,
+        "TB-TPPW": 13.4,
+        "V-LPW": 15.76,
+        "Level": false,
+        "Confidence": 1,
+        "Visualization": {
+          "VirtualPoints": null,
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "UPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "SPP",
+              "To": "SPPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "U",
+              "To": "MPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "TB",
+              "To": "TPPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "V",
+              "To": "LPW",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ],
+          "Polygon": [
+            687.75,
+            1532.55,
+            726.9,
+            1474.56,
+            766.48,
+            1273,
+            781.37,
+            1419.76,
+            810.93,
+            1590.84,
+            764.92,
+            1722.7,
+            765.12,
+            1810.58,
+            732.52,
+            2076.88,
+            578.19,
+            2045.05,
+            633.85,
+            1783.69,
+            649.01,
+            1699.52
+          ]
+        }
+      },
+      {
+        "Label": "Adenoid_Index",
+        "Value": 0.54,
+        "Level": true,
+        "Confidence": 0.85,
+        "Visualization": {
+          "VirtualPoints": {
+            "v_ad_on_baar": [
+              709.84,
+              1287.31
+            ]
+          },
+          "Elements": [
+            {
+              "Type": "Line",
+              "From": "PNS",
+              "To": "D'",
+              "Style": "Solid",
+              "Role": "Measurement"
+            },
+            {
+              "Type": "Line",
+              "From": "Ba",
+              "To": "Ar",
+              "Style": "Solid",
+              "Role": "Reference"
+            },
+            {
+              "Type": "Line",
+              "From": "AD",
+              "To": "v_ad_on_baar",
+              "Style": "Dashed",
+              "Role": "Measurement"
+            }
+          ]
+        }
+      },
+      {
+        "Label": "Cervical_Vertebral_Maturity_Stage",
+        "Coordinates": [
+          [
+            317,
+            1455
+          ],
+          [
+            593,
+            1455
+          ],
+          [
+            593,
+            2197
+          ],
+          [
+            317,
+            2197
+          ]
+        ],
+        "Level": 5,
+        "Confidence": 0.94
       }
     ]
   }
