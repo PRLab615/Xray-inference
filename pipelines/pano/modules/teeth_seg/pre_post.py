@@ -33,7 +33,7 @@ DECIDUOUS_TEETH = [51, 52, 53, 54, 55, 61, 62, 63, 64, 65,71, 72, 73, 74, 75, 81
 WISDOM_TEETH = [18, 28, 38, 48]
 
 
-def process_teeth_masks(masks: np.ndarray, class_names: List[str], original_shape: Tuple[int, int]) -> Dict[str, Any]:
+def process_teeth_masks(masks: np.ndarray, class_names: List[str], original_shape: Tuple[int, int], confidences: np.ndarray = None) -> Dict[str, Any]:
     """
     后处理 YOLO 掩码和类名称：判断缺牙、智齿、乳牙滞留。
 
@@ -54,34 +54,54 @@ def process_teeth_masks(masks: np.ndarray, class_names: List[str], original_shap
             "detected_teeth": []
         }
 
-    # 1. 解析检测类 ID 并构建检测到的牙齿列表
-    detected_ids = set(parse_tooth_id(name) for name in class_names if parse_tooth_id(name) > 0)
-    detected_classes = list(detected_ids)
-    
-    # 构建检测到的牙齿详细信息（包含 FDI 和对应的索引）
-    detected_teeth = []
+    # 1. 解析检测类 ID 并构建检测到的牙齿列表（带置信度去重）
+    detected_teeth_raw = []
     for idx, name in enumerate(class_names):
         fdi = parse_tooth_id(name)
         if fdi > 0:
-            detected_teeth.append({
-                "fdi": str(fdi),
+            confidence = float(confidences[idx]) if confidences is not None and idx < len(confidences) else 0.5
+            detected_teeth_raw.append({
+                "fdi": fdi,
+                "fdi_str": str(fdi),
                 "class_name": name,
-                "mask_index": idx  # 对应 masks 数组的索引
+                "mask_index": idx,  # 对应 masks 数组的索引
+                "confidence": confidence
             })
 
-    # 2. 象限缺牙判断 (仅尾号1-7)
+    # 2. 去重：对同一个 FDI，保留置信度最高的检测
+    fdi_to_best_detection = {}
+    for detection in detected_teeth_raw:
+        fdi = detection["fdi"]
+        if fdi not in fdi_to_best_detection:
+            fdi_to_best_detection[fdi] = detection
+        else:
+            # 保留置信度更高的检测
+            if detection["confidence"] > fdi_to_best_detection[fdi]["confidence"]:
+                fdi_to_best_detection[fdi] = detection
+
+    # 3. 构建最终的检测结果
+    detected_teeth = list(fdi_to_best_detection.values())
+    detected_ids = set(detection["fdi"] for detection in detected_teeth)
+    detected_classes = list(detected_ids)
+
+    # 2. 缺牙判断 (1-7尾号 + 8尾号智齿)
     missing_teeth = []
     quadrant_summary = {q: 0 for q in QUADRANT_TEETH}
     for quad, teeth_ids in QUADRANT_TEETH.items():
         detected_in_quad = [tid for tid in teeth_ids if tid in detected_ids]
         quadrant_summary[quad] = len(detected_in_quad)
 
-        # 检查1-7尾号缺牙 (忽略8智齿)
+        # 检查1-7尾号缺牙
         for tid in teeth_ids[:7]:  # 1-7
             if tid not in detected_ids:
                 missing_teeth.append(f"tooth-{tid} 牙位缺牙")
 
-    # 3. 智齿判断 (尾号8)
+        # 检查8尾号智齿缺牙
+        wisdom_tid = teeth_ids[7] if len(teeth_ids) > 7 else None  # 第8个是智齿
+        if wisdom_tid and wisdom_tid not in detected_ids:
+            missing_teeth.append(f"tooth-{wisdom_tid} 牙位缺牙")
+
+    # 3. 智齿存在判断 (当智齿存在时记录)
     wisdom_teeth = [f"tooth-{tid} 牙位有智齿" for tid in WISDOM_TEETH if tid in detected_ids]
 
     # 4. 乳牙滞留判断
