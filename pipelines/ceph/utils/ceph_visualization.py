@@ -259,7 +259,7 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     }
 
     elements = [
-<<<<<<< HEAD
+
         # BOP 平面参考线（虚线，从后到前）
         _line("v_molar_mid", "v_incisal_mid", "Dashed", "Reference"),
         # A、B 到 BOP 的垂线
@@ -267,13 +267,13 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
         _line("B", "v_b_on_bop", "Dashed", "Measurement"),
         # Wits 测量段
         _line("v_a_on_bop", "v_b_on_bop", "Solid", "Measurement"),
-=======
+
         _line("Po", "Or", "Dashed", "Reference"),
         _line("A", "v_a_on_fh", "Dashed", "Measurement"),
         _line("B", "v_b_on_fh", "Dashed", "Measurement"),
         # Wits 值：FH 平面上 A、B 投影点之间的水平距离
         _line("v_a_on_fh", "v_b_on_fh", "Solid", "Measurement"),
->>>>>>> 02c5c5a8abe52ada7a2bb89448de4c4da695afa0
+
     ]
 
     return {"VirtualPoints": virtual_points, "Elements": elements}
