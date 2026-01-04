@@ -212,30 +212,57 @@ def _gopo_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
 
 
 def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-    """Wits：将 A、B 投影到 FH(Po-Or) 平面后，在 FH 上连接两投影点。"""
-    required = ["A", "B", "Or", "Po"]
+    """
+    Wits 值可视化（Bisected Occlusal Plane 版）
+    - 使用后牙中点 (U6/L6) 和 前牙中点 (UI/L1) 定义 BOP
+    - 绘制 BOP 连线、A/B 垂线、A0-B0 测量段
+    """
+    required = ["A", "B", "U6", "L6", "UI", "L1"]
     if not _has_points(landmarks, required):
         return None
-    a, b, or_pt, po = (landmarks[k] for k in required)
 
-    foot_a = _project_point_onto_line(a, po, or_pt)
-    foot_b = _project_point_onto_line(b, po, or_pt)
+    a = landmarks["A"]
+    b = landmarks["B"]
+    u6 = landmarks["U6"]
+    l6 = landmarks["L6"]
+    ui = landmarks["UI"]
+    l1 = landmarks["L1"]
+
+    # 计算中点（虚拟点）
+    molar_mid = (u6 + l6) / 2.0
+    incisal_mid = (ui + l1) / 2.0
+
+    molar_mid_fmt = _format_point(molar_mid)
+    incisal_mid_fmt = _format_point(incisal_mid)
+    if molar_mid_fmt is None or incisal_mid_fmt is None:
+        return None
+
+    # A、B 向 BOP 的垂足
+    foot_a = _project_point_onto_line(a, molar_mid, incisal_mid)
+    foot_b = _project_point_onto_line(b, molar_mid, incisal_mid)
+
     foot_a_fmt = _format_point(foot_a)
     foot_b_fmt = _format_point(foot_b)
     if foot_a_fmt is None or foot_b_fmt is None:
         return None
 
     virtual_points = {
-        "v_a_on_fh": foot_a_fmt,
-        "v_b_on_fh": foot_b_fmt,
+        "v_molar_mid": molar_mid_fmt,      # 后牙中点
+        "v_incisal_mid": incisal_mid_fmt,  # 前牙中点
+        "v_a_on_bop": foot_a_fmt,
+        "v_b_on_bop": foot_b_fmt,
     }
+
     elements = [
-        _line("Po", "Or", "Dashed", "Reference"),
-        _line("A", "v_a_on_fh", "Dashed", "Measurement"),
-        _line("B", "v_b_on_fh", "Dashed", "Measurement"),
-        # Wits 值：FH 平面上 A、B 投影点之间的水平距离
-        _line("v_a_on_fh", "v_b_on_fh", "Solid", "Measurement"),
+        # BOP 平面参考线（虚线，从后到前）
+        _line("v_molar_mid", "v_incisal_mid", "Dashed", "Reference"),
+        # A、B 到 BOP 的垂线
+        _line("A", "v_a_on_bop", "Dashed", "Measurement"),
+        _line("B", "v_b_on_bop", "Dashed", "Measurement"),
+        # Wits 测量段
+        _line("v_a_on_bop", "v_b_on_bop", "Solid", "Measurement"),
     ]
+
     return {"VirtualPoints": virtual_points, "Elements": elements}
 
 

@@ -542,38 +542,51 @@ def _compute_pcd_s(
     level = _evaluate_by_threshold("Pcd_Lower_Position", length_mm, sex, dentition)
     return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent", spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
+import numpy as np
+
+def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent",
+                  spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """
-    Wits 值：上下颌骨的位置关系
-    将 A 点和 B 点垂直投影到参考平面（这里使用 FH 平面近似咬合平面）
-    
-    正值：A 点投影在 B 点投影的前方（II 类倾向）
-    负值：B 点投影在 A 点投影的前方（III 类倾向）
-    
-    正常值约 -1.4±2.8mm
+    Wits 值：使用 Bisected Occlusal Plane (BOP) 作为参考平面
+    BOP 定义：后牙咬合高度中点 (U6/L6 中点) 与 前牙切牙重叠中点 (UI/L1 中点) 的连线
+    由 A、B 点向 BOP 做垂线，得 A0、B0 点
+    测 A0 - B0 距离（沿 BOP 方向）
+
+    正值：A0 在 B0 前方（II 类倾向）
+    负值：B0 在 A0 前方（III 类倾向）
     """
-    required = ["P5", "P6", "P3", "P4"]  # A, B, Or, Po
+    required = ["P5", "P6", "P21", "P22", "P12", "P11"]  # A, B, U6, L6, UI, L1
     if not _has_points(landmarks, required):
-        return _missing_measurement("mm", required, landmarks)
-    a, b, or_pt, po = (landmarks[k] for k in required)
-    
-    # FH 平面向量（从 Po 指向 Or，向前方向）
-    fh = or_pt - po
-    fh_norm_sq = np.dot(fh, fh)
-    if fh_norm_sq < 1e-8:
+        missing = [k for k in required if k not in landmarks]
+        return _missing_measurement("mm", missing, landmarks)
+
+    a = landmarks["P5"]
+    b = landmarks["P6"]
+    u6 = landmarks["P21"]
+    l6 = landmarks["P22"]
+    ui = landmarks["P12"]
+    l1 = landmarks["P11"]
+
+    # 计算中点
+    molar_mid = (u6 + l6) / 2.0
+    incisal_mid = (ui + l1) / 2.0
+
+    # OP 向量：从后牙中点指向前牙中点（后 → 前，确保方向一致）
+    op_vec = incisal_mid - molar_mid
+    op_norm_sq = np.dot(op_vec, op_vec)
+    if op_norm_sq < 1e-8:
         return {"value": 0.0, "unit": "mm", "conclusion": 0, "status": "ok"}
-    
-    # A、B 点在 FH 平面上的投影参数
-    # 以 Po 为参考原点
-    a_proj = np.dot(a - po, fh) / fh_norm_sq
-    b_proj = np.dot(b - po, fh) / fh_norm_sq
-    
-    # Wits = A投影位置 - B投影位置
-    # 正值：A 更靠前（II 类）；负值：B 更靠前（III 类）
-    wits_px = (a_proj - b_proj) * np.linalg.norm(fh)
+
+    # 以 molar_mid 为参考原点，计算 A、B 在 OP 方向上的投影参数 t
+    a_proj_t = np.dot(a - molar_mid, op_vec) / op_norm_sq
+    b_proj_t = np.dot(b - molar_mid, op_vec) / op_norm_sq
+
+    # Wits = (A投影 - B投影) * OP向量长度
+    wits_px = (a_proj_t - b_proj_t) * np.linalg.norm(op_vec)
     wits_mm = wits_px * spacing
-    
+
     level = _evaluate_by_threshold("Distance_Witsmm", wits_mm, sex, dentition)
+
     return {"value": float(wits_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
 def _compute_u1_sn(landmarks, sex: str = "male", dentition: str = "permanent"):
