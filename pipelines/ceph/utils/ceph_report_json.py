@@ -716,23 +716,43 @@ def _format_visualization(raw: Any) -> Union[Dict[str, Any], None]:
         for item in elements_raw:
             if not isinstance(item, dict):
                 continue
-            if item.get("Type") != "Line":
+
+            item_type = item.get("Type")
+            if item_type == "Line":
+                from_key = item.get("From")
+                to_key = item.get("To")
+                style = item.get("Style")
+                role = item.get("Role")
+                if None in (from_key, to_key, style, role):
+                    continue
+                formatted_elements.append(
+                    {
+                        "Type": "Line",
+                        "From": from_key,
+                        "To": to_key,
+                        "Style": style,
+                        "Role": role,
+                    }
+                )
                 continue
-            from_key = item.get("From")
-            to_key = item.get("To")
-            style = item.get("Style")
-            role = item.get("Role")
-            if None in (from_key, to_key, style, role):
+
+            if item_type == "Angle":
+                vertex = item.get("Vertex")
+                point1 = item.get("Point1")
+                point2 = item.get("Point2")
+                role = item.get("Role")
+                if None in (vertex, point1, point2, role):
+                    continue
+                formatted_elements.append(
+                    {
+                        "Type": "Angle",
+                        "Vertex": vertex,
+                        "Point1": point1,
+                        "Point2": point2,
+                        "Role": role,
+                    }
+                )
                 continue
-            formatted_elements.append(
-                {
-                    "Type": "Line",
-                    "From": from_key,
-                    "To": to_key,
-                    "Style": style,
-                    "Role": role,
-                }
-            )
         if not formatted_elements:
             formatted_elements = None
 

@@ -355,7 +355,7 @@ def test_json_structure():
 
     # 测试配置
     TEST_IMAGE_PATH = "/app/example/example_ceph_img.jpg"
-    TEST_OUTPUT_PATH = "/app/example/test_ceph_output.json"
+    TEST_OUTPUT_PATH = "/app/example/temp_ceph_output.json"
     TEST_PATIENT_INFO = {
         "gender": "Male",
         "DentalAgeStage": "Permanent",
