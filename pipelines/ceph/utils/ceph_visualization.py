@@ -212,17 +212,12 @@ def _gopo_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
 
 
 def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-
     """
     Wits 值可视化（Bisected Occlusal Plane 版）
     - 使用后牙中点 (U6/L6) 和 前牙中点 (UI/L1) 定义 BOP
     - 绘制 BOP 连线、A/B 垂线、A0-B0 测量段
     """
     required = ["A", "B", "U6", "L6", "UI", "L1"]
-
-    """Wits：将 A、B 投影到 FH(Po-Or) 平面后，在 FH 上连接两投影点。"""
-    required = ["A", "B", "Or", "Po"]
-
     if not _has_points(landmarks, required):
         return None
 
@@ -259,7 +254,6 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     }
 
     elements = [
-<<<<<<< HEAD
         # BOP 平面参考线（虚线，从后到前）
         _line("v_molar_mid", "v_incisal_mid", "Dashed", "Reference"),
         # A、B 到 BOP 的垂线
@@ -267,13 +261,6 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
         _line("B", "v_b_on_bop", "Dashed", "Measurement"),
         # Wits 测量段
         _line("v_a_on_bop", "v_b_on_bop", "Solid", "Measurement"),
-=======
-        _line("Po", "Or", "Dashed", "Reference"),
-        _line("A", "v_a_on_fh", "Dashed", "Measurement"),
-        _line("B", "v_b_on_fh", "Dashed", "Measurement"),
-        # Wits 值：FH 平面上 A、B 投影点之间的水平距离
-        _line("v_a_on_fh", "v_b_on_fh", "Solid", "Measurement"),
->>>>>>> 02c5c5a8abe52ada7a2bb89448de4c4da695afa0
     ]
 
     return {"VirtualPoints": virtual_points, "Elements": elements}
@@ -797,68 +784,77 @@ def _go_me_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
 def _airway_gap_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     """构建气道区域可视化。
 
-    - 几何外轮廓：使用 11 个专用点形成闭合多边形（质心-极角排序）
-    - 测量连线：根据医学定义补充 5 条前后径测量线段
-        PNS-UPW, SPP-SPPW, U-MPW, TB-TPPW, V-LPW
-
-    采用“质心-极角排序”对已检测到的点进行环绕排序，尽可能形成外轮廓，
-    保证任意点缺失情况下也能输出稳定的多边形（>=3点时）。
+    - 几何外轮廓：使用 13 个点（原11点 + PTM + PNS）形成闭合多边形 & 连线（质心-极角排序）
+    - 测量连线：PNS-UPW, SPP-SPPW, U-MPW, TB-TPPW, V-LPW
     """
-    # 11点的短键（与 KEYPOINT_MAP_11 的键一致）
-    keys_11 = [
-        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "Dprime"
+    # 原 11 点 + PTM + PNS（总 13 点参与轮廓排序）
+    keys_for_contour = [
+        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "Dprime",
+        "PTM", "PNS"                  # ← 新增在这里
     ]
 
-    pts: List[np.ndarray] = []
-    for k in keys_11:
-        p = landmarks.get(k)
+    # 收集参与轮廓排序的 (label, point) 对
+    labeled_points: List[tuple[str, np.ndarray]] = []
+    for label in keys_for_contour:
+        p = landmarks.get(label)
         if isinstance(p, np.ndarray) and p.shape[0] >= 2 and not np.isnan(p).any():
-            pts.append(p.astype(float))
-    # 也兼容全名（比如 "D'" 等），以防前端/上游用了全名做了覆盖
+            labeled_points.append((label, p.astype(float)))
+
+    # 兼容全名 fallback（保持原有逻辑，只针对原 11 点）
     fallback_full_names = [
         "Uvula tip", "Vallecula", "Upper Pharyngeal Wall", "Soft Palate Point",
         "Soft Palate Pharyngeal Wall", "Middle Pharyngeal Wall", "Lower Pharyngeal Wall",
         "Tongue Base", "Tongue Posterior Pharyngeal Wall", "Adenoid", "D'"
     ]
     for name in fallback_full_names:
-        if len(pts) >= 11:
-            break
         p = landmarks.get(name)
         if isinstance(p, np.ndarray) and p.shape[0] >= 2 and not np.isnan(p).any():
-            # 避免重复
-            if not any(np.allclose(p, q) for q in pts):
-                pts.append(p.astype(float))
+            short_label = next((k for k, v in KEYPOINT_MAP_11.items() if v == name), name)
+            if not any(np.allclose(p, q[1]) for q in labeled_points):
+                labeled_points.append((short_label, p.astype(float)))
 
-    # 如有至少 3 个点，则构建闭合轮廓多边形
+    elements: List[Dict[str, Any]] = []
     polygon: Optional[List[float]] = None
-    if len(pts) >= 3:
-        # 使用质心-极角排序，获得一个非自交的闭合轮廓
-        arr = np.vstack(pts)  # (n,2)
+
+    # === 1. 构建闭合轮廓（现在包含 PTM 和 PNS） ===
+    if len(labeled_points) >= 3:
+        points = [pt for _, pt in labeled_points]
+        labels = [lbl for lbl, _ in labeled_points]
+
+        arr = np.vstack(points)
         centroid = np.mean(arr, axis=0)
         angles = np.arctan2(arr[:, 1] - centroid[1], arr[:, 0] - centroid[0])
         order = np.argsort(angles)
-        ordered = arr[order]
 
+        ordered_labels = [labels[i] for i in order]
+        ordered_points = arr[order]
+
+        # 生成闭合轮廓连线
+        for i in range(len(ordered_labels)):
+            a = ordered_labels[i]
+            b = ordered_labels[(i + 1) % len(ordered_labels)]
+            elements.append(_line(a, b, "Solid", "Reference"))  # 轮廓线
+
+        # 生成 Polygon（供前端填充用，可选保留）
         contour: List[float] = []
-        for p in ordered:
+        for p in ordered_points:
             contour.extend([float(p[0]), float(p[1])])
         polygon = contour
 
-    # 根据医学定义补充 5 条测量线（存在即画，允许部分缺失）
-    elements: List[Dict[str, str]] = []
+    # === 2. 核心测量前后径连线 ===
     airway_pairs = [
-        ("PNS", "UPW"),   # 鼻咽段
-        ("SPP", "SPPW"),  # 口咽段（腭咽段）
-        ("U", "MPW"),     # 口咽段（腭咽段）
-        ("TB", "TPPW"),   # 口咽段（舌咽段）
-        ("V", "LPW"),     # 喉咽段
+        ("PNS", "UPW"),
+        ("SPP", "SPPW"),
+        ("U", "MPW"),
+        ("TB", "TPPW"),
+        ("V", "LPW"),
     ]
     for a, b in airway_pairs:
         if _has_points(landmarks, [a, b]):
-            elements.append(_line(a, b, "Dashed", "Measurement"))
+            elements.append(_line(a, b, "Solid", "Measurement"))  # 建议用 Solid 更突出
 
-    # 若既没有多边形也没有测量线，则认为无法构建可视化
-    if polygon is None and not elements:
+    # 若没有任何可视化元素，则返回 None
+    if not elements and polygon is None:
         return None
 
     return {
