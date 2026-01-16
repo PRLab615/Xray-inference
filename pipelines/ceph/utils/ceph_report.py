@@ -542,7 +542,7 @@ def _compute_pcd_s(
     level = _evaluate_by_threshold("Pcd_Lower_Position", length_mm, sex, dentition)
     return {"value": float(length_mm), "unit": "mm", "conclusion": level, "status": "ok"}
 
-import numpy as np
+
 
 def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent",
                   spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
