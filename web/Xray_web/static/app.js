@@ -104,6 +104,47 @@ const CONFIG = {
     REFERENCE_PLANE_COLOR: '#ff69b4' // HotPink, 高对比度
 };
 
+// [AI-ASSISTANT-MODIFY] START: Add display name to ID map for frontend logic
+// 方案一：纯前端修改。创建一个“中文显示名 -> 英文ID”的静态映射表。
+// 注意：此映射表必须与后端 `ceph_report_json.py` 中的 `MEASUREMENT_DISPLAY_NAMES` 严格同步。
+const DISPLAY_NAME_TO_ID_MAP = {
+    "参考平面": "Reference_Planes",
+    "ANB °": "ANB_Angle",
+    "Ptm-ANS mm": "PtmANS_Length",
+    "Go-Po mm": "GoPo_Length",
+    "Po-NB mm": "PoNB_Length",
+    "上下颌骨发育协调": "Jaw_Development_Coordination",
+    "S-Go/N-Me (%)": "SGo_NMe_Ratio",
+    "FH-MP °": "FH_MP_Angle",
+    "IMPA(L1-MP)°": "IMPA_Angle",
+    "气道间隙": "Airway_Gap",
+    "腺样体指数 (A/N)": "Adenoid_Index",
+    "SNA °": "SNA_Angle",
+    "Ptm-S mm": "Upper_Jaw_Position",
+    "SNB °": "SNB_Angle",
+    "Pcd-S mm": "Pcd_Lower_Position",
+    "Wits值mm": "Distance_Witsmm",
+    "U1-SN °": "U1_SN_Angle",
+    "U1-NA角°": "U1_NA_Angle",
+    "U1-NA距mm": "U1_NA_Incisor_Length",
+    "FMIA(L1-FH)°": "FMIA_Angle",
+    "L1-NB角 °": "L1_NB_Angle",
+    "L1-NB距 mm": "L1_NB_Distance",
+    "U1-LI °": "U1_L1_Inter_Incisor_Angle",
+    "Y轴角 °": "Y_Axis_Angle",
+    "NBa-PTGn °": "Mandibular_Growth_Angle",
+    "SN-MP °": "SN_MP_Angle",
+    "U1-PP mm": "U1_PP_Upper_Anterior_Alveolar_Height",
+    "L1-MP mm": "L1_MP_Lower_Anterior_Alveolar_Height",
+    "U6-PP mm": "U6_PP_Upper_Posterior_Alveolar_Height",
+    "L6-MP mm": "L6_MP_Lower_Posterior_Alveolar_Height",
+    "S+Ar+Go（Bjork sum）": "Mandibular_Growth_Type_Angle",
+    "S-N mm": "S_N_Anterior_Cranial_Base_Length",
+    "Go-Me mm": "Go_Me_Length",
+    "CVSM边缘形状": "Cervical_Vertebral_Maturity_Stage"
+};
+// [AI-ASSISTANT-MODIFY] END
+
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
     init();
@@ -420,7 +461,7 @@ function jumpMeasurement(delta) {
         alert('无可视化的测量项');
         return;
     }
-    const currentIndex = list.findIndex(m => m.Label === appState.activeMeasurementLabel);
+    const currentIndex = list.findIndex(m => (DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label) === appState.activeMeasurementLabel);
     let nextIndex = currentIndex + delta;
     if (nextIndex >= list.length) nextIndex = 0;
     if (nextIndex < 0) nextIndex = list.length - 1;
@@ -444,8 +485,11 @@ function renderMeasurementVisualization(measurement) {
         console.warn('测量项为空');
         return;
     }
+
+    const measurementId = DISPLAY_NAME_TO_ID_MAP[measurement.Label] || measurement.Label;
+
     // 允许 Airway_Gap 在缺少 Visualization 时走专用分支
-    if (!measurement.Visualization && measurement.Label !== 'Airway_Gap') {
+    if (!measurement.Visualization && measurementId !== 'Airway_Gap') {
         console.warn('该测量项无可视化指令');
         return;
     }
@@ -458,7 +502,7 @@ function renderMeasurementVisualization(measurement) {
     const scale = appState.imageScale || 1;
 
     // 特殊处理：气道多边形（紫色半透明）
-    if (measurement.Label === 'Airway_Gap') {
+    if (measurementId === 'Airway_Gap') {
         const airwayLayer = ensureLayer('airway');
         if (!airwayLayer) return;
         airwayLayer.destroyChildren();
@@ -557,7 +601,7 @@ function renderMeasurementVisualization(measurement) {
     }
     
     // 特殊处理：参考平面（单独图层 + 淡紫色）
-    if (measurement.Label === 'Reference_Planes') {
+    if (measurementId === 'Reference_Planes') {
         const refLayer = ensureLayer('referencePlanes');
         if (!refLayer) return;
 
@@ -565,16 +609,16 @@ function renderMeasurementVisualization(measurement) {
         // Konva 的绘制顺序由 stage.children 顺序决定。
         // 规则：background (最底) < referencePlanes < measurementLines
         const bg = appState.konvaLayers.background;
-        const measurement = appState.konvaLayers.measurementLines;
+        const measurementLayer = appState.konvaLayers.measurementLines;
         if (bg && refLayer) {
             // 先确保不在 background 之下
             // Konva: 确保参考平面图层在背景之上
             refLayer.moveToTop();
         }
-        if (measurement && refLayer) {
+        if (measurementLayer && refLayer) {
             // 确保参考平面总是显示在测量线之上，以免被覆盖
             // 使用较高 ZIndex 保证在测量线上方
-            refLayer.setZIndex((measurement ? measurement.getZIndex() : 1) + 1);
+            refLayer.setZIndex((measurementLayer ? measurementLayer.getZIndex() : 1) + 1);
         }
 
         refLayer.destroyChildren();
@@ -733,7 +777,7 @@ function renderMeasurementVisualization(measurement) {
 
             // 补角规则：IMPA、U1-SN 在医学上通常取与“内角”互补的那个角（两者和约等于 180°）
             const SUPPLEMENTARY_ANGLE_LABELS = new Set(['IMPA_Angle', 'U1_SN_Angle']);
-            const isSupplementary = SUPPLEMENTARY_ANGLE_LABELS.has(measurement.Label);
+            const isSupplementary = SUPPLEMENTARY_ANGLE_LABELS.has(measurementId);
 
             // 注意：这里的 sweep 在前面已被处理为“内角”（0~180°）。
             // 若需要补角，则改用 (180° - sweep)。
@@ -742,12 +786,12 @@ function renderMeasurementVisualization(measurement) {
             // - IMPA_Angle：保持 startAngle 不变（使其沿原来的方向“逆时针”变化）
             if (isSupplementary) {
                 sweep = Math.PI - sweep;
-                if (measurement.Label === 'U1_SN_Angle') {
+                if (measurementId === 'U1_SN_Angle') {
                     const tmp = startAngle;
                     startAngle = endAngle;
                     endAngle = tmp;
                 }
-                if (measurement.Label === 'IMPA_Angle') {
+                if (measurementId === 'IMPA_Angle') {
                     // IMPA：补角需要靠近牙轴方向（L1 轴）。
                     // 通过交换 Point1/Point2 的角度定义来让圆弧贴近牙轴侧。
                     const tmp = startAngle;
@@ -842,7 +886,8 @@ function handleMeasurementClick(measurement) {
         alert('该测量项暂无可视化');
         return;
     }
-    setActiveMeasurementLabel(measurement.Label);
+    const measurementId = DISPLAY_NAME_TO_ID_MAP[measurement.Label] || measurement.Label;
+    setActiveMeasurementLabel(measurementId);
     renderMeasurementVisualization(measurement);
 }
 
@@ -3001,7 +3046,8 @@ function buildCephReport(data) {
         const measurements = measurementsObj.AllMeasurements;
         
         measurements.forEach(m => {
-            if (isBoneMeasurement(m.Label)) {
+            const measurementId = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
+            if (isBoneMeasurement(measurementId)) {
                 const item = createMeasurementItem(m);
                 boneSection.appendChild(item);
             }
@@ -3018,7 +3064,8 @@ function buildCephReport(data) {
         const measurements = measurementsObj.AllMeasurements;
         
         measurements.forEach(m => {
-            if (isToothMeasurement(m.Label)) {
+            const measurementId = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
+            if (isToothMeasurement(measurementId)) {
                 const item = createMeasurementItem(m);
                 toothSection.appendChild(item);
             }
@@ -3036,7 +3083,8 @@ function buildCephReport(data) {
         
         // 先添加所有生长发育相关的测量项
         measurements.forEach(m => {
-            if (isGrowthMeasurement(m.Label)) {
+            const measurementId = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
+            if (isGrowthMeasurement(measurementId)) {
                 const item = createMeasurementItem(m);
                 growthSection.appendChild(item);
             }
@@ -3159,7 +3207,8 @@ function createKeyValue(key, value) {
 function createMeasurementItem(measurement) {
     const item = document.createElement('div');
     item.className = 'measurement-item';
-    item.dataset.label = measurement.Label || '';
+    const measurementId = DISPLAY_NAME_TO_ID_MAP[measurement.Label] || measurement.Label;
+    item.dataset.label = measurementId;
     
     // 判断是否为未检测状态：Level === -1 或 Level === null 或 Level === [-1]
     const isUndetected = measurement.Level === -1 || 
@@ -3168,7 +3217,7 @@ function createMeasurementItem(measurement) {
     
     // 判断是否为异常（修复：正确处理数组类型的 Level）
     // 生长发育评估不需要标红，因为不存在不正常的发育
-    const isGrowth = isGrowthMeasurement(measurement.Label);
+    const isGrowth = isGrowthMeasurement(measurementId);
     let isAbnormal = false;
     
     if (!isUndetected && measurement.Level !== undefined && !isGrowth) {
@@ -3191,7 +3240,7 @@ function createMeasurementItem(measurement) {
     }
     
     // 构建内容
-    let content = `<div class="measurement-label">${getMeasurementLabel(measurement.Label)}</div>`;
+    let content = `<div class="measurement-label">${getMeasurementLabel(measurementId)}</div>`;
     
     // 显示测量值（需同时检查 undefined 和 null）
     let valueText = '';
@@ -3235,7 +3284,7 @@ function createMeasurementItem(measurement) {
     
     // 显示诊断结论
     if (measurement.Level !== undefined) {
-        const conclusion = getMeasurementConclusion(measurement.Label, measurement.Level);
+        const conclusion = getMeasurementConclusion(measurementId, measurement.Level);
         if (conclusion) {
             content += `<div class="measurement-conclusion">${conclusion}</div>`;
         }
@@ -3246,7 +3295,7 @@ function createMeasurementItem(measurement) {
     item.innerHTML = content;
     
     // 若存在可视化指令，绑定点击渲染
-    if (measurement.Visualization || measurement.Label === 'Airway_Gap') {
+    if (measurement.Visualization || measurementId === 'Airway_Gap') {
         item.classList.add('clickable');
         item.onclick = () => handleMeasurementClick(measurement);
     }
