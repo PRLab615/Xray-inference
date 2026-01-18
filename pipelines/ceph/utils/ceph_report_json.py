@@ -201,6 +201,7 @@ UNDETECTED_LEVEL = -1
 def generate_standard_output(
         inference_results: Dict[str, Any],
         patient_info: Dict[str, str],
+        auto_ruler_result: Optional[Dict[str, Any]] = None,
         visualization_enabled: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -311,6 +312,7 @@ def generate_standard_output(
             "BoneAgeMeasurements": bone_age_measurements,
             "AirwayMeasurements": airway_measurements,
         },
+        "auto_ruler": auto_ruler_result,
     }
 
     logger.info(

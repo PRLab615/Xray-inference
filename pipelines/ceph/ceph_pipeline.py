@@ -14,6 +14,7 @@ from pipelines.base_pipeline import BasePipeline  # type: ignore
 from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type: ignore
 from pipelines.ceph.modules.point_11.point_11_model import Point11Model  # type: ignore
 from pipelines.ceph.modules.CVM.cvm_model import CVMInferenceEngine  # type: ignore
+from pipelines.ceph.modules.auto_ruler.ruler_model import RulerModel  # type: ignore
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
 from pipelines.ceph.utils.ceph_report import calculate_airway_measurements, calculate_adenoid_ratio  # type: ignore
 from tools.timer import timer
@@ -91,6 +92,9 @@ class CephPipeline(BasePipeline):
                 elif module_name == 'cvm':
                     self.modules['cvm'] = self._init_cvm_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'cvm'")
+                elif module_name == 'auto_ruler':
+                    self.modules['auto_ruler'] = self._init_auto_ruler_module(module_cfg)
+                    self.logger.info(f"Successfully initialized module 'auto_ruler'")
                 elif module_name == 'seg':
                     # TODO: 实现 seg 模块初始化
                     self.logger.warning(f"Module 'seg' not implemented yet, skipping")
@@ -167,6 +171,22 @@ class CephPipeline(BasePipeline):
         self.logger.info(f"Initializing point_11 module with kwargs: {init_kwargs}")
         return Point11Model(**init_kwargs)
 
+    def _init_auto_ruler_module(self, config: Dict[str, Any]) -> RulerModel:
+        """
+        初始化 auto_ruler 模块
+        
+        Args:
+            config: auto_ruler 模块的配置字典
+            
+        Returns:
+            RulerModel: 初始化好的 auto_ruler 模块实例
+        """
+        exclude_keys = {'description'}
+        init_kwargs = {k: v for k, v in config.items() if k not in exclude_keys}
+        
+        self.logger.info(f"Initializing auto_ruler module with kwargs: {init_kwargs}")
+        return RulerModel(**init_kwargs)
+
     def run(
         self,
         image_path: str,
@@ -214,6 +234,17 @@ class CephPipeline(BasePipeline):
 
         self._log_step("开始侧位片推理", f"image_path={image_path}")
         self._load_image(image_path)
+
+        # ===== 步骤 0: Auto Ruler 模块推理（可选）=====
+        auto_ruler_result = None
+        if 'auto_ruler' in self.modules:
+            self.logger.info("执行 Auto Ruler 模块推理...")
+            auto_ruler_model = self.modules['auto_ruler']
+            auto_ruler_result = auto_ruler_model.predict(image_path=image_path)
+            if auto_ruler_result:
+                self.logger.info(f"Auto Ruler 模块推理完成: points={auto_ruler_result['points']}")
+            else:
+                self.logger.warning("Auto Ruler 模块未能检测到比例尺")
 
         # ===== 步骤 1: Point 模块推理（25点关键点检测）=====
         # Point 模块是必需的，用于检测头影测量关键点和计算测量值
@@ -328,7 +359,7 @@ class CephPipeline(BasePipeline):
         # 将推理结果格式化为符合规范的 JSON 格式
         # spacing 已在 inference_results 中
         with timer.record("report.generation"):
-            result = generate_standard_output(inference_results, patient_info)
+            result = generate_standard_output(inference_results, patient_info, auto_ruler_result)
 
 
 

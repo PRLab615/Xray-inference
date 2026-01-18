@@ -183,6 +183,14 @@ pipelines:
         weights_force_download: false
         device: "0"
         conf: 0.25
+      auto_ruler:
+        description: "自动比例尺识别模块"
+        weights_key: "weights/cephalometric/ruler.pt"
+        weights_force_download: false
+        device: "0"
+        image_size: 1024
+        conf: 0.25
+        iou: 0.45
   
   dental_age_stage:              # v4 新增：牙期检测
     preload: true                # Worker 启动时即初始化
