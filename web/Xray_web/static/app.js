@@ -79,7 +79,7 @@ const SHORT_LABEL_MAP = {
     TB: 'Tongue Base',
     TPPW: 'Tongue Posterior Pharyngeal Wall',
     AD: 'Adenoid',
-    "D'": 'D prime'
+    "D'": 'D\''
 };
 
 // 全局配置常量
@@ -1191,7 +1191,7 @@ function buildAirwayPolygonFromLandmarks(scale = 1) {
         'Tongue Base',
         'Tongue Posterior Pharyngeal Wall',
         'Adenoid',
-        'D prime'
+        'D\''
     ];
     const pts = [];
     const pushScaled = (p) => {
@@ -2190,7 +2190,7 @@ const LANDMARK_FULL_NAMES = {
     'Tongue Base': '舌根点',
     'Tongue Posterior Pharyngeal Wall': '舌咽部后气道点',
     'Adenoid': '腺样体最凸点',
-    'D prime': '翼板与颅底交点',
+    'D\'': '翼板与颅底交点',
 
     // 兼容旧格式简称
     'S': '蝶鞍点',

@@ -799,7 +799,7 @@ def _airway_gap_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, 
     """
     # 原 11 点 + PTM + PNS（总 13 点参与轮廓排序）
     keys_for_contour = [
-        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "Dprime",
+        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "D'",
         "PTM", "PNS"                  # ← 新增在这里
     ]
 

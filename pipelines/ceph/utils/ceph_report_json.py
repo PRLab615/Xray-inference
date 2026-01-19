@@ -64,7 +64,7 @@ LABEL_FULL_NAMES = {
     "TB": "Tongue Base",  # 舌根点
     "TPPW": "Tongue Posterior Pharyngeal Wall",  # 舌咽部后气道点
     "AD": "Adenoid",  # 腺样体最凸点
-    "D'": "D prime",  # 翼板与颅底交点
+    "D'": "D'",  # 翼板与颅底交点
 }
 
 # 在 report.py 文件顶部（import 之后，MEASUREMENT_ORDER 之前）添加
