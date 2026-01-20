@@ -68,7 +68,7 @@ def build_single(
         return _jaw_coordination_payload(landmarks)
     if name == "SGo_NMe_Ratio":
         return _sgo_nme_payload(landmarks)
-    if name == "PtmANS_Length":
+    if name == "PtmANS_Length": 
         return _ptm_ans_payload(landmarks)
     if name == "Upper_Jaw_Position":
         return _ptm_s_payload(landmarks)
@@ -254,6 +254,7 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     }
 
     elements = [
+
         # BOP 平面参考线（虚线，从后到前）
         _line("v_molar_mid", "v_incisal_mid", "Dashed", "Reference"),
         # A、B 到 BOP 的垂线
@@ -261,6 +262,15 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
         _line("B", "v_b_on_bop", "Dashed", "Measurement"),
         # Wits 测量段
         _line("v_a_on_bop", "v_b_on_bop", "Solid", "Measurement"),
+
+
+        _line("Po", "Or", "Dashed", "Reference"),
+        _line("A", "v_a_on_fh", "Dashed", "Measurement"),
+        _line("B", "v_b_on_fh", "Dashed", "Measurement"),
+        # Wits 值：FH 平面上 A、B 投影点之间的水平距离
+        _line("v_a_on_fh", "v_b_on_fh", "Solid", "Measurement"),
+
+
     ]
 
     return {"VirtualPoints": virtual_points, "Elements": elements}
@@ -789,7 +799,7 @@ def _airway_gap_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, 
     """
     # 原 11 点 + PTM + PNS（总 13 点参与轮廓排序）
     keys_for_contour = [
-        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "Dprime",
+        "U", "V", "UPW", "SPP", "SPPW", "MPW", "LPW", "TB", "TPPW", "AD", "D'",
         "PTM", "PNS"                  # ← 新增在这里
     ]
 
