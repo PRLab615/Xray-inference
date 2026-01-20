@@ -79,7 +79,7 @@ const SHORT_LABEL_MAP = {
     TB: 'Tongue Base',
     TPPW: 'Tongue Posterior Pharyngeal Wall',
     AD: 'Adenoid',
-    "D'": 'D prime'
+    "D'": 'D\''
 };
 
 // 全局配置常量
@@ -1191,7 +1191,7 @@ function buildAirwayPolygonFromLandmarks(scale = 1) {
         'Tongue Base',
         'Tongue Posterior Pharyngeal Wall',
         'Adenoid',
-        'D prime'
+        'D\''
     ];
     const pts = [];
     const pushScaled = (p) => {
@@ -2190,7 +2190,7 @@ const LANDMARK_FULL_NAMES = {
     'Tongue Base': '舌根点',
     'Tongue Posterior Pharyngeal Wall': '舌咽部后气道点',
     'Adenoid': '腺样体最凸点',
-    'D prime': '翼板与颅底交点',
+    'D\'': '翼板与颅底交点',
 
     // 兼容旧格式简称
     'S': '蝶鞍点',
@@ -2389,9 +2389,41 @@ async function renderCephalometric(data) {
     }
     
     console.log('缩放比例:', scale, '显示尺寸:', displayWidth, 'x', displayHeight);
-    
-    // 保存缩放比例
-    appState.imageScale = scale;
+
+    // ================= 修改开始：分离显示缩放与物理测量缩放 =================
+    // 1. appState.imageScale (显示缩放): 用于将原始图像像素映射到 Konva 画布像素
+    // 2. appState.mmPerPixel (物理缩放): 用于将图像像素距离转换为物理毫米距离
+
+    // 设置显示缩放 (Display Scale) - 必须使用容器适应比例，否则渲染位置会偏移
+    appState.imageScale = scale; 
+    console.log('显示缩放比例 (imageScale):', appState.imageScale);
+
+    // 计算物理缩放 (mm/pixel)
+    let mmPerPixel = 1.0; // 默认值
+
+    if (appState.manualImageScale) {
+        mmPerPixel = appState.manualImageScale;
+        console.log('使用手动设置的物理比例尺:', mmPerPixel);
+    } else if (data.auto_ruler && data.auto_ruler.points && data.auto_ruler.points.length === 2) {
+        const p1 = data.auto_ruler.points[0];
+        const p2 = data.auto_ruler.points[1];
+        const distance_px = Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2));
+        
+        if (distance_px > 0) {
+            mmPerPixel = (data.auto_ruler.distance_mm || 10) / distance_px;
+            console.log('使用AI识别的物理比例尺:', mmPerPixel, '像素距离:', distance_px);
+        } else {
+            console.warn('AI比例尺识别失败（像素距离为0），无法计算物理比例尺。');
+        }
+    } else {
+        console.log('未找到比例尺数据，物理比例尺默认为 1.0');
+    }
+
+    // 保存物理比例尺供后续测量使用
+    appState.mmPerPixel = mmPerPixel;
+    // ================= 修改结束 =================
+
+    // 保存原始图像
     appState.originalImage = img;
     
     // 4. 初始化 Konva Stage
@@ -2437,6 +2469,9 @@ async function renderCephalometric(data) {
     
     // 8. 初始化图层控制面板
     initLayerControlPanel();
+
+    // 渲染AI比例尺
+    renderAutoRulerLayer(data.auto_ruler);
 
     // 9. 自动渲染首个可视化测量项
     const first = getNavigableMeasurements()[0];
@@ -5790,6 +5825,7 @@ const LAYER_CONFIG = {
     referencePlanes: { name: '参考平面', taskType: 'cephalometric' },
     cvm: { name: '颈椎成熟度', taskType: 'cephalometric' },
     measurementLines: { name: '测量线', taskType: 'cephalometric' },
+    autoRulerLayer: { name: '自动比例尺', taskType: 'cephalometric' },
     airway: { name: '气道', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
@@ -6069,3 +6105,93 @@ function addClickToggleToNode(node, layerKey) {
     });
 }
 
+/**
+ * 确保图层存在，如果不存在则创建并添加到 Stage
+ * @param {string} layerKey - 图层键名
+ * @returns {Konva.Layer}
+ */
+function ensureLayer(layerKey) {
+    if (appState.konvaLayers[layerKey]) {
+        return appState.konvaLayers[layerKey];
+    }
+    
+    const stage = appState.konvaStage;
+    if (!stage) return null;
+    
+    const layer = new Konva.Layer();
+    stage.add(layer);
+    appState.konvaLayers[layerKey] = layer;
+    
+    // 默认显示
+    if (appState.layerVisibility[layerKey] === undefined) {
+        appState.layerVisibility[layerKey] = true;
+    }
+    
+    return layer;
+}
+
+/**
+ * 渲染自动比例尺图层
+ * @param {object} autoRulerData - 包含 points 和 distance_mm 的对象
+ */
+function renderAutoRulerLayer(autoRulerData) {
+    const stage = appState.konvaStage;
+    if (!stage) {
+        console.warn('[Auto Ruler] Konva Stage not initialized.');
+        return;
+    }
+
+    // 获取或创建 autoRulerLayer
+    const layer = ensureLayer('autoRulerLayer');
+    if (!layer) return;
+
+    layer.destroyChildren(); // 清空旧内容
+    
+    if (!autoRulerData || !autoRulerData.points || autoRulerData.points.length !== 2) {
+        console.log('[Auto Ruler] No valid ruler data to render.');
+        layer.draw();
+        return;
+    }
+
+    const p1 = autoRulerData.points[0];
+    const p2 = autoRulerData.points[1];
+    const distance_mm = autoRulerData.distance_mm || 10;
+    // 使用全局保存的 imageScale，确保与图像缩放一致
+    const scale = appState.imageScale || 1.0; 
+
+    // 1. 绘制比例尺线段 (绿色)
+    const rulerLine = new Konva.Line({
+        points: [p1[0] * scale, p1[1] * scale, p2[0] * scale, p2[1] * scale],
+        stroke: '#2ecc71', // 绿色
+        strokeWidth: 2,
+        lineCap: 'round',
+        lineJoin: 'round',
+        listening: false,
+    });
+    layer.add(rulerLine);
+
+    // 2. 绘制文字 "10mm"
+    const midX = ((p1[0] + p2[0]) / 2) * scale;
+    const midY = ((p1[1] + p2[1]) / 2) * scale;
+
+    const rulerText = new Konva.Text({
+        x: midX,
+        y: midY - 15, // 文字显示在线上方
+        text: `${distance_mm}mm`,
+        fontSize: 14,
+        fontFamily: 'Arial, sans-serif',
+        fill: '#2ecc71',
+        padding: 4,
+        align: 'center',
+        listening: false,
+    });
+
+    // 居中文字
+    rulerText.offsetX(rulerText.width() / 2);
+    
+    layer.add(rulerText);
+
+    console.log(`[Auto Ruler] Rendered at [${p1.join(',')}] to [${p2.join(',')}]`);
+    layer.moveToTop();
+    layer.draw();
+}
