@@ -141,7 +141,8 @@ const DISPLAY_NAME_TO_ID_MAP = {
     "S+Ar+Go（Bjork sum）": "Mandibular_Growth_Type_Angle",
     "S-N mm": "S_N_Anterior_Cranial_Base_Length",
     "Go-Me mm": "Go_Me_Length",
-    "CVSM边缘形状": "Cervical_Vertebral_Maturity_Stage"
+    "CVSM边缘形状": "Cervical_Vertebral_Maturity_Stage",
+    "侧貌轮廓 (P1-P34)": "Profile_Contour"
 };
 // [AI-ASSISTANT-MODIFY] END
 
@@ -380,16 +381,82 @@ function scaleCoordinates(x, y, scale) {
 /**
  * 获取测量数据对象（兼容新旧字段名）
  * @param {Object} data - 分析数据
- * @returns {Object} 测量数据对象
+ * @returns {Object} 包含 AllMeasurements 数组的对象
  */
 function getMeasurementsObject(data) {
-    return data?.Measurements || data?.CephalometricMeasurements;
+    let allMeasurements = [];
+
+    // 1. 检查顶级 Measurements 是否为包含分类的字典
+    if (data?.Measurements && !Array.isArray(data.Measurements)) {
+        const m = data.Measurements;
+        // 兼容新旧分类 Key：
+        // 旧版：CephalometricMeasurements, ProfileMeasurements, AirwayMeasurements, BoneAgeMeasurements
+        // 新版：Bone, Tooth, Growth, SoftTissue, Airway
+        if (m.CephalometricMeasurements || m.ProfileMeasurements || m.AirwayMeasurements || m.BoneAgeMeasurements ||
+            m.Bone || m.Tooth || m.Growth || m.SoftTissue || m.Airway) {
+            allMeasurements = [
+                ...(m.CephalometricMeasurements || []),
+                ...(m.BoneAgeMeasurements || []),
+                ...(m.AirwayMeasurements || []),
+                ...(m.ProfileMeasurements || []),
+                // 新版分类
+                ...(m.Bone || []),
+                ...(m.Tooth || []),
+                ...(m.Growth || []),
+                ...(m.SoftTissue || []),
+                ...(m.Airway || [])
+            ];
+            return { AllMeasurements: allMeasurements };
+        }
+    }
+    
+    // 2. 检查旧版或适配后的 AllMeasurements 字段
+    const measurementsObj = data?.Measurements || data?.CephalometricMeasurements;
+    if (measurementsObj?.AllMeasurements) {
+        return measurementsObj;
+    }
+
+    // 3. 兼容其他可能的结构（如果是数组，包装成对象）
+    const rawList = data?.Measurements || data?.CephalometricMeasurements || [];
+    return { 
+        AllMeasurements: Array.isArray(rawList) ? rawList : [] 
+    };
 }
 
 function buildLandmarkMap(data) {
     const map = {};
-    const landmarks = data?.LandmarkPositions?.Landmarks || [];
-    landmarks.forEach(l => {
+    let allLandmarks = [];
+
+    // 1. 检查顶级 Landmarks 是否为包含分类的字典
+    if (data?.Landmarks && !Array.isArray(data.Landmarks)) {
+        const lm = data.Landmarks;
+        if (lm.CephalometricLandmarks || lm.AirwayLandmarks || lm.ProfileLandmarks) {
+            allLandmarks = [
+                ...(lm.CephalometricLandmarks || []),
+                ...(lm.AirwayLandmarks || []),
+                ...(lm.ProfileLandmarks || [])
+            ];
+        }
+    } 
+    // 2. 检查 LandmarkPositions 结构 (Adaptation layer output)
+    else if (data?.LandmarkPositions) {
+        const lp = data.LandmarkPositions;
+        if (lp.Landmarks && Array.isArray(lp.Landmarks)) {
+            allLandmarks = lp.Landmarks;
+        } else if (lp.CephalometricLandmarks || lp.AirwayLandmarks || lp.ProfileLandmarks) {
+            allLandmarks = [
+                ...(lp.CephalometricLandmarks || []),
+                ...(lp.AirwayLandmarks || []),
+                ...(lp.ProfileLandmarks || [])
+            ];
+        }
+    }
+    // 3. 兜底处理：如果 Landmarks 本身就是数组
+    else if (Array.isArray(data?.Landmarks)) {
+        allLandmarks = data.Landmarks;
+    }
+
+    allLandmarks.forEach(l => {
         if (l && l.Status === 'Detected' && l.X != null && l.Y != null) {
             // 原始全名
             map[l.Label] = [l.X, l.Y];
@@ -397,8 +464,8 @@ function buildLandmarkMap(data) {
             const shortKey = Object.keys(SHORT_LABEL_MAP).find(k => SHORT_LABEL_MAP[k] === l.Label);
             if (shortKey) {
                 map[shortKey] = [l.X, l.Y];
+            }
         }
-    }
     });
     return map;
 }
@@ -474,7 +541,12 @@ function jumpMeasurement(delta) {
  */
 function getNavigableMeasurements() {
     if (!Array.isArray(appState.cephMeasurements)) return [];
-    return appState.cephMeasurements.filter(m => m && m.Visualization);
+    return appState.cephMeasurements.filter(m => {
+        if (!m) return false;
+        const id = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
+        // 气道和侧貌轮廓即使没有 Visualization 对象也要包含（它们有专用渲染分支）
+        return m.Visualization || id === 'Airway_Gap' || id === 'Profile_Contour';
+    });
 }
 
 /**
@@ -500,6 +572,44 @@ function renderMeasurementVisualization(measurement) {
 
     const vis = measurement.Visualization;
     const scale = appState.imageScale || 1;
+
+    // [新增] 特殊处理：侧貌轮廓（P1-P34 连线）
+    if (measurementId === 'Profile_Contour') {
+        const layer = ensureLayer('profile_contour');
+        if (!layer) return;
+        layer.destroyChildren(); // 清除旧线
+
+        // 从点位映射中获取 P1-P34 的坐标
+        const points = [];
+        // P1 到 P34
+        for (let i = 1; i <= 34; i++) {
+            const label = `P${i}`;
+            const coord = appState.cephLandmarks[label];
+            if (coord) {
+                points.push(coord[0] * scale, coord[1] * scale);
+            }
+        }
+
+        if (points.length >= 4) { // 至少两点才能连线
+            const line = new Konva.Line({
+                points: points,
+                stroke: '#00FF00', // 亮绿色
+                strokeWidth: 2,
+                lineCap: 'round',
+                lineJoin: 'round',
+                tension: 0.3,      // 轻微平滑
+                listening: false
+            });
+            layer.add(line);
+            console.info(`[Profile] Drew contour with ${points.length / 2} points`);
+        } else {
+            console.warn('[Profile] Not enough points to draw contour');
+        }
+        
+        // 绘制完成后直接返回，不走通用逻辑
+        layer.batchDraw();
+        return;
+    }
 
     // 特殊处理：气道多边形（紫色半透明）
     if (measurementId === 'Airway_Gap') {
@@ -2192,6 +2302,15 @@ const LANDMARK_FULL_NAMES = {
     'Adenoid': '腺样体最凸点',
     'D\'': '翼板与颅底交点',
 
+    // 34点轮廓
+    'P1': '软组织额点', 'P2': '软组织鼻根点', 'P3': '鼻梁点', 'P4': '鼻尖点', 'P5': '鼻下点',
+    'P6': '上唇下点', 'P7': '上唇凸点', 'P8': '上唇缘点', 'P9': '口裂点', 'P10': '下唇缘点',
+    'P11': '下唇凸点', 'P12': '下唇下点', 'P13': '软组织颏前点', 'P14': '软组织颏下点', 'P15': '颈点',
+    'P16': '轮廓点16', 'P17': '轮廓点17', 'P18': '轮廓点18', 'P19': '轮廓点19', 'P20': '轮廓点20',
+    'P21': '轮廓点21', 'P22': '轮廓点22', 'P23': '轮廓点23', 'P24': '轮廓点24', 'P25': '轮廓点25',
+    'P26': '轮廓点26', 'P27': '轮廓点27', 'P28': '轮廓点28', 'P29': '轮廓点29', 'P30': '轮廓点30',
+    'P31': '轮廓点31', 'P32': '轮廓点32', 'P33': '轮廓点33', 'P34': '轮廓点34',
+
     // 兼容旧格式简称
     'S': '蝶鞍点',
     'N': '鼻根点',
@@ -2254,7 +2373,8 @@ async function renderCephalometric(data) {
     // 1. 适配关键点 (Landmarks)
     if (data.LandmarkPositions) {
         const hasNewFormat = data.LandmarkPositions.CephalometricLandmarks || 
-                            data.LandmarkPositions.AirwayLandmarks;
+                            data.LandmarkPositions.AirwayLandmarks ||
+                            data.LandmarkPositions.ProfileLandmarks;
         
         console.log('[适配层] Landmarks 格式:', hasNewFormat ? '新格式' : '旧格式');
         
@@ -2268,6 +2388,10 @@ async function renderCephalometric(data) {
                 console.log('[适配层] 提取 AirwayLandmarks:', data.LandmarkPositions.AirwayLandmarks.length, '个');
                 allLandmarks = allLandmarks.concat(data.LandmarkPositions.AirwayLandmarks);
             }
+            if (data.LandmarkPositions.ProfileLandmarks) {
+                console.log('[适配层] 提取 ProfileLandmarks:', data.LandmarkPositions.ProfileLandmarks.length, '个');
+                allLandmarks = allLandmarks.concat(data.LandmarkPositions.ProfileLandmarks);
+            }
             data.LandmarkPositions.Landmarks = allLandmarks;
             console.log('[适配层] ✅ 已合并为扁平结构:', allLandmarks.length, '个点位');
         }
@@ -2279,7 +2403,8 @@ async function renderCephalometric(data) {
     if (measurementsObj) {
         const hasNewFormat = measurementsObj.CephalometricMeasurements || 
                             measurementsObj.AirwayMeasurements || 
-                            measurementsObj.BoneAgeMeasurements;
+                            measurementsObj.BoneAgeMeasurements ||
+                            measurementsObj.ProfileMeasurements;
         
         console.log('[适配层] Measurements 格式:', hasNewFormat ? '新格式' : '旧格式');
         
@@ -2296,6 +2421,10 @@ async function renderCephalometric(data) {
             if (measurementsObj.BoneAgeMeasurements) {
                 console.log('[适配层] 提取 BoneAgeMeasurements:', measurementsObj.BoneAgeMeasurements.length, '个');
                 allMeasurements = allMeasurements.concat(measurementsObj.BoneAgeMeasurements);
+            }
+            if (measurementsObj.ProfileMeasurements) {
+                console.log('[适配层] 提取 ProfileMeasurements:', measurementsObj.ProfileMeasurements.length, '个');
+                allMeasurements = allMeasurements.concat(measurementsObj.ProfileMeasurements);
             }
             measurementsObj.AllMeasurements = allMeasurements;
             console.log('[适配层] ✅ 已合并为扁平结构:', allMeasurements.length, '个测量项');
@@ -2452,11 +2581,17 @@ async function renderCephalometric(data) {
     appState.konvaLayers.measurementLines = measurementLayer;
     appState.layerVisibility.measurementLines = true;
 
-    // 5.6. 创建气道图层（在关键点层之前，位于测量线之上或下方均可，这里放在测量线之上）
+    // 5.6. 创建气道图层
     const airwayLayer = new Konva.Layer();
     stage.add(airwayLayer);
     appState.konvaLayers.airway = airwayLayer;
     appState.layerVisibility.airway = true;
+
+    // 5.7. 创建侧貌轮廓图层
+    const profileLayer = new Konva.Layer();
+    stage.add(profileLayer);
+    appState.konvaLayers.profile_contour = profileLayer;
+    appState.layerVisibility.profile_contour = true;
     
     // 6. 绘制关键点
     drawLandmarks(data, stage, scale);
@@ -2473,12 +2608,23 @@ async function renderCephalometric(data) {
     // 渲染AI比例尺
     renderAutoRulerLayer(data.auto_ruler);
 
-    // 9. 自动渲染首个可视化测量项
-    const first = getNavigableMeasurements()[0];
+    // 9. 自动渲染首个可视化测量项以及侧貌轮廓
+    const navigable = getNavigableMeasurements();
+    const first = navigable[0];
     if (first) {
         handleMeasurementClick(first);
     } else {
         console.warn('未找到可视化测量项，无法自动渲染');
+    }
+    
+    // 强制渲染侧貌轮廓（如果存在）
+    const profileContour = appState.cephMeasurements.find(m => {
+        const id = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
+        return id === 'Profile_Contour';
+    });
+    if (profileContour) {
+        console.log('自动渲染侧貌轮廓');
+        renderMeasurementVisualization(profileContour);
     }
     
     console.log('侧位片渲染完成');
@@ -2520,20 +2666,28 @@ function drawLandmarks(data, stage, scale) {
                 strokeWidth: CONFIG.STROKE_WIDTH
             });
             
-            // 绘制标签文本
-            const text = new Konva.Text({
-                x: scaledX + 5,
-                y: scaledY - 6,
-                text: landmark.Label,
-                fontSize: 10,
-                fill: 'white',
-                padding: 1,
-                backgroundColor: 'rgba(0,0,0,0.6)'
-            });
+            // [修改] 侧貌轮廓点（P1-P34）不显示文本标签，仅显示红点
+            const isProfilePoint = /^P\d+$/.test(landmark.Label);
+            let text = null;
+
+            if (!isProfilePoint) {
+                // 绘制标签文本
+                text = new Konva.Text({
+                    x: scaledX + 5,
+                    y: scaledY - 6,
+                    text: landmark.Label,
+                    fontSize: 10,
+                    fill: 'white',
+                    padding: 1,
+                    backgroundColor: 'rgba(0,0,0,0.6)'
+                });
+                text.landmarkData = landmark;
+                // 添加点击切换图层显示/隐藏功能
+                addClickToggleToNode(text, 'landmarks');
+            }
             
             // 存储关键点数据到图形对象，用于后续 Tooltip
             circle.landmarkData = landmark;
-            text.landmarkData = landmark;
             
             // 绑定 Tooltip 事件
             circle.on('mouseenter', function(e) {
@@ -2544,21 +2698,24 @@ function drawLandmarks(data, stage, scale) {
                 hideTooltip();
             });
             
-            // 文本也绑定事件（可选，提供更大的悬停区域）
-            text.on('mouseenter', function(e) {
-                showLandmarkTooltip(this, landmark, e);
-            });
-            
-            text.on('mouseleave', function() {
-                hideTooltip();
-            });
+            if (text) {
+                // 文本也绑定事件（可选，提供更大的悬停区域）
+                text.on('mouseenter', function(e) {
+                    showLandmarkTooltip(this, landmark, e);
+                });
+                
+                text.on('mouseleave', function() {
+                    hideTooltip();
+                });
+            }
             
             // 添加点击切换图层显示/隐藏功能
             addClickToggleToNode(circle, 'landmarks');
-            addClickToggleToNode(text, 'landmarks');
             
             landmarkLayer.add(circle);
-            landmarkLayer.add(text);
+            if (text) {
+                landmarkLayer.add(text);
+            }
             drawnCount++;
         });
         
@@ -3137,12 +3294,32 @@ function buildCephReport(data) {
             growthSection.appendChild(img);
         }
         
-        if (growthSection.querySelectorAll('.measurement-item, img').length > 0) {
+        if (growthSection.querySelectorAll('.measurement-item').length > 0) {
             container.appendChild(growthSection);
         }
     }
-    
-    // 5. 气道分析
+
+    // 5. 软组织分析 (用户要求删除)
+    /*
+    if (measurementsObj && measurementsObj.AllMeasurements) {
+        const softSection = createReportSection('软组织分析');
+        const measurements = measurementsObj.AllMeasurements;
+        
+        measurements.forEach(m => {
+            const measurementId = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
+            if (isSoftTissueMeasurement(measurementId)) {
+                const item = createMeasurementItem(m);
+                softSection.appendChild(item);
+            }
+        });
+        
+        if (softSection.querySelectorAll('.measurement-item').length > 0) {
+            container.appendChild(softSection);
+        }
+    }
+    */
+
+    // 6. 气道分析
     if (measurementsObj && measurementsObj.AllMeasurements) {
         const airwaySection = createReportSection('气道分析');
         const measurements = measurementsObj.AllMeasurements;
@@ -3455,6 +3632,8 @@ function getMeasurementLabel(label) {
             return '气道';
         case 'Adenoid_Index':
             return 'A/N';
+        case 'Profile_Contour':
+            return '侧貌轮廓 (P1-P34)';
     }
 
     // 兜底：如果没有匹配到，直接返回原始 Key
@@ -3501,6 +3680,7 @@ function getMeasurementConclusion(label, level) {
     if (typeof level === 'boolean') {
         if (label === 'Airway_Gap') return level ? '正常' : '不足';
         if (label === 'Adenoid_Index') return level ? '未见' : '肿大';
+        if (label === 'Profile_Contour') return '已生成连线';
         return level ? '正常' : '异常';
     }
 
@@ -3758,6 +3938,18 @@ function isGrowthMeasurement(label) {
         'Cervical_Vertebral_Maturity_Stage'
     ];
     return growthLabels.includes(label);
+}
+
+/**
+ * 判断是否为软组织测量项
+ * @param {string} label - 测量项标签
+ * @returns {boolean} 是否为软组织测量项
+ */
+function isSoftTissueMeasurement(label) {
+    const softLabels = [
+        'Profile_Contour'
+    ];
+    return softLabels.includes(label);
 }
 
 /**
@@ -5827,6 +6019,7 @@ const LAYER_CONFIG = {
     measurementLines: { name: '测量线', taskType: 'cephalometric' },
     autoRulerLayer: { name: '自动比例尺', taskType: 'cephalometric' },
     airway: { name: '气道', taskType: 'cephalometric' },
+    profile_contour: { name: '侧貌轮廓', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
     implants: { name: '种植体', taskType: 'panoramic' },

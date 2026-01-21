@@ -53,6 +53,9 @@ KEYPOINT_MAP_11 = {
     "D'": "D'",  # 翼板与颅底交点
 }
 
+# 34点侧貌轮廓点位名称映射
+KEYPOINT_MAP_34 = {f"P{i}": f"P{i}" for i in range(1, 35)}
+
 # 气道测量正常值参考（单位：mm）
 # 参考文档：腺体气道集成与后处理说明.md
 AIRWAY_NORMAL_VALUES = {
