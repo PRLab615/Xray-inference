@@ -13,6 +13,7 @@ import numpy as np
 from .ceph_report import (
     KEYPOINT_MAP,
     KEYPOINT_MAP_11,
+    KEYPOINT_MAP_34,
     ANB_SKELETAL_II_THRESHOLD,
     ANB_SKELETAL_III_THRESHOLD,
     FH_MP_HIGH_ANGLE_THRESHOLD,
@@ -104,6 +105,7 @@ MEASUREMENT_DISPLAY_NAMES = {
     "S_N_Anterior_Cranial_Base_Length": "S-N mm",
     "Go_Me_Length": "Go-Me mm",
     "Cervical_Vertebral_Maturity_Stage": "CVSM边缘形状",
+    "Profile_Contour": "侧貌轮廓 (P1-P34)",
 }
 
 MEASUREMENT_ORDER = [
@@ -118,6 +120,7 @@ MEASUREMENT_ORDER = [
     "IMPA_Angle",
     "Airway_Gap",  # 可选
     "Adenoid_Index",  # 可选
+    "Profile_Contour", # 可选 (34点)
     "SNA_Angle",
     "Upper_Jaw_Position",
     "SNB_Angle",
@@ -194,6 +197,10 @@ AIRWAY_MEASUREMENT_NAMES = {
     "Adenoid_Index",
 }
 
+PROFILE_MEASUREMENT_NAMES = {
+    "Profile_Contour",
+}
+
 # 未检测标识：Level=-1 表示该测量项未被模型检测到
 UNDETECTED_LEVEL = -1
 
@@ -220,7 +227,13 @@ def generate_standard_output(
     """
     landmarks_block = inference_results.get("landmarks", {})
     landmarks_11_block = inference_results.get("landmarks_11", {})  # 11点结果
+    landmarks_34_block = inference_results.get("landmarks_34", {})  # 34点结果
     measurements = inference_results.get("measurements", {})
+    
+    # 如果存在34点结果，注入 Profile_Contour 测量项以触发可视化
+    if landmarks_34_block:
+        if "Profile_Contour" not in measurements:
+             measurements["Profile_Contour"] = {"status": "ok", "value": 0}
 
     # 从推理结果获取实际使用的 spacing，如果没有则使用默认值
     spacing = inference_results.get("spacing", DEFAULT_SPACING_MM_PER_PIXEL)
@@ -233,19 +246,24 @@ def generate_standard_output(
     if landmarks_11_block:
         airway_landmarks = _build_landmark_11_section(landmarks_11_block)
 
+    # 构建 34 点的 landmark section（侧貌轮廓组）
+    profile_landmarks = None
+    if landmarks_34_block:
+        profile_landmarks = _build_landmark_34_section(landmarks_34_block)
+
     # 构建可视化映射
     viz_map = (
-        build_visualization_map(measurements, landmarks_block, landmarks_11_block)
+        build_visualization_map(measurements, landmarks_block, landmarks_11_block, landmarks_34_block)
         if visualization_enabled
         else None
     )
 
     # 将测量项按类别拆分
-    cephalometric_measurements, bone_age_measurements, airway_measurements = (
+    cephalometric_measurements, bone_age_measurements, airway_measurements, profile_measurements = (
         _split_measurements_by_category(measurements, viz_map)
     )
 
-    # 计算总的 landmark 统计（25点 + 11点）
+    # 计算总的 landmark 统计（25点 + 11点 + 34点）
     total_landmarks = cephalometric_landmarks["TotalLandmarks"]
     detected_landmarks = cephalometric_landmarks["DetectedLandmarks"]
     missing_labels = cephalometric_landmarks["MissingLabels"].copy()
@@ -255,10 +273,15 @@ def generate_standard_output(
         detected_landmarks += airway_landmarks["DetectedLandmarks"]
         missing_labels.extend(airway_landmarks["MissingLabels"])
 
+    if profile_landmarks:
+        total_landmarks += profile_landmarks["TotalLandmarks"]
+        detected_landmarks += profile_landmarks["DetectedLandmarks"]
+        missing_labels.extend(profile_landmarks["MissingLabels"])
+
     # 计算合并后的可视性等级与统计
     visibility_grade = _visibility_grade(detected_landmarks, total_landmarks)
 
-    # 计算平均置信度（合并头影和气道）
+    # 计算平均置信度（合并所有）
     all_confidences = []
     for lm in cephalometric_landmarks["Landmarks"]:
         if lm["Status"] == "Detected":
@@ -267,12 +290,18 @@ def generate_standard_output(
         for lm in airway_landmarks["Landmarks"]:
             if lm["Status"] == "Detected":
                 all_confidences.append(lm["Confidence"])
+    if profile_landmarks:
+        for lm in profile_landmarks["Landmarks"]:
+            if lm["Status"] == "Detected":
+                all_confidences.append(lm["Confidence"])
+
     average_confidence = round(mean(all_confidences), 2) if all_confidences else 0.0
 
     # 构建 LandmarkPositions：按类别拆分
     landmark_positions = {
         "CephalometricLandmarks": cephalometric_landmarks["Landmarks"],
         "AirwayLandmarks": airway_landmarks["Landmarks"] if airway_landmarks else [],
+        "ProfileLandmarks": profile_landmarks["Landmarks"] if profile_landmarks else [],
         # BoneAgeLandmarks 字段已移除，因为骨龄通过测量项（CVM）体现，无独立点位
     }
 
@@ -311,6 +340,7 @@ def generate_standard_output(
             "CephalometricMeasurements": cephalometric_measurements,
             "BoneAgeMeasurements": bone_age_measurements,
             "AirwayMeasurements": airway_measurements,
+            "ProfileMeasurements": profile_measurements,
         },
         "auto_ruler": auto_ruler_result,
     }
@@ -318,12 +348,13 @@ def generate_standard_output(
     logger.info(
         "Generated cephalometric JSON (split by category): "
         "%s ceph landmarks, %s airway landmarks | "
-        "%s ceph measurements, %s bone-age measurements, %s airway measurements",
+        "%s ceph measurements, %s bone-age measurements, %s airway measurements, %s profile measurements",
         len(cephalometric_landmarks["Landmarks"]),
         len(airway_landmarks["Landmarks"]) if airway_landmarks else 0,
         len(cephalometric_measurements),
         len(bone_age_measurements),
         len(airway_measurements),
+        len(profile_measurements),
     )
     return data_dict
 
@@ -383,6 +414,55 @@ def _build_landmark_11_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any
     }
 
 
+def _build_landmark_34_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    构建 34 点（侧貌轮廓）的 landmark section
+    """
+    coordinates: Dict[str, Any] = landmarks_block.get("coordinates", {})
+    confidences: Dict[str, float] = landmarks_block.get("confidences", {})
+
+    entries: List[Dict[str, Any]] = []
+    detected = 0
+    missing_labels: List[str] = []
+    confidence_values: List[float] = []
+
+    for key, short_label in KEYPOINT_MAP_34.items():
+        # 使用完整标签名 (如果 LABEL_FULL_NAMES 中没有，则使用 short_label)
+        full_label = LABEL_FULL_NAMES.get(short_label, short_label)
+
+        coord = coordinates.get(key)
+        confidence = confidences.get(key, 0.0)
+
+        x_value = float(coord[0]) if _is_valid_point(coord) else None
+        y_value = float(coord[1]) if _is_valid_point(coord) else None
+        status = "Detected" if x_value is not None and y_value is not None else "Missing"
+
+        if status == "Detected":
+            detected += 1
+            confidence_values.append(confidence)
+        else:
+            missing_labels.append(full_label)
+
+        formatted_confidence = round(confidence, 2) if status == "Detected" else 0.00
+
+        entries.append(
+            {
+                "Label": full_label,
+                "X": int(x_value) if x_value is not None else None,
+                "Y": int(y_value) if y_value is not None else None,
+                "Status": status,
+                "Confidence": formatted_confidence,
+            }
+        )
+
+    return {
+        "TotalLandmarks": len(KEYPOINT_MAP_34),
+        "DetectedLandmarks": detected,
+        "MissingLabels": missing_labels,
+        "Landmarks": entries,
+    }
+
+
 def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
     coordinates: Dict[str, Any] = landmarks_block.get("coordinates", {})
     confidences: Dict[str, float] = landmarks_block.get("confidences", {})
@@ -438,17 +518,18 @@ def _build_landmark_section(landmarks_block: Dict[str, Any]) -> Dict[str, Any]:
 def _split_measurements_by_category(
         measurements: Dict[str, Dict[str, Any]],
         viz_map: Dict[str, Any] | None = None,
-) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    将测量项按类别拆分为三组：头影、骨龄、气道。
+    将测量项按类别拆分为四组：头影、骨龄、气道、侧貌。
 
     Returns:
-        (cephalometric_measurements, bone_age_measurements, airway_measurements)
+        (cephalometric_measurements, bone_age_measurements, airway_measurements, profile_measurements)
         每组都是测量项字典的列表，保持原有字段结构
     """
     cephalometric_list: List[Dict[str, Any]] = []
     bone_age_list: List[Dict[str, Any]] = []
     airway_list: List[Dict[str, Any]] = []
+    profile_list: List[Dict[str, Any]] = []
 
     # 按照 MEASUREMENT_ORDER 顺序处理，确保顺序一致
     for name in MEASUREMENT_ORDER:
@@ -460,6 +541,8 @@ def _split_measurements_by_category(
             bone_age_list.append(entry)
         elif name in AIRWAY_MEASUREMENT_NAMES:
             airway_list.append(entry)
+        elif name in PROFILE_MEASUREMENT_NAMES:
+            profile_list.append(entry)
         elif name in CEPHALOMETRIC_MEASUREMENT_NAMES:
             cephalometric_list.append(entry)
         else:
@@ -467,7 +550,7 @@ def _split_measurements_by_category(
             logger.warning(f"测量项 {name} 未在分类列表中，默认归入头影组")
             cephalometric_list.append(entry)
 
-    return cephalometric_list, bone_age_list, airway_list
+    return cephalometric_list, bone_age_list, airway_list, profile_list
 
 
 def _build_measurement_section_in_order(

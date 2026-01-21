@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from pipelines.base_pipeline import BasePipeline  # type: ignore
 from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type: ignore
 from pipelines.ceph.modules.point_11.point_11_model import Point11Model  # type: ignore
+from pipelines.ceph.modules.point_lunkuo_34.model import PointLunkuo34Model  # type: ignore
 from pipelines.ceph.modules.CVM.cvm_model import CVMInferenceEngine  # type: ignore
 from pipelines.ceph.modules.auto_ruler.ruler_model import RulerModel  # type: ignore
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
@@ -89,6 +90,9 @@ class CephPipeline(BasePipeline):
                 elif module_name == 'point_11':
                     self.modules['point_11'] = self._init_point_11_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'point_11'")
+                elif module_name == 'point_lunkuo_34':
+                    self.modules['point_lunkuo_34'] = self._init_point_lunkuo_34_module(module_cfg)
+                    self.logger.info(f"Successfully initialized module 'point_lunkuo_34'")
                 elif module_name == 'cvm':
                     self.modules['cvm'] = self._init_cvm_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'cvm'")
@@ -170,6 +174,16 @@ class CephPipeline(BasePipeline):
         
         self.logger.info(f"Initializing point_11 module with kwargs: {init_kwargs}")
         return Point11Model(**init_kwargs)
+
+    def _init_point_lunkuo_34_module(self, config: Dict[str, Any]) -> PointLunkuo34Model:
+        """
+        初始化 point_lunkuo_34 模块（34点侧貌轮廓检测）
+        """
+        exclude_keys = {'description'}
+        init_kwargs = {k: v for k, v in config.items() if k not in exclude_keys}
+        
+        self.logger.info(f"Initializing point_lunkuo_34 module with kwargs: {init_kwargs}")
+        return PointLunkuo34Model(**init_kwargs)
 
     def _init_auto_ruler_module(self, config: Dict[str, Any]) -> RulerModel:
         """
@@ -311,6 +325,21 @@ class CephPipeline(BasePipeline):
             )
         else:
             self.logger.info("Point_11 模块未初始化，跳过气道/腺体检测")
+
+        # ===== 步骤 3: Point_34 模块推理（34点侧貌轮廓检测）=====
+        if 'point_lunkuo_34' in self.modules:
+            self.logger.info("执行 Point_34 模块推理（34点侧貌轮廓检测）...")
+            point_34_model = self.modules['point_lunkuo_34']
+            
+            # 内部已埋点 ceph_point34.pre/inference/post
+            point_34_result = point_34_model.predict(image_path=image_path)
+            
+            point_34_dict = PointLunkuo34Model.landmark_result_to_dict(point_34_result)
+            
+            if "landmarks_34" not in inference_results:
+                inference_results["landmarks_34"] = point_34_dict
+                
+            self.logger.info("Point_34 模块推理完成")
 
         # ===== 步骤 4: CVM 模块推理（颈椎成熟度检测）=====
         # CVM 模块是可选的，如果已初始化则执行推理并合并结果

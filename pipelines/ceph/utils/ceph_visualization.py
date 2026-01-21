@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .ceph_report import KEYPOINT_MAP, KEYPOINT_MAP_11
+from .ceph_report import KEYPOINT_MAP, KEYPOINT_MAP_11, KEYPOINT_MAP_34
 
 # 反向映射：短标签 -> 点位编号（P1...）
 _SHORT_KEY_TO_POINT_ID = {short: pid for pid, short in KEYPOINT_MAP.items()}
@@ -16,6 +16,7 @@ def build_visualization_map(
     measurements: Dict[str, Dict[str, Any]],
     landmarks_block: Dict[str, Any],
     landmarks_11_block: Optional[Dict[str, Any]] = None,
+    landmarks_34_block: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     为所有测量项生成可视化指令。
@@ -23,10 +24,25 @@ def build_visualization_map(
     """
     coords25 = _extract_coordinates(landmarks_block)
     coords11 = _extract_coordinates(landmarks_11_block) if landmarks_11_block else {}
-    if not coords25 and not coords11:
+    coords34 = _extract_coordinates(landmarks_34_block) if landmarks_34_block else {}
+    
+    if not coords25 and not coords11 and not coords34:
         return {name: None for name in measurements}
 
     landmarks = _normalize_landmarks_all(coords25, coords11)
+    landmarks.update(coords34) # Merge 34 points directly as they use P1-P34 keys which might conflict?
+    # Wait, KEYPOINT_MAP_34 uses "P1", "P2"...
+    # KEYPOINT_MAP uses "P1" for "S".
+    # Conflict!
+    # "P1" in 34-point map is "P1".
+    # "P1" in 25-point map (if used as key) maps to "S".
+    # But `_extract_coordinates` uses the keys from `landmarks_block["coordinates"]`.
+    # In `point_model.py`, the keys are "S", "N", etc.
+    # In `point_lunkuo_34`, the keys are "P1", "P2".
+    # So `coords25` has "S", "N".
+    # `coords34` has "P1", "P2".
+    # No conflict in keys.
+    
     viz_map: Dict[str, Optional[Dict[str, Any]]] = {}
 
     for name, payload in measurements.items():
@@ -98,6 +114,8 @@ def build_single(
         return _l1_mp_height_payload(landmarks)
     if name == "U6_PP_Upper_Posterior_Alveolar_Height":
         return _u6_pp_payload(landmarks)
+    if name == "Profile_Contour":
+        return _profile_contour_payload(landmarks)
     if name == "L6_MP_Lower_Posterior_Alveolar_Height":
         return _l6_mp_payload(landmarks)
     if name == "Mandibular_Growth_Type_Angle":
@@ -901,6 +919,28 @@ def _adenoid_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any
         _line("AD", "v_ad_on_baar", "Dashed", "Measurement"),  # A 值：AD 到 Ba-Ar 垂足
     ]
     return {"VirtualPoints": virtual_points, "Elements": elements}
+
+
+def _profile_contour_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
+    """34点侧貌轮廓连线可视化。
+    
+    按顺序连接 P1 -> P2 -> ... -> P34
+    """
+    elements = []
+    
+    # 遍历 P1 到 P33，连接到下一个点
+    for i in range(1, 34):
+        curr_label = f"P{i}"
+        next_label = f"P{i+1}"
+        
+        # 只有当两个点都存在时才连接
+        if curr_label in landmarks and next_label in landmarks:
+            elements.append(_line(curr_label, next_label, "Solid", "Reference"))
+            
+    if not elements:
+        return None
+        
+    return {"VirtualPoints": None, "Elements": elements}
 
 
 def _line(from_label: str, to_label: str, style: str, role: str) -> Dict[str, str]:
