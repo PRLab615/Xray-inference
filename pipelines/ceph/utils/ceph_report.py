@@ -1334,10 +1334,10 @@ def calculate_adenoid_ratio(
     ba = landmarks_25.get("P23")   # Ba - 颅底点
     ar = landmarks_25.get("P15")   # Ar - 关节点
     ad = landmarks_11.get("AD")    # AD - 腺样体最凸点
-    dprime = landmarks_11.get("Dprime")  # D' - 翼板与颅底交点
+    dprime = landmarks_11.get("D'")  # D' - 翼板与颅底交点
     
     # 检查必需点位
-    required_points = [("PNS", pns), ("Ba", ba), ("Ar", ar), ("AD", ad), ("Dprime", dprime)]
+    required_points = [("PNS", pns), ("Ba", ba), ("Ar", ar), ("AD", ad), ("D'", dprime)]
     missing = [name for name, pt in required_points if not _is_valid_point(pt)]
     
     if missing:
