@@ -109,6 +109,7 @@ def generate_standard_output(
     erupted_wisdomteeth_res = inference_results.get("erupted_wisdomteeth", {})
     rootTipDensity_res = inference_results.get("rootTipDensity", {})
     periodontal_res = inference_results.get("periodontal", {})
+    alveolarcrest_res = inference_results.get("alveolarcrest", {})
 
     # 1. 初始化基础骨架（严格按照 example_pano_result.json 顺序）
     # 处理 ImageSpacing（像素间距/比例尺）
@@ -162,6 +163,14 @@ def generate_standard_output(
         mandible_anatomy_data = format_mandible_anatomy_results(mandible_res)
         logger.info(f"[generate_standard_output] Mandible AnatomyResults count: {len(mandible_anatomy_data)}")
         anatomy_results_list.extend(mandible_anatomy_data)
+
+    # 2.3 添加牙槽骨分割结果
+    logger.info(f"[generate_standard_output] alveolarcrest_res exists: {bool(alveolarcrest_res)}")
+    if alveolarcrest_res and alveolarcrest_res.get("exists", False):
+        logger.info(f"[generate_standard_output] Calling format_alveolarcrest_anatomy_results...")
+        alveolarcrest_anatomy_data = format_alveolarcrest_anatomy_results(alveolarcrest_res)
+        logger.info(f"[generate_standard_output] AlveolarCrest AnatomyResults count: {len(alveolarcrest_anatomy_data)}")
+        anatomy_results_list.extend(alveolarcrest_anatomy_data)
 
     report["AnatomyResults"] = anatomy_results_list
 
@@ -351,6 +360,55 @@ def format_mandible_anatomy_results(mandible_seg: dict) -> List[dict]:
             }
         })
 
+    return anatomy_results
+
+
+def format_alveolarcrest_anatomy_results(alveolarcrest_seg: dict) -> List[dict]:
+    """
+    格式化 AnatomyResults（解剖结构分割掩码）- 牙槽骨部分
+
+    Args:
+        alveolarcrest_seg: 牙槽骨分割结果 {
+            'mask': np.ndarray,
+            'contour': List[List[float]],
+            'confidence': float,
+            'bbox': List[float],
+            'exists': bool,
+            'original_shape': tuple
+        }
+
+    Returns:
+        list: AnatomyResults 列表，包含 alveolarcrest
+    """
+    anatomy_results = []
+
+    # 调试日志
+    logger.info(f"[format_alveolarcrest_anatomy_results] alveolarcrest_seg keys: {list(alveolarcrest_seg.keys()) if alveolarcrest_seg else 'EMPTY'}")
+
+    exists = alveolarcrest_seg.get("exists", False)
+    logger.info(f"[format_alveolarcrest_anatomy_results] exists: {exists}")
+
+    if not exists:
+        logger.warning("[format_alveolarcrest_anatomy_results] No alveolar crest detected")
+        return anatomy_results
+
+    contour = alveolarcrest_seg.get("contour", [])
+    confidence = alveolarcrest_seg.get("confidence", 0.0)
+
+    logger.info(f"[format_alveolarcrest_anatomy_results] contour points: {len(contour)}, confidence: {confidence:.2f}")
+
+    # 跳过 RLE 生成，避免数据过大导致 Redis Protocol Error
+    anatomy_results.append({
+        "Label": "alveolarcrest",
+        "Confidence": round(confidence, 2),
+        "SegmentationMask": {
+            "Type": "Polygon",
+            "Coordinates": contour if contour else [],
+            "SerializedMask": ""
+        }
+    })
+
+    logger.info(f"[format_alveolarcrest_anatomy_results] Added alveolar crest to AnatomyResults")
     return anatomy_results
 
 
