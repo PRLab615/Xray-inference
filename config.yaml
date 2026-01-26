@@ -183,6 +183,12 @@ pipelines:
         weights_force_download: false
         device: "0"
         conf: 0.25
+      cvm_seg:
+        description: "颈椎分割"
+        weights_key: "weights/cephalometric/cvm_seg.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
       auto_ruler:
         description: "自动比例尺识别模块"
         weights_key: "weights/cephalometric/ruler.pt"
