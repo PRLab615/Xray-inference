@@ -236,6 +236,12 @@ def generate_standard_output(
         neural_data = format_neural_report(neural_res)
         if neural_data and "NeuralCanalAssessment" in neural_data:
             report["NeuralCanalAssessment"] = neural_data["NeuralCanalAssessment"]
+        
+        # 将神经管轮廓加入 AnatomyResults（若可用）
+        neural_anatomy = format_neural_anatomy_results(neural_res)
+        if neural_anatomy:
+            report["AnatomyResults"].extend(neural_anatomy)
+            logger.info(f"[generate_standard_output] Added {len(neural_anatomy)} neural AnatomyResults")
 
     # 8. 组装根尖低密度影分析 (RootTipDensityAnalysis) - 真实数据
     if rootTipDensity_res:
@@ -541,6 +547,62 @@ def format_neural_report(neural_res: dict) -> dict:
         }
     except Exception:
         return {"NeuralCanalAssessment": {"Left": {"Detected": False, "Area": 0}, "Right": {"Detected": False, "Area": 0}}}
+
+
+def format_neural_anatomy_results(neural_res: dict) -> List[dict]:
+    """
+    格式化 AnatomyResults（解剖结构分割掩码）- 神经管部分
+    使用 raw_features 中的 contour；若缺失则从 mask 提取最大外轮廓
+    """
+    anatomy_results: List[dict] = []
+    seg_features = neural_res.get("raw_features", {}) or {}
+    
+    # 左右两侧分别处理
+    for side_key, label in (("left", "neural_left"), ("right", "neural_right")):
+        feats = seg_features.get(side_key, {}) or {}
+        # 必须存在才添加
+        if not feats.get("exists", False) and not feats.get("detected", False):
+            continue
+            
+        contour = feats.get("contour", []) or []
+        
+        # 如果没有 contour，尝试从 mask 提取
+        if not contour:
+            mask = feats.get("mask", None)
+            if mask is not None:
+                try:
+                    import cv2
+                    # 确保是 uint8 二值图
+                    if hasattr(mask, "dtype") and mask.dtype != np.uint8:
+                        binary = (mask > 0).astype(np.uint8)
+                    else:
+                        binary = mask
+                        
+                    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    if contours:
+                        largest = max(contours, key=cv2.contourArea)
+                        coords = largest.squeeze()
+                        if getattr(coords, "ndim", 1) == 1:
+                            contour = [coords.tolist()]
+                        else:
+                            contour = coords.tolist()
+                except Exception:
+                    contour = []
+        
+        if not contour:
+            continue
+            
+        anatomy_results.append({
+            "Label": label,
+            "Confidence": float(round(feats.get("confidence", 0.95), 2)),
+            "SegmentationMask": {
+                "Type": "Polygon",
+                "Coordinates": contour if contour else [],
+                "SerializedMask": ""
+            }
+        })
+
+    return anatomy_results
 
 
 def format_implant_report(implant_results: dict) -> dict:
