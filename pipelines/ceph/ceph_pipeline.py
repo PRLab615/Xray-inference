@@ -15,6 +15,7 @@ from pipelines.ceph.modules.point.point_model import CephInferenceEngine  # type
 from pipelines.ceph.modules.point_11.point_11_model import Point11Model  # type: ignore
 from pipelines.ceph.modules.point_lunkuo_34.model import PointLunkuo34Model  # type: ignore
 from pipelines.ceph.modules.CVM.cvm_model import CVMInferenceEngine  # type: ignore
+from pipelines.ceph.modules.CVM.cvm_seg_model import CVMSegModel  # type: ignore
 from pipelines.ceph.modules.auto_ruler.ruler_model import RulerModel  # type: ignore
 from pipelines.ceph.utils.ceph_report_json import generate_standard_output  # type: ignore
 from pipelines.ceph.utils.ceph_report import calculate_airway_measurements, calculate_adenoid_ratio  # type: ignore
@@ -96,6 +97,9 @@ class CephPipeline(BasePipeline):
                 elif module_name == 'cvm':
                     self.modules['cvm'] = self._init_cvm_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'cvm'")
+                elif module_name == 'cvm_seg':
+                    self.modules['cvm_seg'] = self._init_cvm_seg_module(module_cfg)
+                    self.logger.info(f"Successfully initialized module 'cvm_seg'")
                 elif module_name == 'auto_ruler':
                     self.modules['auto_ruler'] = self._init_auto_ruler_module(module_cfg)
                     self.logger.info(f"Successfully initialized module 'auto_ruler'")
@@ -157,6 +161,16 @@ class CephPipeline(BasePipeline):
         
         self.logger.info(f"Initializing CVM module with kwargs: {init_kwargs}")
         return CVMInferenceEngine(**init_kwargs)
+
+    def _init_cvm_seg_module(self, config: Dict[str, Any]) -> CVMSegModel:
+        """
+        初始化 CVM 分割模块
+        """
+        exclude_keys = {'description'}
+        init_kwargs = {k: v for k, v in config.items() if k not in exclude_keys}
+        
+        self.logger.info(f"Initializing CVM Seg module with kwargs: {init_kwargs}")
+        return CVMSegModel(**init_kwargs)
 
     def _init_point_11_module(self, config: Dict[str, Any]) -> Point11Model:
         """
@@ -370,6 +384,27 @@ class CephPipeline(BasePipeline):
             )
         else:
             self.logger.info("CVM 模块未初始化，跳过颈椎成熟度检测")
+
+        # ===== 步骤 4.1: CVM Seg 模块推理 (颈椎分割) =====
+        if 'cvm_seg' in self.modules:
+            self.logger.info("Running CVM Segmentation...")
+            cvm_seg_model = self.modules['cvm_seg']
+            seg_result = cvm_seg_model.predict(image_path=image_path)
+            
+            if "measurements" not in inference_results:
+                inference_results["measurements"] = {}
+            
+            # Ensure the entry exists (if CVM detection was skipped)
+            if "Cervical_Vertebral_Maturity_Stage" not in inference_results["measurements"]:
+                inference_results["measurements"]["Cervical_Vertebral_Maturity_Stage"] = {
+                    "coordinates": [],
+                    "conclusion": 0,
+                    "confidence": 0.0
+                }
+            
+            # Inject CVMSMask
+            inference_results["measurements"]["Cervical_Vertebral_Maturity_Stage"]["CVMSMask"] = seg_result.mask_coordinates
+            self.logger.info("CVM Segmentation added.")
 
         #1
         # 注释掉调试打印，避免刷屏
