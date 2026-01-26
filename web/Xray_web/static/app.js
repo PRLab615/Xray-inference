@@ -4590,9 +4590,10 @@ function drawRegionalFindings(data, stage, scale) {
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 记得应用之前的优化：先抽稀(2步) -> 再平滑(3步)
-                    let pts = simplifyPoints(pArr, 2.0, true); // 抽稀
-                    pts = smoothPolyline(pts, 3);              // 平滑
+                    // 更强的平滑：先滑动平均去毛刺 -> 再RDP抽稀 -> Chaikin平滑
+                    let pts = movingAverageSmooth(pArr, 5);
+                    pts = simplifyPoints(pts, 2.5, true);
+                    pts = smoothPolyline(pts, 4);
 
                     const poly = new Konva.Line({
                         points: pts,
@@ -4601,7 +4602,7 @@ function drawRegionalFindings(data, stage, scale) {
                         strokeWidth: CONFIG.STROKE_WIDTH,
                         lineCap: 'round',
                         lineJoin: 'round',
-                        tension: 0, // 记得设为0
+                        tension: 0,
                         fill: fillColor,
                         
                         // 记得：如果你希望线条锐利，不要加 shadowBlur
@@ -5260,6 +5261,26 @@ function buildPanoReport(data) {
     
     if (hasJointContent) {
         container.appendChild(jointSection);
+    }
+
+    // 神经管分析（对称/不对称）
+    if (data.NeuralCanalAssessment) {
+        const neural = data.NeuralCanalAssessment || {};
+        const left = neural.Left || {};
+        const right = neural.Right || {};
+        const neuralSection = createReportSection('神经管分析');
+        let symmetric = false;
+        if (typeof left.Detected === 'boolean' && typeof right.Detected === 'boolean') {
+            symmetric = !!left.Detected && !!right.Detected;
+        }
+        if (left.Area != null && right.Area != null) {
+            const la = Number(left.Area) || 0;
+            const ra = Number(right.Area) || 0;
+            const ratio = Math.min(la, ra) / (Math.max(la, ra) || 1);
+            if (la > 0 && ra > 0) symmetric = ratio >= 0.7; // 面积接近视为对称
+        }
+        neuralSection.appendChild(createKeyValue('神经管对称性', symmetric ? '对称' : '不对称'));
+        container.appendChild(neuralSection);
     }
     
     // 2.5 上颌窦分析（独立专区）
