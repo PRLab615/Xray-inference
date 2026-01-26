@@ -55,12 +55,26 @@ pipelines:
     modules:
       teeth_seg:
         description: "牙齿分割模块（YOLOv11实例分割）"
-        weights_key: "weights/panoramic/1116_teeth_seg.pt"
+        weights_key: "weights/panoramic/new_teeth_seg.pt"
         weights_force_download: false
         device: "0"
         conf: 0.25
         iou: 0.45
+        retina_masks: true
 
+      alveolarcrest_seg:
+        description: "牙槽骨分割模块（YOLOv11实例分割）"
+        weights_key: "weights/panoramic/alveolarcrest_seg.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.3
+        imgsz: 640
+        max_det: 1
+        retina_masks: true
+        agnostic_nms: true
+
+      
       teeth_attribute0:
         description: "牙齿属性1模块（YOLOv11）"
         weights_key: "weights/panoramic/model0.pt"

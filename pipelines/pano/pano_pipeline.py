@@ -29,6 +29,8 @@ from pipelines.pano.modules.curved_short_root.curved_short_root_predictor import
 from pipelines.pano.modules.erupted_wisdomteeth.erupted_wisdomteeth_predictor import EruptedModule
 # 导入牙周吸收检测模块
 from pipelines.pano.modules.periodontal_detect.periodontal_predictor import PeriodontalPredictor
+# 导入牙槽骨分割模块
+from pipelines.pano.modules.alveolarcrest import AlveolarCrestSegmentationModule
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +224,11 @@ class PanoPipeline(BasePipeline):
             self.modules['periodontal_detect'] = PeriodontalPredictor(**periodontal_cfg)
             logger.info("  ✓ Periodontal Detection module loaded")
 
+            # 15. 牙槽骨分割模块 (alveolarcrest_seg)
+            alveolarcrest_cfg = self._get_module_config('alveolarcrest_seg')
+            self.modules['alveolarcrest_seg'] = AlveolarCrestSegmentationModule(**alveolarcrest_cfg)
+            logger.info("  ✓ AlveolarCrest Segmentation module loaded")
+
             # 显示权重信息
             self._log_weights_info()
 
@@ -347,6 +354,9 @@ class PanoPipeline(BasePipeline):
             # 2.12 牙周吸收检测（需要牙齿分割结果）
             periodontal_results = self._run_periodontal_detect(image_path, teeth_results)
 
+            # 2.13 牙槽骨分割
+            alveolarcrest_results = self._run_alveolarcrest_seg(image_path)
+
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
@@ -387,6 +397,7 @@ class PanoPipeline(BasePipeline):
         logger.debug(f"[Pipeline] erupted_wisdomteeth_results keys: {list(erupted_wisdomteeth_results.keys()) if erupted_wisdomteeth_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] sinus_results keys: {list(sinus_results.keys()) if sinus_results else 'EMPTY'}")
         logger.debug(f"[Pipeline] periodontal_results keys: {list(periodontal_results.keys()) if periodontal_results else 'EMPTY'}")
+        logger.debug(f"[Pipeline] alveolarcrest_results keys: {list(alveolarcrest_results.keys()) if alveolarcrest_results else 'EMPTY'}")
         # 如果检测模块有结果，打印详细信息
         if condyle_det_results:
             logger.debug(f"[Pipeline] condyle_det left confidence: {condyle_det_results.get('left', {}).get('confidence', 'N/A')}")
@@ -405,7 +416,8 @@ class PanoPipeline(BasePipeline):
             curved_short_root=curved_short_root_results,
             erupted_wisdomteeth=erupted_wisdomteeth_results,
             rootTipDensity=rootTipDensity_results,  # 加入根尖低密度影结果
-            periodontal=periodontal_results  # 加入牙周吸收检测结果
+            periodontal=periodontal_results,  # 加入牙周吸收检测结果
+            alveolarcrest=alveolarcrest_results  # 加入牙槽骨分割结果
         )
         logger.info(f"Results collected successfully. Modules: {list(inference_results.keys())}")
         
@@ -1309,6 +1321,42 @@ class PanoPipeline(BasePipeline):
 
         return "".join(parts)
 
+    def _run_alveolarcrest_seg(self, image_path: str) -> dict:
+        """
+        执行牙槽骨分割
+
+        Args:
+            image_path: 图像文件路径
+
+        Returns:
+            dict: 牙槽骨分割结果
+                包含 mask, contour, confidence, bbox, exists
+        """
+        self._log_step("牙槽骨分割", "使用 YOLOv11 进行牙槽骨实例分割")
+
+        try:
+            import time
+            from PIL import Image
+            start_time = time.time()
+            logger.info(f"Starting alveolar crest segmentation for: {image_path}")
+
+            # 加载图像为 PIL Image
+            image = Image.open(image_path).convert('RGB')
+            if image is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+
+            # 执行推理
+            results = self.modules['alveolarcrest_seg'].predict(image)
+
+            elapsed = time.time() - start_time
+            logger.info(f"Alveolar crest segmentation completed in {elapsed:.2f}s")
+            return results
+        except Exception as e:
+            logger.error(f"Alveolar crest segmentation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+
     def _run_periodontal_detect(self, image_path: str, teeth_results: dict) -> dict:
         """
         执行牙周吸收检测
@@ -1860,6 +1908,7 @@ class PanoPipeline(BasePipeline):
             "sinus": module_results.get("sinus", {}),  # 收集上颌窦结果
             "rootTipDensity": module_results.get("rootTipDensity", {}),  # 收集根尖低密度影结果
             "periodontal": module_results.get("periodontal", {}),  # 收集牙周吸收检测结果
+            "alveolarcrest": module_results.get("alveolarcrest", {}),  # 收集牙槽骨分割结果
         }
 
         return inference_results

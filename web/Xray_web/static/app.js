@@ -4650,6 +4650,84 @@ function drawRegionalFindings(data, stage, scale) {
         stage.add(sinusLayer);
         appState.konvaLayers.sinus = sinusLayer;
     }
+    
+    // 6. 牙槽骨图层
+    const alveolarcrestLayer = new Konva.Layer();
+    let alveolarcrestCount = 0;
+    
+    // 绘制牙槽骨区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理牙槽骨
+            if (!rawLabel.includes('alveolarcrest')) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 牙槽骨默认颜色：浅蓝紫色
+            let strokeColor = '#A29BFE';  // 浅紫蓝色
+            let fillColor = 'rgba(162, 155, 254, 0.20)'; // 对应的半透明填充颜色
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // 应用优化：先抽稀 -> 再平滑
+                    let pts = simplifyPoints(pArr, 2.0, true); // 抽稀
+                    pts = smoothPolyline(pts, 3);              // 平滑
+
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        tension: 0,
+                        fill: fillColor,
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
+                    });
+                    
+                    // 存储数据用于 Tooltip
+                    poly.findingType = 'alveolarcrest';
+                    poly.findingData = {
+                        Label: 'alveolarcrest',
+                        Confidence: item.Confidence || 0.0,
+                        Detail: '牙槽骨'
+                    };
+                    
+                    // 绑定 Tooltip 事件
+                    poly.on('mouseenter', function(e) {
+                        const confidence = item.Confidence || 0.0;
+                        const confidenceText = (confidence * 100).toFixed(0);
+                        const tooltipText = `牙槽骨 (置信度: ${confidenceText}%)`;
+                        showTooltipAtCursor(tooltipText, e);
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        hideTooltip();
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'alveolarcrest');
+                    
+                    alveolarcrestLayer.add(poly);
+                    alveolarcrestCount++;
+                });
+            }
+        });
+        
+        console.log('牙槽骨区域绘制完成，已绘制:', alveolarcrestCount, '个');
+    }
+    
+    if (alveolarcrestCount > 0) {
+        stage.add(alveolarcrestLayer);
+        appState.konvaLayers.alveolarcrest = alveolarcrestLayer;
+    }
 }
 
 /**
@@ -6019,7 +6097,8 @@ const LAYER_CONFIG = {
     condyle: { name: '髁突', taskType: 'panoramic' },
     mandible: { name: '下颌升支', taskType: 'panoramic' },
     sinus: { name: '上颌窦', taskType: 'panoramic' },
-    density: { name: '根尖密度影', taskType: 'panoramic' }
+    density: { name: '根尖密度影', taskType: 'panoramic' },
+    alveolarcrest: { name: '牙槽骨', taskType: 'panoramic' }
 };
 
 /**

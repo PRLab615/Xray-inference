@@ -40,6 +40,10 @@ class TeethSegmentationModule:
         device: Optional[str] = None,
         conf: float = 0.25,
         iou: float = 0.45,
+        imgsz: int = 640,
+        retina_masks: bool = True,
+        agnostic_nms: bool = False,
+        max_det: int = 300,
     ):
         """
         初始化牙齿分割模块
@@ -50,11 +54,19 @@ class TeethSegmentationModule:
             device: 推理设备（"0", "cpu" 等）
             conf: 置信度阈值
             iou: NMS IoU 阈值
+            imgsz: 推理图像尺寸
+            retina_masks: 是否使用高分辨率 mask（更平滑的边缘）
+            agnostic_nms: 是否使用类无关 NMS
+            max_det: 最大检测数量
         """
         self.weights_key = weights_key
         self.weights_force_download = weights_force_download
         self.conf = conf
         self.iou = iou
+        self.imgsz = imgsz
+        self.retina_masks = retina_masks
+        self.agnostic_nms = agnostic_nms
+        self.max_det = max_det
         
         # 处理 device 参数
         # config.yaml 中 device: "0" 表示 GPU 0，"cpu" 表示 CPU
@@ -146,7 +158,11 @@ class TeethSegmentationModule:
                     source=image,
                     conf=self.conf,
                     iou=self.iou,
+                    imgsz=self.imgsz,
+                    max_det=self.max_det,
                     device=self.device,
+                    retina_masks=self.retina_masks,
+                    agnostic_nms=self.agnostic_nms,
                     verbose=False,
                     save=False,
                 )
