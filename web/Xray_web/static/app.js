@@ -2745,7 +2745,18 @@ function drawCVMBox(data, stage, scale) {
     const measurements = measurementsObj.AllMeasurements;
     const cvmMeasurement = measurements.find(m => m.Label === 'Cervical_Vertebral_Maturity_Stage');
     
-    if (!cvmMeasurement || !cvmMeasurement.Coordinates || cvmMeasurement.Coordinates.length === 0) {
+    if (!cvmMeasurement) {
+        console.log('未找到 CVM 测量数据，跳过 CVM 绘制');
+        return;
+    }
+
+    // [AI-ASSISTANT] 优先绘制分割结果
+    if (cvmMeasurement.CVMSMask && cvmMeasurement.CVMSMask.length > 0) {
+        drawCVMPolygon(cvmMeasurement, stage, scale);
+        return;
+    }
+    
+    if (!cvmMeasurement.Coordinates || cvmMeasurement.Coordinates.length === 0) {
         console.log('未找到 CVM 测量数据或 Coordinates 为空，跳过 CVM 边界框绘制');
         return;
     }
@@ -3299,25 +3310,7 @@ function buildCephReport(data) {
         }
     }
 
-    // 5. 软组织分析 (用户要求删除)
-    /*
-    if (measurementsObj && measurementsObj.AllMeasurements) {
-        const softSection = createReportSection('软组织分析');
-        const measurements = measurementsObj.AllMeasurements;
-        
-        measurements.forEach(m => {
-            const measurementId = DISPLAY_NAME_TO_ID_MAP[m.Label] || m.Label;
-            if (isSoftTissueMeasurement(measurementId)) {
-                const item = createMeasurementItem(m);
-                softSection.appendChild(item);
-            }
-        });
-        
-        if (softSection.querySelectorAll('.measurement-item').length > 0) {
-            container.appendChild(softSection);
-        }
-    }
-    */
+
 
     // 6. 气道分析
     if (measurementsObj && measurementsObj.AllMeasurements) {
@@ -6387,4 +6380,131 @@ function renderAutoRulerLayer(autoRulerData) {
     console.log(`[Auto Ruler] Rendered at [${p1.join(',')}] to [${p2.join(',')}]`);
     layer.moveToTop();
     layer.draw();
+}
+
+/**
+ * 绘制 CVM 分割多边形
+ * @param {Object} cvmMeasurement - CVM 测量数据
+ * @param {Konva.Stage} stage - Konva Stage 实例
+ * @param {number} scale - 缩放比例
+ */
+function drawCVMPolygon(cvmMeasurement, stage, scale) {
+    const rawMask = cvmMeasurement.CVMSMask;
+    if (!rawMask || !Array.isArray(rawMask) || rawMask.length === 0) {
+        console.warn('[CVM] No mask data found or invalid format');
+        return;
+    }
+
+    console.log('[CVM] Drawing polygons. Raw mask structure:', rawMask);
+
+    // 检测是单个多边形还是多个多边形
+    // 单个多边形: [[x,y], [x,y], ...] -> rawMask[0] 是 [x,y] (长度2的数字数组)
+    // 多个多边形: [[[x,y],...], [[x,y],...]] -> rawMask[0] 是 [[x,y],...] (数组的数组)
+    
+    let polygons = [];
+    const isMultiPoly = Array.isArray(rawMask[0]) && Array.isArray(rawMask[0][0]);
+    
+    if (isMultiPoly) {
+        polygons = rawMask;
+    } else {
+        polygons = [rawMask];
+    }
+
+    console.log(`[CVM] Parsing complete. Found ${polygons.length} polygons.`);
+
+    // 清理旧图层
+    if (appState.konvaLayers.cvm) {
+        appState.konvaLayers.cvm.destroy();
+    }
+
+    const cvmLayer = new Konva.Layer();
+    
+    // 用于计算所有多边形的最高点，放置标签
+    let globalMinY = Infinity;
+    let globalMinX = 0;
+    
+    polygons.forEach((mask, index) => {
+        if (!Array.isArray(mask) || mask.length < 3) {
+            console.warn(`[CVM] Polygon ${index} is invalid (points < 3)`);
+            return;
+        }
+        
+        const points = [];
+        mask.forEach(pt => {
+             if (Array.isArray(pt) && pt.length >= 2) {
+                 const px = pt[0] * scale;
+                 const py = pt[1] * scale;
+                 points.push(px, py);
+                 
+                 // 更新全局最高点（y值最小）
+                 if (py < globalMinY) {
+                     globalMinY = py;
+                     globalMinX = px;
+                 }
+             }
+        });
+
+        if (points.length < 6) {
+             console.warn(`[CVM] Polygon ${index} has insufficient points after scaling`);
+             return;
+        }
+
+        // 绘制多边形
+        const polygon = new Konva.Line({
+            points: points,
+            closed: true,
+            stroke: '#7cb342', // 柔和绿色
+            strokeWidth: 2,
+            fill: 'rgba(124, 179, 66, 0.2)',
+            tension: 0, 
+            lineJoin: 'round',
+            name: `cvm-poly-${index}`
+        });
+        
+        // 为每个多边形绑定 Tooltip
+        const level = cvmMeasurement.Level;
+        polygon.on('mouseenter', function(e) {
+            if (typeof showCVMTooltip === 'function') {
+                showCVMTooltip(this, { level, confidence: cvmMeasurement.Confidence, coordinates: mask }, e);
+            }
+        });
+        polygon.on('mouseleave', function() {
+            if (typeof hideTooltip === 'function') {
+                hideTooltip();
+            }
+        });
+        
+        cvmLayer.add(polygon);
+        console.log(`[CVM] Added polygon ${index} with ${points.length / 2} points.`);
+    });
+
+    // 添加唯一的标签
+    const level = cvmMeasurement.Level;
+    const labelText = `CS${level}`;
+    
+    if (globalMinY !== Infinity) {
+        const text = new Konva.Text({
+            x: globalMinX,
+            y: globalMinY - 25, // 稍微上移
+            text: labelText,
+            fontSize: 14,
+            fontFamily: 'Arial',
+            fill: '#7cb342',
+            padding: 4,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            align: 'center'
+        });
+        
+        // 居中校正
+        text.offsetX(text.width() / 2);
+        
+        cvmLayer.add(text);
+    }
+
+    stage.add(cvmLayer);
+    
+    // 保存到 appState
+    if (appState && appState.konvaLayers) {
+        appState.konvaLayers.cvm = cvmLayer;
+    }
 }

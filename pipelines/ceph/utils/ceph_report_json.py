@@ -684,12 +684,14 @@ def _build_cervical_entry(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     serialized_mask = payload.get("serialized_mask", "")
     level = payload.get("conclusion")
     confidence = payload.get("confidence", 0.0)
+    cvms_mask = payload.get("CVMSMask", [])
 
     return {
         "Label": name,
         "Coordinates": coordinates if not is_undetected else [],
         "Level": int(level) if level is not None else UNDETECTED_LEVEL,
         "Confidence": round(float(confidence), 2),
+        "CVMSMask": cvms_mask,
     }
 
 
