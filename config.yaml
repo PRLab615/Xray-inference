@@ -132,7 +132,7 @@ pipelines:
       
       condyle_seg:
         description: "髁突分割模块（ONNX）"
-        weights_key: "weights/panoramic/candlye_seg.onnx"
+        weights_key: "weights/panoramic/best_model_condyle_224.onnx"
         weights_force_download: false
         input_size: [224, 224]
       
@@ -150,8 +150,13 @@ pipelines:
 
       sinus_class:
         description: "上颌窦炎症分类模块（ResNet18 ONNX）"
-        weights_key: "weights/panoramic/sinus_inflam_classifier_resnet18.onnx"
+        weights_key: "weights/panoramic/best_model_sinus_512.onnx"
         weights_force_download: false
+
+
+      neural_class:
+        description: "神经管分割模块"
+        weights_key: "weights/panoramic/best_model_ramus_224.onnx"
 
       rootTipDensity_detect:
         description: "根尖低密度影检测模块（YOLOv11）"
