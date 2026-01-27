@@ -4729,6 +4729,129 @@ function drawRegionalFindings(data, stage, scale) {
         stage.add(alveolarcrestLayer);
         appState.konvaLayers.alveolarcrest = alveolarcrestLayer;
     }
+    
+    // 7. 神经管图层
+    const neuralLayer = new Konva.Layer();
+    let neuralCount = 0;
+    
+    // 绘制神经管区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        // 获取神经管诊断信息
+        let neuralInfoMap = {};
+        if (data.NeuralCanalAssessment) {
+            const neural = data.NeuralCanalAssessment;
+            neuralInfoMap['left'] = neural.Left || {};
+            neuralInfoMap['right'] = neural.Right || {};
+        }
+        
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理神经管
+            if (!rawLabel.includes('neural')) return;
+            
+            // 判定左右
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            
+            if (!side) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 获取对应侧的诊断信息
+            const neuralInfo = neuralInfoMap[side] || null;
+            
+            // 神经管默认颜色：红色系
+            let strokeColor = '#E74C3C';  // 红色
+            let fillColor = 'rgba(231, 76, 60, 0.25)'; // 对应的半透明填充颜色
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // ============================================================
+                    // 针对神经管的 3 步优化处理（与髁突、下颌分支一致）
+                    // ============================================================
+                    
+                    // 1. 【去毛刺】滑动平均 (新增步骤)
+                    // windowSize = 5：神经管较大，可以用 5 甚至 7 来强力去除突出的像素点
+                    let pts = movingAverageSmooth(pArr, 5);
+
+                    // 2. 【去阶梯】RDP 抽稀
+                    // tolerance = 2.5：神经管轮廓平缓，可以适当加大容差，让线条更直
+                    pts = simplifyPoints(pts, 2.5, true);
+
+                    // 3. 【变圆润】Chaikin 平滑
+                    // 迭代 3-4 次，让转折处非常圆滑
+                    pts = smoothPolyline(pts, 4);
+
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
+                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
+                        tension: 0,
+                        fill: fillColor,
+                        // 移除阴影效果，让线条更细、更清晰
+                        // shadowColor: strokeColor,
+                        // shadowBlur: 6,
+                        // shadowOpacity: 0.6,
+                        listening: true,  // 确保事件监听启用
+                        perfectDrawEnabled: false,  // 优化性能
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
+                    });
+                    
+                    // 存储数据用于 Tooltip
+                    poly.findingType = 'neural';
+                    poly.findingData = {
+                        Label: `neural_${side}`,
+                        Confidence: item.Confidence || 0.0,
+                        Detail: side === 'left' ? '左侧神经管' : '右侧神经管',
+                        Detected: neuralInfo ? neuralInfo.Detected : true,
+                        Area: neuralInfo ? neuralInfo.Area : null
+                    };
+                    poly.neuralSide = side;
+                    
+                    // 绑定 Tooltip 事件
+                    poly.on('mouseenter', function(e) {
+                        const confidence = item.Confidence || 0.0;
+                        const confidenceText = (confidence * 100).toFixed(0);
+                        const sideText = side === 'left' ? '左侧' : '右侧';
+                        let tooltipText = `${sideText}神经管 (置信度: ${confidenceText}%)`;
+                        if (neuralInfo && neuralInfo.Area != null) {
+                            tooltipText += `\n面积: ${neuralInfo.Area.toFixed(2)}`;
+                        }
+                        showTooltipAtCursor(tooltipText, e);
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        hideTooltip();
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'neural');
+                    
+                    neuralLayer.add(poly);
+                    neuralCount++;
+                });
+            }
+        });
+        
+        console.log('神经管区域绘制完成，已绘制:', neuralCount, '个');
+    }
+    
+    if (neuralCount > 0) {
+        stage.add(neuralLayer);
+        appState.konvaLayers.neural = neuralLayer;
+    }
 }
 
 /**
@@ -6119,7 +6242,8 @@ const LAYER_CONFIG = {
     mandible: { name: '下颌升支', taskType: 'panoramic' },
     sinus: { name: '上颌窦', taskType: 'panoramic' },
     density: { name: '根尖密度影', taskType: 'panoramic' },
-    alveolarcrest: { name: '牙槽骨', taskType: 'panoramic' }
+    alveolarcrest: { name: '牙槽骨', taskType: 'panoramic' },
+    neural: { name: '神经管', taskType: 'panoramic' }
 };
 
 /**

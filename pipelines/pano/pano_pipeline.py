@@ -11,6 +11,7 @@
 from pipelines.base_pipeline import BasePipeline
 from pipelines.pano.utils import pano_report_utils
 from tools.timer import timer
+from tools.weight_fetcher import WeightFetchError
 import logging
 from datetime import datetime
 import cv2
@@ -136,6 +137,18 @@ class PanoPipeline(BasePipeline):
             logger.error(f"Failed to initialize modules: {e}")
             self.is_mock_mode = True
 
+    def _log_weights_info(self):
+        """记录已加载的模块和权重信息"""
+        if self.is_mock_mode:
+            logger.info("PanoPipeline initialized in MOCK MODE (no weights loaded)")
+        else:
+            loaded_modules = list(self.modules.keys())
+            logger.info(f"PanoPipeline initialized with {len(loaded_modules)} modules: {loaded_modules}")
+            # 可选：记录每个模块的权重路径（仅在调试级别）
+            for module_name, module in self.modules.items():
+                if hasattr(module, 'weights_path'):
+                    logger.debug(f"  {module_name}: weights_path = {module.weights_path}")
+
     def run(self, image_path: str, pixel_spacing: dict = None, **kwargs) -> dict:
         if self.is_mock_mode:
             # 如果是 Mock 模式，返回空字典防止前端崩溃，或者返回测试数据
@@ -223,7 +236,8 @@ class PanoPipeline(BasePipeline):
             "sinus": sinus_res,
             "teeth_attribute0": t_attr0, "teeth_attribute1": t_attr1, "teeth_attribute2": t_attr2,
             "curved_short_root": t_curve, "erupted_wisdomteeth": t_wisdom,
-            "rootTipDensity": root_tip_res, "periodontal": perio_res
+            "rootTipDensity": root_tip_res, "periodontal": perio_res,
+            "alveolarcrest": alveolarcrest_results
         }
 
         # 5. 生成报告
@@ -382,6 +396,30 @@ class PanoPipeline(BasePipeline):
             logger.error(f"Sinus workflow v2 error: {e}")
             import traceback
             traceback.print_exc()
+            return {}
+
+    # -------------------------------------------------------------------------
+    # 牙槽骨分割
+    # -------------------------------------------------------------------------
+    def _run_alveolarcrest_seg(self, image_path: str) -> dict:
+        """执行牙槽骨分割"""
+        self._log_step("牙槽骨分割", "YOLOv11 实例分割")
+        try:
+            if 'alveolarcrest_seg' not in self.modules:
+                return {}
+            
+            from PIL import Image
+            image = Image.open(image_path).convert('RGB')
+            predictor = self.modules['alveolarcrest_seg']
+            result = predictor.predict(image)
+            
+            # 清理 Numpy Mask 数组，防止 JSON 序列化崩溃
+            if result and 'mask' in result:
+                result.pop('mask', None)
+            
+            return result
+        except Exception as e:
+            logger.error(f"Alveolarcrest seg failed: {e}")
             return {}
 
     # -------------------------------------------------------------------------
