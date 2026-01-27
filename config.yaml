@@ -74,7 +74,7 @@ pipelines:
         retina_masks: true
         agnostic_nms: true
 
-      
+
       teeth_attribute0:
         description: "牙齿属性1模块（YOLOv11）"
         weights_key: "weights/panoramic/model0.pt"
@@ -144,19 +144,19 @@ pipelines:
 
       sinus_seg:
         description: "上颌窦结构分割模块（ResNetUNet ONNX）"
-        weights_key: "weights/panoramic/sinus_structure_resnetunet.onnx"
+        weights_key: "weights/panoramic/best_model_sinus_512.onnx"#sinus_structure_resnetunet.onnx
         weights_force_download: false
         # 如果需要，可以加 input_size: [512, 512]
 
       sinus_class:
         description: "上颌窦炎症分类模块（ResNet18 ONNX）"
-        weights_key: "weights/panoramic/best_model_sinus_512.onnx"
+        weights_key: "weights/panoramic/sinus_inflam_classifier_resnet18.onnx"
         weights_force_download: false
 
-
-      neural_class:
+      neural_seg:
         description: "神经管分割模块"
         weights_key: "weights/panoramic/best_model_ramus_224.onnx"
+        weights_force_download: false
 
       rootTipDensity_detect:
         description: "根尖低密度影检测模块（YOLOv11）"
