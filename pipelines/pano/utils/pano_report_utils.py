@@ -758,20 +758,24 @@ def format_teeth_report(
     if third_molar_summary_struct is not None:
         third_molar_summary = third_molar_summary_struct
     else:
+        # 兜底逻辑：如果 pipeline 未提供，使用默认值
         third_molar_summary = {}
         detected_wisdom_fdi = set()
         for tooth_info in detected_teeth_list:
             fdi = tooth_info.get("fdi", "")
-            if fdi in WISDOM_TEETH_FDI:
-                detected_wisdom_fdi.add(fdi)
+            # 将整数 fdi 转换为字符串进行比较
+            fdi_str = str(fdi) if isinstance(fdi, int) else fdi
+            if fdi_str in WISDOM_TEETH_FDI:
+                detected_wisdom_fdi.add(fdi_str)
 
         for fdi in WISDOM_TEETH_FDI:
             if fdi in detected_wisdom_fdi:
+                # 兜底：默认为 Level 0（已萌出）
                 third_molar_summary[fdi] = {
-                    "Level": 1,
-                    "Impactions": "Impacted",
-                    "Detail": "阻生",
-                    "Confidence": 0.85
+                    "Level": 0,
+                    "Impactions": None,
+                    "Detail": "已萌出",
+                    "Confidence": 0.5
                 }
             else:
                 third_molar_summary[fdi] = {

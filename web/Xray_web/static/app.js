@@ -5253,14 +5253,24 @@ function buildPanoReport(data) {
         }
     }
     
-    // 智齿问题
+    // 智齿问题（新格式：按牙位分别记录）
     if (data.ThirdMolarSummary) {
         const wisdom = data.ThirdMolarSummary;
-        if (wisdom.TotalCount !== undefined) {
-            summaryItems.push(`智齿数量: ${wisdom.TotalCount}颗`);
-        }
-        if (wisdom.ImpactedCount !== undefined && wisdom.ImpactedCount > 0) {
-            summaryItems.push(`阻生智齿: ${wisdom.ImpactedCount}颗`);
+        // 新格式：{"18": {...}, "28": {...}, "38": {...}, "48": {...}}
+        const wisdomFDIs = ['18', '28', '38', '48'];
+        let totalCount = 0;
+        
+        wisdomFDIs.forEach(fdi => {
+            if (wisdom[fdi]) {
+                const level = wisdom[fdi].Level;
+                if (level !== 4) { // Level 4 = 未见智齿
+                    totalCount++;
+                }
+            }
+        });
+        
+        if (totalCount > 0) {
+            summaryItems.push(`智齿数量: ${totalCount}颗`);
         }
     }
     
@@ -5543,36 +5553,111 @@ function buildPanoReport(data) {
         container.appendChild(periodontalSection);
     }
     
-    // 4. 智齿分析
+    // 4. 智齿分析（新格式：按牙位分别记录）
     if (data.ThirdMolarSummary) {
         const wisdomSection = createReportSection('智齿分析');
         const wisdom = data.ThirdMolarSummary;
+        const wisdomFDIs = ['18', '28', '38', '48'];
         
-        if (wisdom.TotalCount !== undefined) {
-            wisdomSection.appendChild(createKeyValue('智齿总数', wisdom.TotalCount + '颗'));
-        }
-        if (wisdom.ImpactedCount !== undefined) {
-            wisdomSection.appendChild(createKeyValue('阻生智齿', wisdom.ImpactedCount + '颗'));
-        }
-        if (wisdom.EruptedCount !== undefined) {
-            wisdomSection.appendChild(createKeyValue('已萌出', wisdom.EruptedCount + '颗'));
-        }
+        // 统计智齿数量
+        let totalCount = 0;
+        let impactedCount = 0;
+        let eruptedCount = 0;
+        let germCount = 0;
+        let toEruptCount = 0;
         
-        // 显示具体智齿情况
-        if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
-            const wisdomTeeth = data.ToothAnalysis.filter(t => {
-                const fdi = t.FDI || '';
-                return fdi === '18' || fdi === '28' || fdi === '38' || fdi === '48';
-            });
-            
-            if (wisdomTeeth.length > 0) {
-                wisdomTeeth.forEach(tooth => {
-                    const periodontalInfo = periodontalAbsorptionMap[tooth.FDI];
-                    const toothCard = createToothCard(tooth, periodontalInfo);
-                    wisdomSection.appendChild(toothCard);
-                });
+        wisdomFDIs.forEach(fdi => {
+            if (wisdom[fdi]) {
+                const level = wisdom[fdi].Level;
+                if (level !== 4) { // Level 4 = 未见智齿
+                    totalCount++;
+                    if (level === 1) impactedCount++; // 阻生
+                    else if (level === 0) eruptedCount++; // 已萌出
+                    else if (level === 2) germCount++; // 牙胚状态
+                    else if (level === 3) toEruptCount++; // 待萌出
+                }
             }
+        });
+        
+        // 显示统计信息
+        if (totalCount > 0) {
+            wisdomSection.appendChild(createKeyValue('智齿总数', totalCount + '颗'));
         }
+        if (impactedCount > 0) {
+            wisdomSection.appendChild(createKeyValue('阻生智齿', impactedCount + '颗'));
+        }
+        if (eruptedCount > 0) {
+            wisdomSection.appendChild(createKeyValue('已萌出', eruptedCount + '颗'));
+        }
+        if (germCount > 0) {
+            wisdomSection.appendChild(createKeyValue('牙胚状态', germCount + '颗'));
+        }
+        if (toEruptCount > 0) {
+            wisdomSection.appendChild(createKeyValue('待萌出', toEruptCount + '颗'));
+        }
+        
+        // 显示具体智齿情况（合并 ToothAnalysis 和 ThirdMolarSummary 数据）
+        wisdomFDIs.forEach(fdi => {
+            if (!wisdom[fdi]) return;
+            
+            const wisdomInfo = wisdom[fdi];
+            const level = wisdomInfo.Level;
+            
+            // 查找对应的 ToothAnalysis 数据
+            let tooth = null;
+            if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
+                tooth = data.ToothAnalysis.find(t => String(t.FDI) === fdi);
+            }
+            
+            // 创建智齿卡片
+            const card = document.createElement('div');
+            card.className = 'tooth-card';
+            
+            // 判断是否异常（阻生或牙胚状态）
+            if (level === 1 || level === 2) {
+                card.classList.add('abnormal');
+            }
+            // 未见智齿使用不同样式
+            if (level === 4) {
+                card.classList.add('missing');
+            }
+            
+            let content = `<div class="tooth-header">牙位: ${fdi}</div>`;
+            
+            // 显示智齿状态（从 ThirdMolarSummary）
+            content += `<div class="tooth-wisdom">状态: ${wisdomInfo.Detail}`;
+            if (wisdomInfo.Confidence !== undefined) {
+                content += ` (${(wisdomInfo.Confidence * 100).toFixed(1)}%)`;
+            }
+            content += '</div>';
+            
+            // 如果有 ToothAnalysis 数据，显示其他属性
+            if (tooth && tooth.Properties && Array.isArray(tooth.Properties) && tooth.Properties.length > 0) {
+                content += '<div class="tooth-properties">';
+                tooth.Properties.forEach(prop => {
+                    const description = prop.Description || prop.Value || '未知';
+                    const confidence = prop.Confidence !== undefined ? (prop.Confidence * 100).toFixed(1) : 'N/A';
+                    // 跳过与智齿状态重复的属性（erupted, wisdom_impaction等已在上面显示）
+                    if (!['已萌出', '阻生', '牙胚', '待萌出'].includes(description)) {
+                        content += `<div class="tooth-property-item">${description} (${confidence}%)</div>`;
+                    }
+                });
+                content += '</div>';
+            }
+            
+            // 显示牙槽骨吸收信息（如果有）
+            const periodontalInfo = periodontalAbsorptionMap[fdi];
+            const absorptionLevel = periodontalInfo ? periodontalInfo.AbsorptionLevel : undefined;
+            if (absorptionLevel !== undefined) {
+                const levelText = formatPeriodontalLevel(absorptionLevel);
+                if (levelText) {
+                    content += `<div class="tooth-periodontal">牙槽骨吸收: ${levelText}</div>`;
+                }
+            }
+            
+            card.innerHTML = content;
+            wisdomSection.appendChild(card);
+        });
         
         if (wisdomSection.querySelectorAll('.key-value-item, .tooth-card').length > 0) {
             container.appendChild(wisdomSection);
@@ -5635,14 +5720,21 @@ function buildPanoReport(data) {
         container.appendChild(specialSection);
     }
     
-    // 6. 单牙诊断详情
+    // 6. 单牙诊断详情（按FDI序号排序）
     if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis) && data.ToothAnalysis.length > 0) {
         const toothDetailSection = createReportSection('单牙诊断详情');
         
         // 过滤掉智齿（已在智齿分析中显示）
-        const nonWisdomTeeth = data.ToothAnalysis.filter(t => {
+        let nonWisdomTeeth = data.ToothAnalysis.filter(t => {
             const fdi = t.FDI || '';
             return fdi !== '18' && fdi !== '28' && fdi !== '38' && fdi !== '48';
+        });
+        
+        // 按照FDI编号排序（从小到大：11, 12, ..., 47）
+        nonWisdomTeeth.sort((a, b) => {
+            const fdiA = parseInt(a.FDI) || 0;
+            const fdiB = parseInt(b.FDI) || 0;
+            return fdiA - fdiB;
         });
         
         if (nonWisdomTeeth.length > 0) {

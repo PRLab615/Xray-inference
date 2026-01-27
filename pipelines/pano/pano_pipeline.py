@@ -539,6 +539,9 @@ class PanoPipeline(BasePipeline):
             union = ((x2 - x1) * (y2 - y1)) + ((x2g - x1g) * (y2g - y1g)) - inter
             return inter / union if union > 0 else 0.0
 
+        # 定义智齿专属属性（只能匹配到智齿上）
+        wisdom_exclusive_attrs = {"wisdom_impaction", "tooth_germ", "erupted", "to_be_erupted"}
+        
         for attr_box, attr_name, conf in all_attr_boxes:
             best_fdi, best_iou = None, 0.0
             for fdi, tooth_box in tooth_bboxes.items():
@@ -546,38 +549,116 @@ class PanoPipeline(BasePipeline):
                 if iou > best_iou:
                     best_iou = iou
                     best_fdi = fdi
+            
+            # 过滤规则：智齿专属属性只能匹配到智齿上
             if best_fdi and best_iou >= iou_threshold:
-                tooth_attributes[best_fdi].append((attr_name, conf))
+                # 如果是智齿专属属性，只能匹配到智齿
+                if attr_name in wisdom_exclusive_attrs:
+                    if best_fdi in WISDOM_TEETH_FDI:
+                        tooth_attributes[best_fdi].append((attr_name, conf))
+                    # 否则丢弃该属性（不匹配到非智齿牙位）
+                else:
+                    # 非智齿专属属性可以匹配到任何牙位
+                    tooth_attributes[best_fdi].append((attr_name, conf))
 
         detected_set = set(tooth_bboxes.keys())
         missing_teeth = []
         for fdi in ALL_PERMANENT_TEETH_FDI:
             if fdi not in detected_set:
-                missing_teeth.append({"FDI": fdi, "Reason": "missing", "Detail": f"牙位 {fdi} 未检测到"})
+                # 智齿缺失：使用特殊描述"未见智齿"
+                if fdi in WISDOM_TEETH_FDI:
+                    missing_teeth.append({"FDI": fdi, "Reason": "missing", "Detail": f"牙位 {fdi} 未见智齿"})
+                else:
+                    missing_teeth.append({"FDI": fdi, "Reason": "missing", "Detail": f"牙位 {fdi} 未检测到"})
 
         third_molar_summary = {}
+        # 记录每颗智齿选中的属性（用于后续过滤 ToothAttributes）
+        wisdom_selected_attrs = {}
+        
         for fdi in WISDOM_TEETH_FDI:
             if fdi in detected_set:
-                attrs = [x[0] for x in tooth_attributes.get(fdi, [])]
-                if "erupted" in attrs:
-                    summary = {"Level": 0, "Detail": "已萌出", "Confidence": 0.85}
-                elif "wisdom_impaction" in attrs or "impacted" in attrs:
-                    summary = {"Level": 1, "Detail": "阻生", "Confidence": 0.85}
+                # 获取该智齿的所有属性（包含属性名和置信度）
+                attrs_with_conf = tooth_attributes.get(fdi, [])
+                
+                # 收集所有候选属性：(level, confidence, detail, impactions, attr_name)
+                candidates = []
+                for attr_name, conf in attrs_with_conf:
+                    if attr_name == "wisdom_impaction":
+                        candidates.append((1, conf, "阻生", "Impacted", attr_name))
+                    elif attr_name == "tooth_germ":
+                        candidates.append((2, conf, "牙胚状态", None, attr_name))
+                    elif attr_name == "erupted":
+                        candidates.append((0, conf, "已萌出", None, attr_name))
+                    elif attr_name == "to_be_erupted":
+                        candidates.append((3, conf, "待萌出", None, attr_name))
+                
+                if candidates:
+                    # 排序规则：
+                    # 1. 首先按置信度降序（置信度高的优先）
+                    # 2. 如果置信度相同，按固定优先级：Level 1 > 2 > 0 > 3
+                    # 使用优先级映射：1->1, 2->2, 0->3, 3->4（数字越小优先级越高）
+                    priority_map = {1: 1, 2: 2, 0: 3, 3: 4}
+                    candidates.sort(key=lambda x: (-x[1], priority_map[x[0]]))
+                    
+                    # 取排序后的第一个（置信度最高且优先级最高的）
+                    level, confidence, detail, impactions, selected_attr = candidates[0]
+                    # 记录选中的属性名称和置信度
+                    wisdom_selected_attrs[fdi] = (selected_attr, confidence)
                 else:
-                    summary = {"Level": 2, "Detail": "已检测到", "Confidence": 0.70}
+                    # 兜底：检测到智齿但无明确属性，默认Level 0（已萌出）
+                    level = 0
+                    confidence = 0.5
+                    detail = "已萌出"
+                    impactions = None
+                    # 兜底情况下，使用虚拟属性名 "erupted"（与Level 0一致）
+                    wisdom_selected_attrs[fdi] = ("erupted", confidence)
+                
+                summary = {
+                    "Level": level,
+                    "Impactions": impactions,
+                    "Detail": detail,
+                    "Confidence": round(confidence, 2)
+                }
             else:
-                summary = {"Level": 4, "Detail": "未见智齿", "Confidence": 0.0}
-            third_molar_summary[fdi] = summary
+                # 未检测到智齿
+                summary = {
+                    "Level": 4,
+                    "Impactions": None,
+                    "Detail": "未见智齿",
+                    "Confidence": 0.0
+                }
+            # 使用字符串作为 key，与 JSON 格式保持一致
+            third_molar_summary[str(fdi)] = summary
 
         tooth_attributes_formatted = {}
         for fdi, attr_list in tooth_attributes.items():
             formatted = []
-            for name, conf in attr_list:
-                formatted.append({
-                    "Value": name,
-                    "Description": ATTRIBUTE_DESCRIPTION_MAP.get(name, name),
-                    "Confidence": round(conf, 2)
-                })
+            
+            # 对于智齿，只保留选中的那一个属性
+            if fdi in WISDOM_TEETH_FDI and fdi in wisdom_selected_attrs:
+                selected_attr, selected_conf = wisdom_selected_attrs[fdi]
+                if selected_attr:  # 如果有选中的属性
+                    formatted.append({
+                        "Value": selected_attr,
+                        "Description": ATTRIBUTE_DESCRIPTION_MAP.get(selected_attr, selected_attr),
+                        "Confidence": round(selected_conf, 2)
+                    })
+            else:
+                # 对于非智齿，去重并保留置信度最高的属性
+                # 使用字典记录每个属性的最高置信度
+                attr_dict = {}
+                for name, conf in attr_list:
+                    if name not in attr_dict or conf > attr_dict[name]:
+                        attr_dict[name] = conf
+                
+                # 转换为 formatted 列表
+                for name, conf in attr_dict.items():
+                    formatted.append({
+                        "Value": name,
+                        "Description": ATTRIBUTE_DESCRIPTION_MAP.get(name, name),
+                        "Confidence": round(conf, 2)
+                    })
+            
             tooth_attributes_formatted[fdi] = formatted
 
         return {
