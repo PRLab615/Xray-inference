@@ -229,7 +229,7 @@ pipelines:
     modules:
       teeth_seg:                 # 复用全景片的牙齿分割模块配置
         description: "牙齿分割模块（用于牙期检测）"
-        weights_key: "weights/panoramic/1116_teeth_seg.pt"
+        weights_key: "weights/panoramic/new_teeth_seg.pt"
         weights_force_download: false
         device: "0"
         conf: 0.25
