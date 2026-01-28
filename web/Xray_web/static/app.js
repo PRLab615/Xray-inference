@@ -4590,9 +4590,10 @@ function drawRegionalFindings(data, stage, scale) {
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 记得应用之前的优化：先抽稀(2步) -> 再平滑(3步)
-                    let pts = simplifyPoints(pArr, 2.0, true); // 抽稀
-                    pts = smoothPolyline(pts, 3);              // 平滑
+                    // 更强的平滑：先滑动平均去毛刺 -> 再RDP抽稀 -> Chaikin平滑
+                    let pts = movingAverageSmooth(pArr, 5);
+                    pts = simplifyPoints(pts, 2.5, true);
+                    pts = smoothPolyline(pts, 4);
 
                     const poly = new Konva.Line({
                         points: pts,
@@ -4601,7 +4602,7 @@ function drawRegionalFindings(data, stage, scale) {
                         strokeWidth: CONFIG.STROKE_WIDTH,
                         lineCap: 'round',
                         lineJoin: 'round',
-                        tension: 0, // 记得设为0
+                        tension: 0,
                         fill: fillColor,
                         
                         // 记得：如果你希望线条锐利，不要加 shadowBlur
@@ -4649,6 +4650,207 @@ function drawRegionalFindings(data, stage, scale) {
     if (sinusCount > 0) {
         stage.add(sinusLayer);
         appState.konvaLayers.sinus = sinusLayer;
+    }
+    
+    // 6. 牙槽骨图层
+    const alveolarcrestLayer = new Konva.Layer();
+    let alveolarcrestCount = 0;
+    
+    // 绘制牙槽骨区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理牙槽骨
+            if (!rawLabel.includes('alveolarcrest')) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 牙槽骨默认颜色：浅蓝紫色
+            let strokeColor = '#A29BFE';  // 浅紫蓝色
+            let fillColor = 'rgba(162, 155, 254, 0.20)'; // 对应的半透明填充颜色
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // 应用优化：先抽稀 -> 再平滑
+                    let pts = simplifyPoints(pArr, 2.0, true); // 抽稀
+                    pts = smoothPolyline(pts, 3);              // 平滑
+
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        tension: 0,
+                        fill: fillColor,
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
+                    });
+                    
+                    // 存储数据用于 Tooltip
+                    poly.findingType = 'alveolarcrest';
+                    poly.findingData = {
+                        Label: 'alveolarcrest',
+                        Confidence: item.Confidence || 0.0,
+                        Detail: '牙槽骨'
+                    };
+                    
+                    // 绑定 Tooltip 事件
+                    poly.on('mouseenter', function(e) {
+                        const confidence = item.Confidence || 0.0;
+                        const confidenceText = (confidence * 100).toFixed(0);
+                        const tooltipText = `牙槽骨 (置信度: ${confidenceText}%)`;
+                        showTooltipAtCursor(tooltipText, e);
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        hideTooltip();
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'alveolarcrest');
+                    
+                    alveolarcrestLayer.add(poly);
+                    alveolarcrestCount++;
+                });
+            }
+        });
+        
+        console.log('牙槽骨区域绘制完成，已绘制:', alveolarcrestCount, '个');
+    }
+    
+    if (alveolarcrestCount > 0) {
+        stage.add(alveolarcrestLayer);
+        appState.konvaLayers.alveolarcrest = alveolarcrestLayer;
+    }
+    
+    // 7. 神经管图层
+    const neuralLayer = new Konva.Layer();
+    let neuralCount = 0;
+    
+    // 绘制神经管区域（来自 AnatomyResults 多边形坐标）
+    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
+        // 获取神经管诊断信息
+        let neuralInfoMap = {};
+        if (data.NeuralCanalAssessment) {
+            const neural = data.NeuralCanalAssessment;
+            neuralInfoMap['left'] = neural.Left || {};
+            neuralInfoMap['right'] = neural.Right || {};
+        }
+        
+        data.AnatomyResults.forEach(item => {
+            const seg = item.SegmentationMask || {};
+            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
+            // 仅处理神经管
+            if (!rawLabel.includes('neural')) return;
+            
+            // 判定左右
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            
+            if (!side) return;
+            
+            const mask = item.SegmentationMask || item;
+            const coords = mask.Coordinates;
+            if (!coords) return;
+            
+            // 获取对应侧的诊断信息
+            const neuralInfo = neuralInfoMap[side] || null;
+            
+            // 神经管默认颜色：红色系
+            let strokeColor = '#E74C3C';  // 红色
+            let fillColor = 'rgba(231, 76, 60, 0.25)'; // 对应的半透明填充颜色
+            
+            // 归一化坐标，支持多边形/多多边形/矩形
+            const polys = normalizeMaskPolygons(coords, scale);
+            if (polys.length > 0) {
+                polys.forEach(pArr => {
+                    // ============================================================
+                    // 针对神经管的 3 步优化处理（与髁突、下颌分支一致）
+                    // ============================================================
+                    
+                    // 1. 【去毛刺】滑动平均 (新增步骤)
+                    // windowSize = 5：神经管较大，可以用 5 甚至 7 来强力去除突出的像素点
+                    let pts = movingAverageSmooth(pArr, 5);
+
+                    // 2. 【去阶梯】RDP 抽稀
+                    // tolerance = 2.5：神经管轮廓平缓，可以适当加大容差，让线条更直
+                    pts = simplifyPoints(pts, 2.5, true);
+
+                    // 3. 【变圆润】Chaikin 平滑
+                    // 迭代 3-4 次，让转折处非常圆滑
+                    pts = smoothPolyline(pts, 4);
+
+                    const poly = new Konva.Line({
+                        points: pts,
+                        closed: true,
+                        stroke: strokeColor,
+                        strokeWidth: CONFIG.STROKE_WIDTH,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
+                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
+                        tension: 0,
+                        fill: fillColor,
+                        // 移除阴影效果，让线条更细、更清晰
+                        // shadowColor: strokeColor,
+                        // shadowBlur: 6,
+                        // shadowOpacity: 0.6,
+                        listening: true,  // 确保事件监听启用
+                        perfectDrawEnabled: false,  // 优化性能
+                        strokeScaleEnabled: false // 禁止线条随缩放变粗
+                    });
+                    
+                    // 存储数据用于 Tooltip
+                    poly.findingType = 'neural';
+                    poly.findingData = {
+                        Label: `neural_${side}`,
+                        Confidence: item.Confidence || 0.0,
+                        Detail: side === 'left' ? '左侧神经管' : '右侧神经管',
+                        Detected: neuralInfo ? neuralInfo.Detected : true,
+                        Area: neuralInfo ? neuralInfo.Area : null
+                    };
+                    poly.neuralSide = side;
+                    
+                    // 绑定 Tooltip 事件
+                    poly.on('mouseenter', function(e) {
+                        const confidence = item.Confidence || 0.0;
+                        const confidenceText = (confidence * 100).toFixed(0);
+                        const sideText = side === 'left' ? '左侧' : '右侧';
+                        let tooltipText = `${sideText}神经管 (置信度: ${confidenceText}%)`;
+                        if (neuralInfo && neuralInfo.Area != null) {
+                            tooltipText += `\n面积: ${neuralInfo.Area.toFixed(2)}`;
+                        }
+                        showTooltipAtCursor(tooltipText, e);
+                        document.body.style.cursor = 'pointer';
+                    });
+                    poly.on('mouseleave', function() {
+                        hideTooltip();
+                        document.body.style.cursor = 'default';
+                    });
+                    
+                    // 添加点击切换图层显示/隐藏功能
+                    addClickToggleToNode(poly, 'neural');
+                    
+                    neuralLayer.add(poly);
+                    neuralCount++;
+                });
+            }
+        });
+        
+        console.log('神经管区域绘制完成，已绘制:', neuralCount, '个');
+    }
+    
+    if (neuralCount > 0) {
+        stage.add(neuralLayer);
+        appState.konvaLayers.neural = neuralLayer;
     }
 }
 
@@ -5051,14 +5253,24 @@ function buildPanoReport(data) {
         }
     }
     
-    // 智齿问题
+    // 智齿问题（新格式：按牙位分别记录）
     if (data.ThirdMolarSummary) {
         const wisdom = data.ThirdMolarSummary;
-        if (wisdom.TotalCount !== undefined) {
-            summaryItems.push(`智齿数量: ${wisdom.TotalCount}颗`);
-        }
-        if (wisdom.ImpactedCount !== undefined && wisdom.ImpactedCount > 0) {
-            summaryItems.push(`阻生智齿: ${wisdom.ImpactedCount}颗`);
+        // 新格式：{"18": {...}, "28": {...}, "38": {...}, "48": {...}}
+        const wisdomFDIs = ['18', '28', '38', '48'];
+        let totalCount = 0;
+        
+        wisdomFDIs.forEach(fdi => {
+            if (wisdom[fdi]) {
+                const level = wisdom[fdi].Level;
+                if (level !== 4) { // Level 4 = 未见智齿
+                    totalCount++;
+                }
+            }
+        });
+        
+        if (totalCount > 0) {
+            summaryItems.push(`智齿数量: ${totalCount}颗`);
         }
     }
     
@@ -5182,6 +5394,26 @@ function buildPanoReport(data) {
     
     if (hasJointContent) {
         container.appendChild(jointSection);
+    }
+
+    // 神经管分析（对称/不对称）
+    if (data.NeuralCanalAssessment) {
+        const neural = data.NeuralCanalAssessment || {};
+        const left = neural.Left || {};
+        const right = neural.Right || {};
+        const neuralSection = createReportSection('神经管分析');
+        let symmetric = false;
+        if (typeof left.Detected === 'boolean' && typeof right.Detected === 'boolean') {
+            symmetric = !!left.Detected && !!right.Detected;
+        }
+        if (left.Area != null && right.Area != null) {
+            const la = Number(left.Area) || 0;
+            const ra = Number(right.Area) || 0;
+            const ratio = Math.min(la, ra) / (Math.max(la, ra) || 1);
+            if (la > 0 && ra > 0) symmetric = ratio >= 0.7; // 面积接近视为对称
+        }
+        neuralSection.appendChild(createKeyValue('神经管对称性', symmetric ? '对称' : '不对称'));
+        container.appendChild(neuralSection);
     }
     
     // 2.5 上颌窦分析（独立专区）
@@ -5321,36 +5553,111 @@ function buildPanoReport(data) {
         container.appendChild(periodontalSection);
     }
     
-    // 4. 智齿分析
+    // 4. 智齿分析（新格式：按牙位分别记录）
     if (data.ThirdMolarSummary) {
         const wisdomSection = createReportSection('智齿分析');
         const wisdom = data.ThirdMolarSummary;
+        const wisdomFDIs = ['18', '28', '38', '48'];
         
-        if (wisdom.TotalCount !== undefined) {
-            wisdomSection.appendChild(createKeyValue('智齿总数', wisdom.TotalCount + '颗'));
-        }
-        if (wisdom.ImpactedCount !== undefined) {
-            wisdomSection.appendChild(createKeyValue('阻生智齿', wisdom.ImpactedCount + '颗'));
-        }
-        if (wisdom.EruptedCount !== undefined) {
-            wisdomSection.appendChild(createKeyValue('已萌出', wisdom.EruptedCount + '颗'));
-        }
+        // 统计智齿数量
+        let totalCount = 0;
+        let impactedCount = 0;
+        let eruptedCount = 0;
+        let germCount = 0;
+        let toEruptCount = 0;
         
-        // 显示具体智齿情况
-        if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
-            const wisdomTeeth = data.ToothAnalysis.filter(t => {
-                const fdi = t.FDI || '';
-                return fdi === '18' || fdi === '28' || fdi === '38' || fdi === '48';
-            });
-            
-            if (wisdomTeeth.length > 0) {
-                wisdomTeeth.forEach(tooth => {
-                    const periodontalInfo = periodontalAbsorptionMap[tooth.FDI];
-                    const toothCard = createToothCard(tooth, periodontalInfo);
-                    wisdomSection.appendChild(toothCard);
-                });
+        wisdomFDIs.forEach(fdi => {
+            if (wisdom[fdi]) {
+                const level = wisdom[fdi].Level;
+                if (level !== 4) { // Level 4 = 未见智齿
+                    totalCount++;
+                    if (level === 1) impactedCount++; // 阻生
+                    else if (level === 0) eruptedCount++; // 已萌出
+                    else if (level === 2) germCount++; // 牙胚状态
+                    else if (level === 3) toEruptCount++; // 待萌出
+                }
             }
+        });
+        
+        // 显示统计信息
+        if (totalCount > 0) {
+            wisdomSection.appendChild(createKeyValue('智齿总数', totalCount + '颗'));
         }
+        if (impactedCount > 0) {
+            wisdomSection.appendChild(createKeyValue('阻生智齿', impactedCount + '颗'));
+        }
+        if (eruptedCount > 0) {
+            wisdomSection.appendChild(createKeyValue('已萌出', eruptedCount + '颗'));
+        }
+        if (germCount > 0) {
+            wisdomSection.appendChild(createKeyValue('牙胚状态', germCount + '颗'));
+        }
+        if (toEruptCount > 0) {
+            wisdomSection.appendChild(createKeyValue('待萌出', toEruptCount + '颗'));
+        }
+        
+        // 显示具体智齿情况（合并 ToothAnalysis 和 ThirdMolarSummary 数据）
+        wisdomFDIs.forEach(fdi => {
+            if (!wisdom[fdi]) return;
+            
+            const wisdomInfo = wisdom[fdi];
+            const level = wisdomInfo.Level;
+            
+            // 查找对应的 ToothAnalysis 数据
+            let tooth = null;
+            if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis)) {
+                tooth = data.ToothAnalysis.find(t => String(t.FDI) === fdi);
+            }
+            
+            // 创建智齿卡片
+            const card = document.createElement('div');
+            card.className = 'tooth-card';
+            
+            // 判断是否异常（阻生或牙胚状态）
+            if (level === 1 || level === 2) {
+                card.classList.add('abnormal');
+            }
+            // 未见智齿使用不同样式
+            if (level === 4) {
+                card.classList.add('missing');
+            }
+            
+            let content = `<div class="tooth-header">牙位: ${fdi}</div>`;
+            
+            // 显示智齿状态（从 ThirdMolarSummary）
+            content += `<div class="tooth-wisdom">状态: ${wisdomInfo.Detail}`;
+            if (wisdomInfo.Confidence !== undefined) {
+                content += ` (${(wisdomInfo.Confidence * 100).toFixed(1)}%)`;
+            }
+            content += '</div>';
+            
+            // 如果有 ToothAnalysis 数据，显示其他属性
+            if (tooth && tooth.Properties && Array.isArray(tooth.Properties) && tooth.Properties.length > 0) {
+                content += '<div class="tooth-properties">';
+                tooth.Properties.forEach(prop => {
+                    const description = prop.Description || prop.Value || '未知';
+                    const confidence = prop.Confidence !== undefined ? (prop.Confidence * 100).toFixed(1) : 'N/A';
+                    // 跳过与智齿状态重复的属性（erupted, wisdom_impaction等已在上面显示）
+                    if (!['已萌出', '阻生', '牙胚', '待萌出'].includes(description)) {
+                        content += `<div class="tooth-property-item">${description} (${confidence}%)</div>`;
+                    }
+                });
+                content += '</div>';
+            }
+            
+            // 显示牙槽骨吸收信息（如果有）
+            const periodontalInfo = periodontalAbsorptionMap[fdi];
+            const absorptionLevel = periodontalInfo ? periodontalInfo.AbsorptionLevel : undefined;
+            if (absorptionLevel !== undefined) {
+                const levelText = formatPeriodontalLevel(absorptionLevel);
+                if (levelText) {
+                    content += `<div class="tooth-periodontal">牙槽骨吸收: ${levelText}</div>`;
+                }
+            }
+            
+            card.innerHTML = content;
+            wisdomSection.appendChild(card);
+        });
         
         if (wisdomSection.querySelectorAll('.key-value-item, .tooth-card').length > 0) {
             container.appendChild(wisdomSection);
@@ -5413,14 +5720,21 @@ function buildPanoReport(data) {
         container.appendChild(specialSection);
     }
     
-    // 6. 单牙诊断详情
+    // 6. 单牙诊断详情（按FDI序号排序）
     if (data.ToothAnalysis && Array.isArray(data.ToothAnalysis) && data.ToothAnalysis.length > 0) {
         const toothDetailSection = createReportSection('单牙诊断详情');
         
         // 过滤掉智齿（已在智齿分析中显示）
-        const nonWisdomTeeth = data.ToothAnalysis.filter(t => {
+        let nonWisdomTeeth = data.ToothAnalysis.filter(t => {
             const fdi = t.FDI || '';
             return fdi !== '18' && fdi !== '28' && fdi !== '38' && fdi !== '48';
+        });
+        
+        // 按照FDI编号排序（从小到大：11, 12, ..., 47）
+        nonWisdomTeeth.sort((a, b) => {
+            const fdiA = parseInt(a.FDI) || 0;
+            const fdiB = parseInt(b.FDI) || 0;
+            return fdiA - fdiB;
         });
         
         if (nonWisdomTeeth.length > 0) {
@@ -6019,7 +6333,9 @@ const LAYER_CONFIG = {
     condyle: { name: '髁突', taskType: 'panoramic' },
     mandible: { name: '下颌升支', taskType: 'panoramic' },
     sinus: { name: '上颌窦', taskType: 'panoramic' },
-    density: { name: '根尖密度影', taskType: 'panoramic' }
+    density: { name: '根尖密度影', taskType: 'panoramic' },
+    alveolarcrest: { name: '牙槽骨', taskType: 'panoramic' },
+    neural: { name: '神经管', taskType: 'panoramic' }
 };
 
 /**

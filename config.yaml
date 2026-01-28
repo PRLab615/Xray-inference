@@ -55,11 +55,25 @@ pipelines:
     modules:
       teeth_seg:
         description: "牙齿分割模块（YOLOv11实例分割）"
-        weights_key: "weights/panoramic/1116_teeth_seg.pt"
+        weights_key: "weights/panoramic/new_teeth_seg.pt"
         weights_force_download: false
         device: "0"
         conf: 0.25
         iou: 0.45
+        retina_masks: true
+
+      alveolarcrest_seg:
+        description: "牙槽骨分割模块（YOLOv11实例分割）"
+        weights_key: "weights/panoramic/alveolarcrest_seg.pt"
+        weights_force_download: false
+        device: "0"
+        conf: 0.25
+        iou: 0.3
+        imgsz: 640
+        max_det: 1
+        retina_masks: true
+        agnostic_nms: true
+
 
       teeth_attribute0:
         description: "牙齿属性1模块（YOLOv11）"
@@ -118,7 +132,7 @@ pipelines:
       
       condyle_seg:
         description: "髁突分割模块（ONNX）"
-        weights_key: "weights/panoramic/candlye_seg.onnx"
+        weights_key: "weights/panoramic/best_model_condyle_224.onnx"
         weights_force_download: false
         input_size: [224, 224]
       
@@ -130,13 +144,18 @@ pipelines:
 
       sinus_seg:
         description: "上颌窦结构分割模块（ResNetUNet ONNX）"
-        weights_key: "weights/panoramic/sinus_structure_resnetunet.onnx"
+        weights_key: "weights/panoramic/best_model_sinus_512.onnx"#sinus_structure_resnetunet.onnx
         weights_force_download: false
         # 如果需要，可以加 input_size: [512, 512]
 
       sinus_class:
         description: "上颌窦炎症分类模块（ResNet18 ONNX）"
         weights_key: "weights/panoramic/sinus_inflam_classifier_resnet18.onnx"
+        weights_force_download: false
+
+      neural_seg:
+        description: "神经管分割模块"
+        weights_key: "weights/panoramic/best_model_ramus_224.onnx"
         weights_force_download: false
 
       rootTipDensity_detect:
@@ -210,7 +229,7 @@ pipelines:
     modules:
       teeth_seg:                 # 复用全景片的牙齿分割模块配置
         description: "牙齿分割模块（用于牙期检测）"
-        weights_key: "weights/panoramic/1116_teeth_seg.pt"
+        weights_key: "weights/panoramic/new_teeth_seg.pt"
         weights_force_download: false
         device: "0"
         conf: 0.25
