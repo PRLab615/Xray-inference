@@ -74,6 +74,12 @@ class MandiblePrePostProcessor:
         left_feats = self._extract_features(final_mask, self.CLASS_ID_LEFT)
         right_feats = self._extract_features(final_mask, self.CLASS_ID_RIGHT)
 
+        # 3.1 基于整块升支 Mask，再次几何切分出“髁突子区域”
+        # 思路：只在下颌升支 Mask 内部做切分，不单独用髁突模型的蒙版，
+        #       以满足前端“只显示一块下颌升支蒙版、内部用颜色区分”的需求。
+        left_split = self._compute_condyle_region(left_feats.get("mask"), side="left")
+        right_split = self._compute_condyle_region(right_feats.get("mask"), side="right")
+
         # 4. 执行核心对称性逻辑 (原 is_symmetric 函数)
         is_sym, detail_str, metrics = self._is_symmetric(final_mask)
 
@@ -83,7 +89,11 @@ class MandiblePrePostProcessor:
             "mask_shape": final_mask.shape,
             "raw_features": {
                 "left": left_feats,
-                "right": right_feats
+                "right": right_feats,
+            },
+            "split_features": {
+                "left": left_split,
+                "right": right_split,
             },
             "analysis": {
                 "RamusSymmetry": is_sym,  # 升支对称性 (整体对称性)
@@ -227,3 +237,77 @@ class MandiblePrePostProcessor:
             "contour": contour_coords,
             "mask": binary_mask
         }
+
+    def _compute_condyle_region(self, binary_mask: np.ndarray, side: str) -> dict:
+        """
+        在整块下颌升支 Mask 内部，基于“下颌切迹最低点”切出髁突子区域。
+
+        近似实现步骤：
+          1. 从二值 Mask 提取每一列的上边界，得到上缘轮廓 y_top(x)。
+          2. 在上缘轮廓中找到 y 最大的点（最低谷）作为下颌切迹 Notch 点。
+          3. 以 Notch 点的 Y 为水平切线：
+               - 左侧：仅保留 (y <= notch_y 且 x <= notch_x) 的 Mask 作为髁突区；
+               - 右侧：仅保留 (y <= notch_y 且 x >= notch_x) 的 Mask 作为髁突区。
+
+        返回：
+          {
+            "condyle_contour": [[x, y], ...]  # 已经切好的髁突子掩码轮廓（原图坐标）
+          }
+        """
+        if binary_mask is None:
+            return {"condyle_contour": []}
+
+        mask = (binary_mask.astype(np.uint8) > 0).astype(np.uint8)
+        if mask.sum() == 0:
+            return {"condyle_contour": []}
+
+        h, w = mask.shape
+
+        # 1. 计算每一列的上边界 y_top(x)
+        top_y = np.full(w, -1, dtype=np.int32)
+        for x in range(w):
+            ys = np.where(mask[:, x] > 0)[0]
+            if ys.size > 0:
+                top_y[x] = int(ys.min())
+
+        valid_x = np.where(top_y >= 0)[0]
+        if valid_x.size < 3:
+            return {"condyle_contour": []}
+
+        # 2. 在中间带寻找“最低谷”作为 Notch 点：避免两端噪声
+        x_min, x_max = valid_x.min(), valid_x.max()
+        span = x_max - x_min
+        mid_start = x_min + int(0.2 * span)
+        mid_end = x_max - int(0.2 * span)
+        mid_mask = (valid_x >= mid_start) & (valid_x <= mid_end)
+        mid_xs = valid_x[mid_mask]
+        if mid_xs.size == 0:
+            mid_xs = valid_x
+
+        mid_ys = top_y[mid_xs]
+        notch_idx = int(np.argmax(mid_ys))
+        notch_x = int(mid_xs[notch_idx])
+        notch_y = int(mid_ys[notch_idx])
+
+        # 3. 依据 Notch 水平线 + 左右侧规则构造髁突子 Mask
+        condyle_mask = np.zeros_like(mask, dtype=np.uint8)
+        ys, xs = np.where(mask > 0)
+        if side == "left":
+            keep = (ys <= notch_y) & (xs <= notch_x)
+        else:
+            keep = (ys <= notch_y) & (xs >= notch_x)
+        if not np.any(keep):
+            return {"condyle_contour": []}
+
+        condyle_mask[ys[keep], xs[keep]] = 1
+
+        # 4. 从子 Mask 中提取轮廓
+        contours, _ = cv2.findContours(condyle_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return {"condyle_contour": []}
+
+        largest = max(contours, key=cv2.contourArea)
+        coords = largest.squeeze().tolist()
+        if coords and not isinstance(coords[0], list):
+            coords = [coords]
+        return {"condyle_contour": coords}

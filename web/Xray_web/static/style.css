@@ -442,18 +442,18 @@ h2 {
     line-height: 1.6;
 }
 
-/* Tooltip 样式 */
+/* Tooltip 样式：固定定位在视口、贴近鼠标，始终在最上层可见 */
 .tooltip {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.8);
+    position: fixed;
+    background: rgba(0, 0, 0, 0.88);
     color: white;
     padding: 8px 12px;
     border-radius: 4px;
     pointer-events: none;
-    z-index: 1000;
+    z-index: 99999;
     font-size: 12px;
     line-height: 1.5;
-    max-width: 200px;
+    max-width: 220px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
@@ -999,6 +999,67 @@ h2 {
 .sinus-confidence .label {
     margin-right: 6px;
     color: #bdc3c7;
+}
+
+/* ============================================
+   神经管分析卡片样式（与上颌窦一致）
+   ============================================ */
+
+.neural-card {
+    padding: 14px;
+    margin-top: 10px;
+    margin-bottom: 12px;
+    border-left: 4px solid #E74C3C;
+    background: linear-gradient(to right, #fff8f8, #ffffff);
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
+}
+
+.neural-card:hover {
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.neural-card-header {
+    font-size: 15px;
+    color: #2c3e50;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #e9ecef;
+}
+
+.neural-card-header strong {
+    color: #34495e;
+}
+
+.neural-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.neural-item .label {
+    color: #7f8c8d;
+    min-width: 70px;
+    margin-right: 8px;
+}
+
+.neural-item .value {
+    color: #2c3e50;
+    font-weight: 500;
+}
+
+.neural-detail {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #555;
+    line-height: 1.6;
+    border-left: 3px solid #E74C3C;
 }
 
 /* ============================================
