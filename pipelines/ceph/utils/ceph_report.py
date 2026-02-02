@@ -55,6 +55,26 @@ KEYPOINT_MAP_11 = {
 
 # 34点侧貌轮廓点位名称映射
 KEYPOINT_MAP_34 = {f"P{i}": f"P{i}" for i in range(1, 35)}
+KEYPOINT_MAP_34.update({
+    "P1": "G_S",          # P1
+    "P4": "Nprime_S",     # P4
+    "P6": "Bri_S",        # P6
+    "P9": "Prn_S",        # P9
+    "P10": "Cm_S",        # P10
+    "P12": "Sn_S",        # P12
+    "P14": "Aprime_S",    # P14
+    "P15": "ULprime_S",   # P15
+    "P16": "Ls_S",        # P16
+    "P18": "Stms_S",      # P18
+    "P19": "Stmi_S",      # P19
+    "P21": "Li_S",        # P21
+    "P22": "LLprime_S",   # P22
+    "P24": "Si_S",        # P24
+    "P27": "Pogprime_S",  # P27
+    "P29": "Gnprime_S",   # P29
+    "P31": "Meprime_S",   # P31
+    "P34": "C_S",         # P34
+})
 
 # 气道测量正常值参考（单位：mm）
 # 参考文档：腺体气道集成与后处理说明.md
