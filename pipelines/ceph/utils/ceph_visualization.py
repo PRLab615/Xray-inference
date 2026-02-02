@@ -930,12 +930,15 @@ def _profile_contour_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[
     
     # 遍历 P1 到 P33，连接到下一个点
     for i in range(1, 34):
-        curr_label = f"P{i}"
-        next_label = f"P{i+1}"
+        raw_curr = f"P{i}"
+        raw_next = f"P{i+1}"
         
         # 只有当两个点都存在时才连接
-        if curr_label in landmarks and next_label in landmarks:
-            elements.append(_line(curr_label, next_label, "Solid", "Reference"))
+        if raw_curr in landmarks and raw_next in landmarks:
+            # 映射到输出标签（与 JSON 中的 Landmarks 标签一致）
+            label_curr = KEYPOINT_MAP_34.get(raw_curr, raw_curr)
+            label_next = KEYPOINT_MAP_34.get(raw_next, raw_next)
+            elements.append(_line(label_curr, label_next, "Solid", "Reference"))
             
     if not elements:
         return None
