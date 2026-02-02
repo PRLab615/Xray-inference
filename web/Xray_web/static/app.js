@@ -1306,6 +1306,323 @@ function normalizeMaskPolygons(coords, scale) {
     return [];
 }
 
+/**
+ * 计算水平线与多边形的交点 X 坐标
+ */
+function getHorizontalIntersections(pts, y) {
+    const intersections = [];
+    const n = pts.length / 2;
+    for (let i = 0; i < n; i++) {
+        const x1 = pts[2 * i], y1 = pts[2 * i + 1];
+        const nextI = (i + 1) % n;
+        const x2 = pts[2 * nextI], y2 = pts[2 * nextI + 1];
+
+        // 检查线段是否跨越 y (忽略水平线段)
+        if ((y1 < y && y2 >= y) || (y1 >= y && y2 < y)) {
+            const t = (y - y1) / (y2 - y1);
+            const x = x1 + t * (x2 - x1);
+            intersections.push(x);
+        }
+    }
+    return intersections.sort((a, b) => a - b);
+}
+
+/**
+ * 寻找下颌骨上缘的乙状切迹（Sigmoid Notch）的 Y 坐标
+ * 算法：找到上边缘的两个最高点（髁突和喙突），取它们之间路径上的最低点（Y最大值）
+ */
+function findSigmoidNotchY(pts) {
+    if (!pts || pts.length < 6) return null;
+    
+    // 1. 转换为对象数组以便处理
+    const points = [];
+    for(let i=0; i<pts.length; i+=2) {
+        points.push({x: pts[i], y: pts[i+1], idx: i/2});
+    }
+    
+    // 2. 确定“上半部分”区域
+    const minY = Math.min(...points.map(p => p.y));
+    const maxY = Math.max(...points.map(p => p.y));
+    const height = maxY - minY;
+    // 只在顶部 40% 的区域内寻找波峰（髁突和喙突）
+    const topCutoff = minY + height * 0.4; 
+    
+    // 3. 寻找局部最高点 (Y值的局部极小值)
+    const peaks = [];
+    const n = points.length;
+    for(let i=0; i<n; i++) {
+        const p = points[i];
+        if (p.y > topCutoff) continue;
+        
+        const prev = points[(i - 1 + n) % n];
+        const next = points[(i + 1) % n];
+        
+        // 简单的局部极值判断
+        if (p.y <= prev.y && p.y <= next.y) {
+             peaks.push(p);
+        }
+    }
+    
+    // 4. 按 Y 值从小到大排序（即从高到低）
+    peaks.sort((a,b) => a.y - b.y);
+    
+    if (peaks.length < 2) return null; // 找不到两个明显的突起
+    
+    // 取最高的点作为第一个峰（通常是髁突或喙突）
+    const p1 = peaks[0];
+    let p2 = null;
+    
+    // 寻找第二个峰，要求在 X 轴上有一定距离（避免是同一个峰的噪点）
+    const minXDist = (Math.max(...points.map(p=>p.x)) - Math.min(...points.map(p=>p.x))) * 0.1;
+    
+    for(let i=1; i<peaks.length; i++) {
+        if (Math.abs(peaks[i].x - p1.x) > minXDist) {
+            p2 = peaks[i];
+            break;
+        }
+    }
+    
+    if (!p2) return null;
+    
+    // 5. 在两个峰之间的路径上寻找最低点（Notch，即 Y 最大值）
+    // 多边形是闭合的，两点之间有两条路径。我们需要找到“上边缘”的那条路径。
+    // “上边缘”路径的特征是：其路径上的“最低点（Max Y）”比另一条路径的“最低点”要高（Y值小）。
+    // 因为另一条路径会经过下颌角（Gonial Angle），那里的 Y 值非常大。
+    
+    const getPathMaxY = (startIdx, endIdx) => {
+        let maxVal = -Infinity;
+        let curr = startIdx;
+        while(curr !== endIdx) {
+            if (points[curr].y > maxVal) maxVal = points[curr].y;
+            curr = (curr + 1) % n;
+        }
+        return maxVal;
+    };
+    
+    const getPathPoints = (startIdx, endIdx) => {
+        const path = [];
+        let curr = startIdx;
+        while(curr !== endIdx) {
+            path.push(points[curr]);
+            curr = (curr + 1) % n;
+        }
+        path.push(points[endIdx]);
+        return path;
+    };
+
+    const path1Max = getPathMaxY(p1.idx, p2.idx);
+    const path2Max = getPathMaxY(p2.idx, p1.idx);
+    
+    let targetPath = [];
+    // 选择 Max Y 较小的路径（即更靠上的路径）
+    if (path1Max < path2Max) {
+        targetPath = getPathPoints(p1.idx, p2.idx);
+    } else {
+        targetPath = getPathPoints(p2.idx, p1.idx);
+    }
+    
+    // 6. 在目标路径上找到 Y 最大值点（切迹最低点）
+    let notch = targetPath[0];
+    targetPath.forEach(p => {
+        if (p.y > notch.y) notch = p;
+    });
+    
+    return notch;
+}
+
+/**
+ * 将被水平线分割产生的多个连通区域分离成独立的多边形
+ * 原理：clipPolygonByHorizontalLine 会用水平线段连接各个岛屿。
+ * 我们在所有位于分割线上的线段处打断，即可分离出各个“山峰”。
+ */
+function splitDisjointPolygons(flatPts, splitY) {
+    if (!flatPts || flatPts.length < 6) return [];
+    
+    const islands = [];
+    let currentPoly = [];
+    const n = flatPts.length / 2;
+    
+    // 容差，判断点是否在分割线上
+    const isOnLine = (y) => Math.abs(y - splitY) < 0.01;
+    
+    for (let i = 0; i < n; i++) {
+        const x1 = flatPts[2*i], y1 = flatPts[2*i+1];
+        const nextI = (i + 1) % n;
+        const x2 = flatPts[2*nextI], y2 = flatPts[2*nextI+1];
+        
+        currentPoly.push(x1, y1);
+        
+        // 如果当前边完全位于分割线上（连接桥或底边），则在此处断开
+        if (isOnLine(y1) && isOnLine(y2)) {
+            // 保存当前累积的多边形（如果有效）
+            if (currentPoly.length >= 6) {
+                islands.push(currentPoly);
+            }
+            // 开始新的多边形
+            currentPoly = [];
+        }
+    }
+    
+    // 处理闭合回路：如果最后一段和第一段是被同一个断点分开的，可能需要合并？
+    // 但由于我们的策略是“只要遇到水平线就断开”，这意味着每个岛屿的“底边”也被去掉了。
+    // 剩下的只是“拱形”部分。 Konva.Line(closed=true) 会自动连接首尾，
+    // 也就是自动补上底边。这正是我们想要的（每个岛屿独立闭合）。
+    
+    // 检查最后一段残留
+    if (currentPoly.length >= 6) {
+        islands.push(currentPoly);
+    }
+    
+    return islands;
+}
+
+/**
+ * 用水平线将多边形裁剪为上下两部分（用于下颌升支按颜色分成髁突区与升支下部分）
+ * @param {number[]} pointsFlat - 扁平点列 [x1,y1, x2,y2, ...]
+ * @param {number} splitY - 水平线 y 值
+ * @returns {{ top: number[], bottom: number[] }} 上部分与下部分的扁平点列
+ */
+/**
+ * 依据乙状切迹点和侧别，将下颌升支多边形切割为“髁突”和“升支+喙突”两部分
+ * 只切割髁突一侧，保留另一侧完整
+ */
+function splitPolygonByNotch(pointsFlat, notchPt, side) {
+    if (!notchPt || pointsFlat.length < 6) return null;
+
+    // 1. Convert to objects
+    const pts = [];
+    for(let i=0; i<pointsFlat.length; i+=2) pts.push({x: pointsFlat[i], y: pointsFlat[i+1]});
+    const n = pts.length;
+    const notchIdx = notchPt.idx; // This index corresponds to the pts array
+
+    // 2. Find Intersection
+    // We look for edge crossing y=notch.y
+    // Direction depends on side.
+    // side='left' (Image Right) -> Look Left (x < notch.x)
+    // side='right' (Image Left) -> Look Right (x > notch.x) (User Requirement: Cut to Right)
+    
+    let bestInt = null;
+    let bestDist = Infinity;
+    let edgeIdx = -1; // Intersection is on edge starting at edgeIdx
+
+    for(let i=0; i<n; i++) {
+        const p1 = pts[i];
+        const p2 = pts[(i+1)%n];
+        
+        // Check if edge crosses Y
+        // Avoid the notch edges themselves (usually adjacent to notchIdx)
+        if (Math.abs(i - notchIdx) < 2 || Math.abs(i - notchIdx) > n - 2) continue;
+
+        if ((p1.y <= notchPt.y && p2.y > notchPt.y) || (p1.y > notchPt.y && p2.y <= notchPt.y)) {
+             // Calculate X at Y
+             const t = (p2.y - p1.y) !== 0 ? (notchPt.y - p1.y) / (p2.y - p1.y) : 0;
+             const ix = p1.x + t * (p2.x - p1.x);
+             
+             // Check direction
+             let valid = false;
+             if (side === 'left') { // Image Right
+                 if (ix < notchPt.x - 1) valid = true; // Look Left
+             } else { // Image Left
+                 if (ix > notchPt.x + 1) valid = true; // Look Right
+             }
+             
+             if (valid) {
+                 const dist = Math.abs(ix - notchPt.x);
+                 if (dist < bestDist) {
+                     bestDist = dist;
+                     bestInt = {x: ix, y: notchPt.y};
+                     edgeIdx = i;
+                 }
+             }
+        }
+    }
+    
+    if (edgeIdx === -1 || !bestInt) return null; // Failed to find intersection
+
+    // 3. Split into two polygons
+    // Poly 1: Notch -> ... -> edgeIdx -> Intersection -> Notch
+    const poly1 = [];
+    let curr = notchIdx;
+    while(curr !== (edgeIdx + 1)%n) {
+        poly1.push(pts[curr]);
+        curr = (curr + 1) % n;
+    }
+    poly1.push(bestInt);
+    
+    // Poly 2: Intersection -> (edgeIdx+1) -> ... -> Notch -> Intersection
+    const poly2 = [];
+    poly2.push(bestInt);
+    curr = (edgeIdx + 1) % n;
+    while(curr !== notchIdx) {
+        poly2.push(pts[curr]);
+        curr = (curr + 1) % n;
+    }
+    poly2.push(pts[notchIdx]);
+
+    // 4. Identify Condyle
+    // side='left' (Image Right) -> Condyle has smaller X (Left)
+    // side='right' (Image Left) -> Condyle has larger X (Right)
+    
+    const getAvgX = (pArr) => pArr.reduce((s, p) => s + p.x, 0) / pArr.length;
+    const x1 = getAvgX(poly1);
+    const x2 = getAvgX(poly2);
+    
+    let condylePts = null;
+    let ramusPts = null; // Ramus + Coronoid
+    
+    if (side === 'left') {
+        if (x1 < x2) { condylePts = poly1; ramusPts = poly2; }
+        else { condylePts = poly2; ramusPts = poly1; }
+    } else {
+        if (x1 > x2) { condylePts = poly1; ramusPts = poly2; }
+        else { condylePts = poly2; ramusPts = poly1; }
+    }
+    
+    // Flatten results
+    const flat = (arr) => {
+        const res = [];
+        arr.forEach(p => res.push(p.x, p.y));
+        return res;
+    };
+    
+    return {
+        condyle: flat(condylePts),
+        ramus: flat(ramusPts),
+        intersection: bestInt
+    };
+}
+
+function clipPolygonByHorizontalLine(pointsFlat, splitY) {
+    const n = pointsFlat.length / 2;
+    if (n < 3) return { top: [], bottom: [] };
+    const top = [];
+    const bottom = [];
+    for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const ax = pointsFlat[2 * i], ay = pointsFlat[2 * i + 1];
+        const bx = pointsFlat[2 * j], by = pointsFlat[2 * j + 1];
+        const aInTop = ay <= splitY;
+        const bInTop = by <= splitY;
+        if (aInTop && bInTop) {
+            top.push(bx, by);
+        } else if (!aInTop && !bInTop) {
+            bottom.push(bx, by);
+        } else {
+            const t = (by - ay) !== 0 ? (splitY - ay) / (by - ay) : 0;
+            const ix = ax + t * (bx - ax);
+            const iy = splitY;
+            if (aInTop) {
+                top.push(ix, iy);
+                bottom.push(ix, iy, bx, by);
+            } else {
+                bottom.push(ix, iy);
+                top.push(ix, iy, bx, by);
+            }
+        }
+    }
+    return { top, bottom };
+}
+
 // =============================
 // Airway fallback helpers
 // 当 Airway_Gap 缺少 Visualization.Polygon 时，
@@ -2892,45 +3209,8 @@ function showCVMTooltip(node, cvmData, event) {
     let content = `CS${level}阶段`;
     
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置
-    const nodePos = node.getAbsolutePosition();
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + nodePos.x + 15;
-    const tooltipY = stageBox.top + nodePos.y - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 /**
@@ -2958,48 +3238,9 @@ function showLandmarkTooltip(node, landmark, event) {
     const xDisplay = Number.isInteger(landmark.X) ? landmark.X : landmark.X.toFixed(1);
     const yDisplay = Number.isInteger(landmark.Y) ? landmark.Y : landmark.Y.toFixed(1);
     content += `坐标: (${xDisplay}, ${yDisplay})`;
-    // 置信度已隐藏 - 不再显示
-    
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置
-    const nodePos = node.getAbsolutePosition();
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + nodePos.x + 15;
-    const tooltipY = stageBox.top + nodePos.y - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 /**
@@ -3025,36 +3266,62 @@ function hideTooltip() {
 }
 
 /**
- * 显示牙齿 Tooltip
+ * 将 tooltip 定位到鼠标位置（视口坐标），并限制在视口内；tooltip 需已 append 到 body
+ * @param {HTMLElement} tooltip - tooltip 元素
+ * @param {Object} event - Konva 事件（event.evt 含 clientX/clientY）或原生事件
+ * @param {number} offsetX - 相对鼠标的 x 偏移
+ * @param {number} offsetY - 相对鼠标的 y 偏移
+ */
+function placeTooltipNearMouse(tooltip, event, offsetX, offsetY) {
+    const ev = event && event.evt ? event.evt : (event || {});
+    const x = (ev.clientX != null ? ev.clientX : 0) + (offsetX != null ? offsetX : 10);
+    const y = (ev.clientY != null ? ev.clientY : 0) + (offsetY != null ? offsetY : 10);
+    tooltip.style.position = 'fixed';
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+    const tr = tooltip.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (tr.right > vw) tooltip.style.left = (vw - tr.width - 8) + 'px';
+    if (tr.bottom > vh) tooltip.style.top = (vh - tr.height - 8) + 'px';
+    if (tr.left < 8) tooltip.style.left = '8px';
+    if (tr.top < 8) tooltip.style.top = '8px';
+}
+
+/**
+ * 在光标/形状附近显示纯文本 Tooltip（用于牙槽骨等）
+ * @param {string} text - 文本内容（支持 \n 换行）
+ * @param {Object} event - Konva 事件对象（event.evt 为原生事件，含 clientX/clientY）
+ */
+function showTooltipAtCursor(text, event) {
+    hideTooltip();
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    tooltip.innerHTML = (text || '').replace(/\n/g, '<br>');
+    document.body.appendChild(tooltip);
+    placeTooltipNearMouse(tooltip, event, 10, 10);
+}
+
+/**
+ * 显示牙齿 Tooltip（位置贴近鼠标/蒙版）
  * @param {Konva.Node} node - Konva 节点（Line）
  * @param {Object} toothData - 牙齿数据
- * @param {Object} periodontalInfo - 牙周吸收匹配数据（源自 PeriodontalCondition.SpecificAbsorption）
+ * @param {Object} periodontalInfo - 牙周吸收匹配数据
+ * @param {Object} event - Konva 事件（用于定位到鼠标）
  */
-function showToothTooltip(node, toothData, periodontalInfo) {
-    // 移除已存在的 Tooltip
+function showToothTooltip(node, toothData, periodontalInfo, event) {
     hideTooltip();
-    
-    // 创建 Tooltip 元素
     const tooltip = document.createElement('div');
     tooltip.id = 'toothTooltip';
     tooltip.className = 'tooltip';
-    
-    // 构建 Tooltip 内容
     let content = `<strong>牙位: ${toothData.FDI || 'N/A'}</strong><br>`;
-    
-    // 牙槽骨吸收信息（仅使用 PeriodontalCondition.SpecificAbsorption 的前端映射数据）
     const absorptionLevel = periodontalInfo ? periodontalInfo.AbsorptionLevel : undefined;
     if (absorptionLevel !== undefined) {
-        const levelText = absorptionLevel !== undefined
-            ? formatPeriodontalLevel(absorptionLevel)
-            : '';
+        const levelText = formatPeriodontalLevel(absorptionLevel) || '';
         content += '<br>牙槽骨吸收:<br>';
-        if (levelText) {
-            content += `- 等级: ${levelText}<br>`;
-        }
+        if (levelText) content += `- 等级: ${levelText}<br>`;
     }
-    
-    // 汇总该牙齿的所有属性类发现
     if (toothData.Properties && Array.isArray(toothData.Properties) && toothData.Properties.length > 0) {
         content += '<br>其他发现:<br>';
         toothData.Properties.forEach(prop => {
@@ -3063,58 +3330,11 @@ function showToothTooltip(node, toothData, periodontalInfo) {
             content += `- ${description} (置信度: ${confidence}%)<br>`;
         });
     } else if (absorptionLevel === undefined) {
-        // 既无属性发现，也无牙周信息时才显示“未发现异常”
         content += '<br>未发现异常';
     }
-    
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置（使用多边形的中心点）
-    const points = node.points();
-    let sumX = 0, sumY = 0, pointCount = 0;
-    for (let i = 0; i < points.length; i += 2) {
-        sumX += points[i];
-        sumY += points[i + 1];
-        pointCount++;
-    }
-    const centerX = sumX / pointCount;
-    const centerY = sumY / pointCount;
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + centerX + 15;
-    const tooltipY = stageBox.top + centerY - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 /**
@@ -3155,47 +3375,8 @@ function showFindingTooltip(node, findingData, event) {
     }
     
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置（矩形的中心点）
-    const nodePos = node.getAbsolutePosition();
-    const centerX = nodePos.x + node.width() / 2;
-    const centerY = nodePos.y + node.height() / 2;
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + centerX + 15;
-    const tooltipY = stageBox.top + centerY - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 // ============================================
@@ -3430,6 +3611,28 @@ function createKeyValue(key, value) {
     div.className = 'key-value-item';
     div.innerHTML = `<span class="key">${key}:</span> <span class="value">${value}</span>`;
     return div;
+}
+
+/**
+ * 构建单侧神经管卡片的 HTML 内容（用于报告区左右神经管展示）
+ * @param {string} sideName - 侧别显示名：'左' 或 '右'
+ * @param {Object} data - 该侧神经管数据 { Detected, Area, Detail, ... }
+ * @returns {string} 卡片内容 HTML 字符串
+ */
+function buildNeuralCardContent(sideName, data) {
+    const detectedText = data && typeof data.Detected === 'boolean'
+        ? (data.Detected ? '已检测' : '未检测')
+        : '—';
+    const areaText = data && data.Area != null
+        ? Number(data.Area).toFixed(2)
+        : '—';
+    let html = `<div class="neural-card-header"><strong>${sideName}侧神经管</strong></div>`;
+    html += `<div class="neural-item"><span class="label">检测状态:</span> <span class="value">${detectedText}</span></div>`;
+    html += `<div class="neural-item"><span class="label">面积:</span> <span class="value">${areaText}</span></div>`;
+    if (data && data.Detail) {
+        html += `<div class="neural-detail">${data.Detail}</div>`;
+    }
+    return html;
 }
 
 /**
@@ -4148,31 +4351,27 @@ function drawToothSegments(data, stage, scale) {
             // ----------------------------------------------------
             points = smoothPolyline(points, 3); // 迭代次数 3 次通常足够了
             
-            // 创建多边形线条（使用圆润的线条样式）
+            // 创建多边形线条（使用圆润的线条样式；半透明填充便于悬停触发 tooltip）
             const line = new Konva.Line({
                 points: points,
                 closed: true,
                 stroke: '#C084FC',
                 strokeWidth: CONFIG.STROKE_WIDTH,
-                fill: 'transparent',
-                lineCap: 'round',      // 线条端点圆润
-                lineJoin: 'round',     // 线条连接点圆润
-                // ----------------------------------------------------
-                // 优化步骤 3: 调整 Tension
-                // 既然使用了 Chaikin 预处理，Tension 应该设为 0 或者很小(0.1)
-                // 否则 Konva 会尝试在已经平滑的点之间再次插值，导致奇怪的扭曲
-                // ----------------------------------------------------
+                fill: 'rgba(192, 132, 252, 0.08)',
+                lineCap: 'round',
+                lineJoin: 'round',
                 tension: 0,
-                strokeScaleEnabled: false // 禁止线条随缩放变粗
+                listening: true,
+                strokeScaleEnabled: false
             });
             
             // 存储牙齿信息到 line 对象，用于后续 Tooltip
             line.toothData = tooth;
             line.periodontalInfo = periodontalMap[tooth.FDI] || null;
             
-            // 绑定 Tooltip 事件
-            line.on('mouseenter', function() {
-                showToothTooltip(this, this.toothData, this.periodontalInfo);
+            // 绑定 Tooltip 事件（传入 event 使卡片出现在鼠标/蒙版位置）
+            line.on('mouseenter', function(e) {
+                showToothTooltip(this, this.toothData, this.periodontalInfo, e);
             });
             
             line.on('mouseleave', function() {
@@ -4324,13 +4523,18 @@ function drawRegionalFindings(data, stage, scale) {
         appState.konvaLayers.density = densityLayer;
     }
     
-    // 3. 髁突图层
-    const condyleLayer = new Konva.Layer();
-    let condyleCount = 0;
-    
-    // 绘制髁突区域（来自 AnatomyResults 多边形坐标）
+    // 3. 下颌升支图层（改进版：基于乙状切迹自动分割髁突）
+    const mandibleLayer = new Konva.Layer();
+    let mandibleCount = 0;
+
     if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
-        // 获取髁突诊断信息
+        // 准备左右侧数据容器
+        const anatomyMap = {
+            left: { condyle: [], mandible: [] },
+            right: { condyle: [], mandible: [] }
+        };
+
+        // 获取诊断信息
         let leftCondyleInfo = null;
         let rightCondyleInfo = null;
         if (data.JointAndMandible && data.JointAndMandible.CondyleAssessment) {
@@ -4338,103 +4542,6 @@ function drawRegionalFindings(data, stage, scale) {
             leftCondyleInfo = assessment.condyle_Left || null;
             rightCondyleInfo = assessment.condyle_Right || null;
         }
-        
-        data.AnatomyResults.forEach(item => {
-            const seg = item.SegmentationMask || {};
-            const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
-            // 仅处理髁突
-            if (!rawLabel.includes('condyle')) return;
-            
-            // 判定左右
-            let side = null;
-            if (rawLabel.includes('left')) side = 'left';
-            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
-            
-            if (!side) return;
-            
-            const mask = item.SegmentationMask || item;
-            const coords = mask.Coordinates;
-            if (!coords) return;
-            
-            // 选择诊断信息和配色
-            const info = side === 'left' ? leftCondyleInfo : rightCondyleInfo;
-            let strokeColor = 'purple';
-            let fillColor = 'rgba(128,0,128,0.20)';
-            if (info) {
-                if (info.Morphology === 0) { // 正常
-                    strokeColor = 'green';
-                    fillColor = 'rgba(0,128,0,0.25)';
-                } else if (info.Morphology === 1) { // 吸收
-                    strokeColor = 'orange';
-                    fillColor = 'rgba(255,165,0,0.25)';
-                }
-            }
-            
-            // 归一化坐标，支持多边形/多多边形/矩形
-            const polys = normalizeMaskPolygons(coords, scale);
-            if (polys.length > 0) {
-                polys.forEach(pArr => {
-                    // ============================================================
-                    // 针对髁突的 3 步优化处理（与下颌分支一致）
-                    // ============================================================
-                    
-                    // 1. 【去毛刺】滑动平均 (新增步骤)
-                    // windowSize = 5：髁突较大，可以用 5 甚至 7 来强力去除突出的像素点
-                    let pts = movingAverageSmooth(pArr, 5);
-
-                    // 2. 【去阶梯】RDP 抽稀
-                    // tolerance = 2.5：髁突轮廓平缓，可以适当加大容差，让线条更直
-                    pts = simplifyPoints(pts, 2.5, true);
-
-                    // 3. 【变圆润】Chaikin 平滑
-                    // 迭代 3-4 次，让转折处非常圆滑
-                    pts = smoothPolyline(pts, 4);
-
-                    const poly = new Konva.Line({
-                        points: pts,
-                        closed: true,
-                        stroke: strokeColor,
-                        strokeWidth: CONFIG.STROKE_WIDTH,
-                        lineCap: 'round',
-                        lineJoin: 'round',
-                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
-                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
-                        tension: 0,
-                        fill: fillColor,
-                        // 移除阴影效果，让线条更细、更清晰
-                        // shadowColor: strokeColor,
-                        // shadowBlur: 6,
-                        // shadowOpacity: 0.6,
-                        strokeScaleEnabled: false // 禁止线条随缩放变粗
-                    });
-                    poly.findingType = 'condyle';
-                    poly.findingData = info;
-                    poly.condyleSide = side;
-                    poly.on('mouseenter', function(e) { showCondyleTooltip(this, info, side, e); });
-                    poly.on('mouseleave', function() { hideTooltip(); });
-                    // 添加点击切换图层显示/隐藏功能
-                    addClickToggleToNode(poly, 'condyle');
-                    condyleLayer.add(poly);
-                    condyleCount++;
-                });
-            }
-        });
-        
-        console.log('髁突区域绘制完成，已绘制:', condyleCount, '个');
-    }
-    
-    if (condyleCount > 0) {
-        stage.add(condyleLayer);
-        appState.konvaLayers.condyle = condyleLayer;
-    }
-    
-    // 4. 下颌升支图层
-    const mandibleLayer = new Konva.Layer();
-    let mandibleCount = 0;
-    
-    // 绘制下颌分支区域（来自 AnatomyResults 多边形坐标）
-    if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
-        // 获取下颌骨对称性信息
         let mandibleSymmetryInfo = null;
         if (data.JointAndMandible) {
             mandibleSymmetryInfo = {
@@ -4444,109 +4551,169 @@ function drawRegionalFindings(data, stage, scale) {
                 Confidence: data.JointAndMandible.Confidence
             };
         }
-        
+
+        // 1. 归类 Mask
         data.AnatomyResults.forEach(item => {
             const seg = item.SegmentationMask || {};
             const rawLabel = ((item.Label || seg.Label) || '').toLowerCase();
-            // 仅处理下颌分支
-            if (!rawLabel.includes('mandible')) return;
-            
-            // 判定左右
-            let side = null;
-            if (rawLabel.includes('left')) side = 'left';
-            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
-            
-            if (!side) return;
-            
             const mask = item.SegmentationMask || item;
             const coords = mask.Coordinates;
             if (!coords) return;
-            
-            // 选择配色（使用蓝色系来区分下颌分支）
-            let strokeColor = 'cyan';
-            let fillColor = 'rgba(0,255,255,0.25)';  // 增加透明度，确保鼠标事件能触发
-            
-            // 根据对称性信息调整颜色（如果不对称，使用橙色）
-            if (mandibleSymmetryInfo) {
-                if (mandibleSymmetryInfo.RamusSymmetry === false || mandibleSymmetryInfo.GonialAngleSymmetry === false) {
-                    strokeColor = 'orange';
-                    fillColor = 'rgba(255,165,0,0.25)';  // 增加透明度
-                }
-            }
-            
-            // 归一化坐标，支持多边形/多多边形/矩形
-            const polys = normalizeMaskPolygons(coords, scale);
-            if (polys.length > 0) {
-                polys.forEach(pArr => {
-                    // ============================================================
-                    // 针对下颌升支的 3 步优化处理
-                    // ============================================================
-                    
-                    // 1. 【去毛刺】滑动平均 (新增步骤)
-                    // windowSize = 5：下颌骨较大，可以用 5 甚至 7 来强力去除突出的像素点
-                    let pts = movingAverageSmooth(pArr, 5);
 
-                    // 2. 【去阶梯】RDP 抽稀
-                    // tolerance = 2.5：下颌骨轮廓平缓，可以适当加大容差，让线条更直
-                    pts = simplifyPoints(pts, 2.5, true);
+            let side = null;
+            if (rawLabel.includes('left')) side = 'left';
+            else if (rawLabel.includes('right') || rawLabel.includes('righ')) side = 'right';
+            if (!side) return;
 
-                    // 3. 【变圆润】Chaikin 平滑
-                    // 迭代 3-4 次，让转折处非常圆滑
-                    pts = smoothPolyline(pts, 4);
-
-                    const poly = new Konva.Line({
-                        points: pts,
-                        closed: true,
-                        stroke: strokeColor,
-                        strokeWidth: CONFIG.STROKE_WIDTH,
-                        lineCap: 'round',
-                        lineJoin: 'round',
-                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
-                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
-                        tension: 0,
-                        fill: fillColor,
-                        // 移除阴影效果，让线条更细、更清晰
-                        // shadowColor: strokeColor,
-                        // shadowBlur: 6,
-                        // shadowOpacity: 0.6,
-                        listening: true,  // 确保事件监听启用
-                        perfectDrawEnabled: false,  // 优化性能
-                        strokeScaleEnabled: false // 禁止线条随缩放变粗
-                    });
-                    poly.findingType = 'mandible';
-                    poly.findingData = mandibleSymmetryInfo;
-                    poly.mandibleSide = side;
-                    
-                    // 绑定鼠标事件
-                    poly.on('mouseenter', function(e) {
-                        console.log('Mandible mouseenter triggered', side, mandibleSymmetryInfo);
-                        showMandibleTooltip(this, mandibleSymmetryInfo, side, e);
-                    });
-                    poly.on('mouseleave', function() {
-                        console.log('Mandible mouseleave triggered');
-                        hideTooltip();
-                    });
-                    
-                    // 添加鼠标样式
-                    poly.on('mouseenter', function() {
-                        document.body.style.cursor = 'pointer';
-                    });
-                    poly.on('mouseleave', function() {
-                        document.body.style.cursor = 'default';
-                    });
-                    
-                    // 添加点击切换图层显示/隐藏功能
-                    addClickToggleToNode(poly, 'mandible');
-                    
-                    mandibleLayer.add(poly);
-                    mandibleCount++;
-                });
+            if (rawLabel.includes('condyle')) {
+                anatomyMap[side].condyle.push(coords);
+            } else if (rawLabel.includes('mandible')) {
+                anatomyMap[side].mandible.push(coords);
             }
         });
-        
-        console.log('下颌分支区域绘制完成，已绘制:', mandibleCount, '个');
+
+        // 2. 处理每一侧
+        ['left', 'right'].forEach(side => {
+            const sideData = anatomyMap[side];
+            if (sideData.mandible.length === 0) return; // 该侧无下颌升支数据，跳过
+
+            // 准备该侧的诊断信息
+            const condyleInfo = side === 'left' ? leftCondyleInfo : rightCondyleInfo;
+            // 髁突颜色
+            let condyleStroke = 'purple';
+            let condyleFill = 'rgba(128,0,128,0.20)';
+            if (condyleInfo) {
+                if (condyleInfo.Morphology === 0) { condyleStroke = 'green'; condyleFill = 'rgba(0,128,0,0.25)'; }
+                else if (condyleInfo.Morphology === 1) { condyleStroke = 'orange'; condyleFill = 'rgba(255,165,0,0.25)'; }
+            }
+
+            // 升支颜色
+            let ramusStroke = 'cyan';
+            let ramusFill = 'rgba(0,255,255,0.25)';
+            if (mandibleSymmetryInfo && (mandibleSymmetryInfo.RamusSymmetry === false || mandibleSymmetryInfo.GonialAngleSymmetry === false)) {
+                ramusStroke = 'orange';
+                ramusFill = 'rgba(255,165,0,0.25)';
+            }
+
+            // 处理下颌升支 Mask
+            sideData.mandible.forEach(coords => {
+                const polys = normalizeMaskPolygons(coords, scale);
+                polys.forEach(pArr => {
+                    // 预处理：平滑
+                    let pts = movingAverageSmooth(pArr, 5);
+                    pts = simplifyPoints(pts, 2.5, true);
+                    pts = smoothPolyline(pts, 4);
+                    if (pts.length < 6) return;
+
+                    // 计算分割线 Y (基于乙状切迹)
+                    const notch = findSigmoidNotchY(pts);
+
+                    let splitSuccess = false;
+                    if (notch) {
+                        // 使用单侧切割逻辑 (保留喙突在升支主体)
+                        const splitResult = splitPolygonByNotch(pts, notch, side);
+                        
+                        if (splitResult) {
+                            splitSuccess = true;
+                            const { condyle, ramus, intersection } = splitResult;
+                            
+                            // 1. 绘制髁突 (深绿色)
+                            const polyTop = new Konva.Line({
+                                points: condyle,
+                                closed: true,
+                                stroke: 'green',
+                                strokeWidth: CONFIG.STROKE_WIDTH,
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                tension: 0,
+                                fill: 'rgba(0,100,0,0.6)',
+                                listening: true,
+                                perfectDrawEnabled: false,
+                                strokeScaleEnabled: false
+                            });
+                            polyTop.findingType = 'condyle';
+                            polyTop.findingData = condyleInfo;
+                            polyTop.condyleSide = side;
+                            polyTop.on('mouseenter', function(e) {
+                                showCondyleTooltip(this, condyleInfo, side, e);
+                                document.body.style.cursor = 'pointer';
+                            });
+                            polyTop.on('mouseleave', function() { hideTooltip(); document.body.style.cursor = 'default'; });
+                            addClickToggleToNode(polyTop, 'mandible');
+                            mandibleLayer.add(polyTop);
+                            mandibleCount++;
+
+                            // 2. 绘制升支 (主体 + 喙突)
+                            const polyBottom = new Konva.Line({
+                                points: ramus,
+                                closed: true,
+                                stroke: ramusStroke,
+                                strokeWidth: CONFIG.STROKE_WIDTH,
+                                lineCap: 'round',
+                                lineJoin: 'round',
+                                tension: 0,
+                                fill: ramusFill,
+                                listening: true,
+                                perfectDrawEnabled: false,
+                                strokeScaleEnabled: false
+                            });
+                            polyBottom.findingType = 'mandible';
+                            polyBottom.findingData = mandibleSymmetryInfo;
+                            polyBottom.mandibleSide = side;
+                            polyBottom.on('mouseenter', function(e) {
+                                showMandibleTooltip(this, mandibleSymmetryInfo, side, e);
+                                document.body.style.cursor = 'pointer';
+                            });
+                            polyBottom.on('mouseleave', function() { hideTooltip(); document.body.style.cursor = 'default'; });
+                            addClickToggleToNode(polyBottom, 'mandible');
+                            mandibleLayer.add(polyBottom);
+                            mandibleCount++;
+                            
+                            // 3. 绘制分割线 (Visual Requirement) - 改为绿色
+                            const splitLine = new Konva.Line({
+                                points: [notch.x, notch.y, intersection.x, intersection.y],
+                                stroke: 'green',
+                                strokeWidth: 3,
+                                listening: false
+                            });
+                            mandibleLayer.add(splitLine);
+                        }
+                    }
+                    
+                    if (!splitSuccess) {
+                        // 无分割线，绘制整体 (作为升支)
+                        const poly = new Konva.Line({
+                            points: pts,
+                            closed: true,
+                            stroke: ramusStroke,
+                            strokeWidth: CONFIG.STROKE_WIDTH,
+                            lineCap: 'round',
+                            lineJoin: 'round',
+                            tension: 0,
+                            fill: ramusFill,
+                            listening: true,
+                            perfectDrawEnabled: false,
+                            strokeScaleEnabled: false
+                        });
+                        poly.findingType = 'mandible';
+                        poly.findingData = mandibleSymmetryInfo;
+                        poly.mandibleSide = side;
+                        poly.on('mouseenter', function(e) {
+                            showMandibleTooltip(this, mandibleSymmetryInfo, side, e);
+                            document.body.style.cursor = 'pointer';
+                        });
+                        poly.on('mouseleave', function() { hideTooltip(); document.body.style.cursor = 'default'; });
+                        addClickToggleToNode(poly, 'mandible');
+                        mandibleLayer.add(poly);
+                        mandibleCount++;
+                    }
+                });
+            });
+        });
+
+        console.log('下颌升支图层绘制完成（新逻辑：乙状切迹自动分割），共', mandibleCount, '个形状');
     }
-    
+
     if (mandibleCount > 0) {
         stage.add(mandibleLayer);
         appState.konvaLayers.mandible = mandibleLayer;
@@ -4764,12 +4931,37 @@ function drawRegionalFindings(data, stage, scale) {
     
     // 绘制神经管区域（来自 AnatomyResults 多边形坐标）
     if (Array.isArray(data.AnatomyResults) && data.AnatomyResults.length > 0) {
-        // 获取神经管诊断信息
+        // 获取神经管诊断信息及对称性/置信度（用于悬停卡片和报告保持一致）
         let neuralInfoMap = {};
+        let neuralSymmetric = false;
+        let neuralConfidenceRatio = 0.0; // 0~1，用左右面积比近似“对称性置信度”
         if (data.NeuralCanalAssessment) {
             const neural = data.NeuralCanalAssessment;
             neuralInfoMap['left'] = neural.Left || {};
             neuralInfoMap['right'] = neural.Right || {};
+            const left = neural.Left || {};
+            const right = neural.Right || {};
+            if (typeof left.Detected === 'boolean' && typeof right.Detected === 'boolean') {
+                neuralSymmetric = !!left.Detected && !!right.Detected;
+            }
+            if (left.Area != null && right.Area != null) {
+                const la = Number(left.Area) || 0;
+                const ra = Number(right.Area) || 0;
+                const maxArea = Math.max(la, ra) || 1;
+                const minArea = Math.min(la, ra);
+                const ratio = (la > 0 && ra > 0) ? (minArea / maxArea) : 0.0;
+                neuralConfidenceRatio = ratio;
+                if (la > 0 && ra > 0) {
+                    neuralSymmetric = ratio >= 0.7; // 与报告保持一致
+                }
+            }
+            // 如果后端已经给了 Confidence 字段，则优先使用后端的数值
+            if (typeof neural.Confidence === 'number') {
+                neuralConfidenceRatio = Number(neural.Confidence);
+                if (neuralConfidenceRatio > 1) {
+                    neuralConfidenceRatio = neuralConfidenceRatio / 100.0;
+                }
+            }
         }
         
         data.AnatomyResults.forEach(item => {
@@ -4846,17 +5038,13 @@ function drawRegionalFindings(data, stage, scale) {
                         Area: neuralInfo ? neuralInfo.Area : null
                     };
                     poly.neuralSide = side;
-                    
-                    // 绑定 Tooltip 事件
+                    poly._neuralInfo = neuralInfo;
+                    // 使用与报告一致的“对称性置信度”而不是 AnatomyResults 中的固定 0.95
+                    poly._neuralConfidence = neuralConfidenceRatio || 0.0;
+                    poly._neuralSide = side;
+                    poly._neuralSymmetric = neuralSymmetric;
                     poly.on('mouseenter', function(e) {
-                        const confidence = item.Confidence || 0.0;
-                        const confidenceText = (confidence * 100).toFixed(0);
-                        const sideText = side === 'left' ? '左侧' : '右侧';
-                        let tooltipText = `${sideText}神经管 (置信度: ${confidenceText}%)`;
-                        if (neuralInfo && neuralInfo.Area != null) {
-                            tooltipText += `\n面积: ${neuralInfo.Area.toFixed(2)}`;
-                        }
-                        showTooltipAtCursor(tooltipText, e);
+                        showNeuralTooltip(this, this._neuralInfo, this._neuralSide, this._neuralConfidence, e);
                         document.body.style.cursor = 'pointer';
                     });
                     poly.on('mouseleave', function() {
@@ -4979,53 +5167,8 @@ function showMandibleTooltip(node, mandibleInfo, side, event) {
     }
     
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置（多边形的中心点）
-    const points = node.points();
-    let sumX = 0, sumY = 0, pointCount = 0;
-    for (let i = 0; i < points.length; i += 2) {
-        sumX += points[i];
-        sumY += points[i + 1];
-        pointCount++;
-    }
-    const centerX = sumX / pointCount;
-    const centerY = sumY / pointCount;
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + centerX + 15;
-    const tooltipY = stageBox.top + centerY - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 /**
@@ -5067,47 +5210,32 @@ function showCondyleTooltip(node, condyleInfo, side, event) {
     }
     
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置（矩形的中心点）
-    const nodePos = node.getAbsolutePosition();
-    const centerX = nodePos.x + node.width() / 2;
-    const centerY = nodePos.y + node.height() / 2;
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + centerX + 15;
-    const tooltipY = stageBox.top + centerY - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
+}
+
+/**
+ * 显示神经管 Tooltip（靠近形状，与下颌/上颌窦一致）
+ * @param {Konva.Shape} node - Konva 节点（Line）
+ * @param {Object|null} neuralInfo - 神经管诊断信息
+ * @param {string} side - 侧别 ('left' 或 'right')
+ * @param {number} confidence - 置信度 0–1
+ * @param {Object} event - Konva 事件
+ */
+function showNeuralTooltip(node, neuralInfo, side, confidence, event) {
+    hideTooltip();
+    const tooltip = document.createElement('div');
+    tooltip.id = 'findingTooltip';
+    tooltip.className = 'tooltip';
+    // 神经管左右与影像相反：left 显示为右，right 显示为左
+    const sideName = side === 'left' ? '右' : '左';
+    let content = `<strong>${sideName}侧神经管</strong><br>`;
+    const symmetricText = node._neuralSymmetric !== undefined ? (node._neuralSymmetric ? '对称' : '不对称') : '—';
+    content += `对称性: ${symmetricText}<br>`;
+    content += `置信度: ${((confidence || 0) * 100).toFixed(0)}%`;
+    tooltip.innerHTML = content;
+    document.body.appendChild(tooltip);
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 /**
@@ -5126,8 +5254,8 @@ function showSinusTooltip(node, sinusInfo, side, event) {
     tooltip.id = 'findingTooltip';
     tooltip.className = 'tooltip';
     
-    // 构建 Tooltip 内容（反转左右显示）
-    const sideName = side === 'left' ? '右' : '左';
+    // 构建 Tooltip 内容（左右与数据一致：left=左，right=右）
+    const sideName = side === 'left' ? '左' : '右';
     let content = `<strong>${sideName}上颌窦</strong><br>`;
     
     if (sinusInfo) {
@@ -5172,53 +5300,8 @@ function showSinusTooltip(node, sinusInfo, side, event) {
     }
     
     tooltip.innerHTML = content;
-    
-    // 获取 Stage 的位置
-    const stage = node.getStage();
-    const stageBox = stage.container().getBoundingClientRect();
-    
-    // 获取节点在 Stage 中的位置（多边形的中心点）
-    const points = node.points();
-    let sumX = 0, sumY = 0, pointCount = 0;
-    for (let i = 0; i < points.length; i += 2) {
-        sumX += points[i];
-        sumY += points[i + 1];
-        pointCount++;
-    }
-    const centerX = sumX / pointCount;
-    const centerY = sumY / pointCount;
-    
-    // 计算 Tooltip 位置（相对于页面）
-    const tooltipX = stageBox.left + centerX + 15;
-    const tooltipY = stageBox.top + centerY - 10;
-    
-    // 设置 Tooltip 位置
-    tooltip.style.left = tooltipX + 'px';
-    tooltip.style.top = tooltipY + 'px';
-    
-    // 添加到页面
     document.body.appendChild(tooltip);
-    
-    // 调整位置，确保不超出视口
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    if (tooltipRect.right > viewportWidth) {
-        tooltip.style.left = (tooltipX - tooltipRect.width - 30) + 'px';
-    }
-    
-    if (tooltipRect.bottom > viewportHeight) {
-        tooltip.style.top = (tooltipY - tooltipRect.height) + 'px';
-    }
-    
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    }
-    
-    if (tooltipRect.top < 0) {
-        tooltip.style.top = '10px';
-    }
+    placeTooltipNearMouse(tooltip, event, 10, 10);
 }
 
 // ============================================
@@ -5420,28 +5503,37 @@ function buildPanoReport(data) {
         }
     }
     
-    if (hasJointContent) {
-        container.appendChild(jointSection);
-    }
-
-    // 神经管分析（对称/不对称）
+    // 神经管分析并入颌骨与关节：神经管对称性、置信度
     if (data.NeuralCanalAssessment) {
         const neural = data.NeuralCanalAssessment || {};
         const left = neural.Left || {};
         const right = neural.Right || {};
-        const neuralSection = createReportSection('神经管分析');
-        let symmetric = false;
+        let neuralSymmetric = false;
         if (typeof left.Detected === 'boolean' && typeof right.Detected === 'boolean') {
-            symmetric = !!left.Detected && !!right.Detected;
+            neuralSymmetric = !!left.Detected && !!right.Detected;
         }
         if (left.Area != null && right.Area != null) {
             const la = Number(left.Area) || 0;
             const ra = Number(right.Area) || 0;
             const ratio = Math.min(la, ra) / (Math.max(la, ra) || 1);
-            if (la > 0 && ra > 0) symmetric = ratio >= 0.7; // 面积接近视为对称
+            if (la > 0 && ra > 0) neuralSymmetric = ratio >= 0.7;
         }
-        neuralSection.appendChild(createKeyValue('神经管对称性', symmetric ? '对称' : '不对称'));
-        container.appendChild(neuralSection);
+        jointSection.appendChild(createKeyValue('神经管对称性', neuralSymmetric ? '对称' : '不对称'));
+        let neuralConf = neural.Confidence;
+        if (neuralConf == null && (left.Confidence != null || right.Confidence != null)) {
+            const lc = Number(left.Confidence) || 0;
+            const rc = Number(right.Confidence) || 0;
+            neuralConf = (lc + rc) / 2;
+        }
+        if (neuralConf !== undefined && neuralConf != null) {
+            const pct = (Number(neuralConf) > 1 ? Number(neuralConf) : Number(neuralConf) * 100).toFixed(1);
+            jointSection.appendChild(createKeyValue('神经管置信度', pct + '%'));
+        }
+        hasJointContent = true;
+    }
+    
+    if (hasJointContent) {
+        container.appendChild(jointSection);
     }
     
     // 2.5 上颌窦分析（独立专区）
@@ -5449,8 +5541,8 @@ function buildPanoReport(data) {
         const sinusSection = createReportSection('上颌窦分析');
         
         data.MaxillarySinus.forEach(sinus => {
-            // 注意：图像左右与实际左右相反，所以left显示为"右"
-            const sideName = sinus.Side === 'left' ? '右' : '左';
+            // 左右与数据一致：left=左，right=右
+            const sideName = sinus.Side === 'left' ? '左' : '右';
             
             // 创建单侧上颌窦卡片
             const sinusCard = document.createElement('div');
@@ -6358,7 +6450,6 @@ const LAYER_CONFIG = {
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
     implants: { name: '种植体', taskType: 'panoramic' },
-    condyle: { name: '髁突', taskType: 'panoramic' },
     mandible: { name: '下颌升支', taskType: 'panoramic' },
     sinus: { name: '上颌窦', taskType: 'panoramic' },
     density: { name: '根尖密度影', taskType: 'panoramic' },

@@ -524,7 +524,14 @@ def format_neural_report(neural_res: dict) -> dict:
     支持两种输入结构：
       - raw_features: {left: {exists, area}, right: {...}}
       - analysis: {left_area, right_area, is_symmetric}
-    返回：{"NeuralCanalAssessment": {"Left": {Detected, Area}, "Right": {Detected, Area}}}
+    返回：
+      {
+        "NeuralCanalAssessment": {
+          "Left":  {Detected, Area},
+          "Right": {Detected, Area},
+          "Confidence": 对称性相关置信度 (0~1)
+        }
+      }
     """
     try:
         seg_features = neural_res.get("raw_features", {}) or {}
@@ -539,14 +546,29 @@ def format_neural_report(neural_res: dict) -> dict:
         left_detected = bool(left.get("exists") or left.get("detected") or (left_area > 0))
         right_detected = bool(right.get("exists") or right.get("detected") or (right_area > 0))
 
+        # 基于左右面积比例构造一个 0~1 的“对称性置信度”
+        confidence = 0.0
+        if left_area > 0 and right_area > 0:
+            min_area = min(left_area, right_area)
+            max_area = max(left_area, right_area)
+            if max_area > 0:
+                confidence = float(min_area / max_area)
+
         return {
             "NeuralCanalAssessment": {
                 "Left": {"Detected": left_detected, "Area": left_area},
-                "Right": {"Detected": right_detected, "Area": right_area}
+                "Right": {"Detected": right_detected, "Area": right_area},
+                "Confidence": round(confidence, 3)
             }
         }
     except Exception:
-        return {"NeuralCanalAssessment": {"Left": {"Detected": False, "Area": 0}, "Right": {"Detected": False, "Area": 0}}}
+        return {
+            "NeuralCanalAssessment": {
+                "Left": {"Detected": False, "Area": 0},
+                "Right": {"Detected": False, "Area": 0},
+                "Confidence": 0.0,
+            }
+        }
 
 
 def format_neural_anatomy_results(neural_res: dict) -> List[dict]:
