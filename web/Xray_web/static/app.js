@@ -144,6 +144,30 @@ const DISPLAY_NAME_TO_ID_MAP = {
     "CVSM边缘形状": "Cervical_Vertebral_Maturity_Stage",
     "侧貌轮廓 (P1-P34)": "Profile_Contour"
 };
+
+// [AI-ASSISTANT-MODIFY] START: Add profile point mapping
+// 侧貌轮廓点映射表 (P点 -> 医学名称)
+const PROFILE_POINT_MAP = {
+    "P1": "G_S", 
+    "P4": "Nprime_S", 
+    "P6": "Bri_S", 
+    "P9": "Prn_S", 
+    "P10": "Cm_S", 
+    "P12": "Sn_S", 
+    "P14": "Aprime_S", 
+    "P15": "ULprime_S",
+    "P16": "Ls_S", 
+    "P18": "Stms_S", 
+    "P19": "Stmi_S", 
+    "P21": "Li_S",
+    "P22": "LLprime_S", 
+    "P24": "Si_S", 
+    "P27": "Pogprime_S", 
+    "P29": "Gnprime_S", 
+    "P31": "Meprime_S", 
+    "P34": "C_S"
+};
+// [AI-ASSISTANT-MODIFY] END
 // [AI-ASSISTANT-MODIFY] END
 
 // 页面加载完成后初始化
@@ -583,7 +607,9 @@ function renderMeasurementVisualization(measurement) {
         const points = [];
         // P1 到 P34
         for (let i = 1; i <= 34; i++) {
-            const label = `P${i}`;
+            const rawLabel = `P${i}`;
+            // 优先使用映射后的医学名称查找坐标
+            const label = PROFILE_POINT_MAP[rawLabel] || rawLabel;
             const coord = appState.cephLandmarks[label];
             if (coord) {
                 points.push(coord[0] * scale, coord[1] * scale);
@@ -2667,7 +2693,9 @@ function drawLandmarks(data, stage, scale) {
             });
             
             // [修改] 侧貌轮廓点（P1-P34）不显示文本标签，仅显示红点
-            const isProfilePoint = /^P\d+$/.test(landmark.Label);
+            // 兼容 P1-P34 以及新的医学名称
+            const isProfilePoint = /^P\d+$/.test(landmark.Label) || 
+                                  Object.values(PROFILE_POINT_MAP).includes(landmark.Label);
             let text = null;
 
             if (!isProfilePoint) {
