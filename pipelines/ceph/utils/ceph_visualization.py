@@ -342,7 +342,7 @@ def _u1_sn_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
         elements.extend([
             _line("N", "v_int", "Dashed", "Reference"),
             _line("U1A", "v_int", "Dashed", "Reference"),
-            _angle("v_int", "N", "U1A", role="Measurement"),
+            _angle("v_int", "S", "U1A", role="Measurement"),
         ])
         return {"VirtualPoints": virtual_points, "Elements": elements}
 
@@ -369,7 +369,7 @@ def _impa_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
         elements.extend([
             _line("Me", "v_int", "Dashed", "Reference"),
             _line("L1A", "v_int", "Dashed", "Reference"),
-            _angle("v_int", "Me", "L1A", role="Measurement"),
+            _angle("v_int", "Go", "L1A", role="Measurement"),
         ])
         return {"VirtualPoints": virtual_points, "Elements": elements}
 
