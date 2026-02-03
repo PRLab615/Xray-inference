@@ -911,8 +911,8 @@ function renderMeasurementVisualization(measurement) {
                 arcCenterY = Math.max(pad, Math.min(stageH - pad, arcCenterY));
             }
 
-            // 补角规则：IMPA、U1-SN 在医学上通常取与“内角”互补的那个角（两者和约等于 180°）
-            const SUPPLEMENTARY_ANGLE_LABELS = new Set(['IMPA_Angle', 'U1_SN_Angle']);
+            // 补角规则：IMPA 在医学上通常取与“内角”互补的那个角
+            const SUPPLEMENTARY_ANGLE_LABELS = new Set([]);
             const isSupplementary = SUPPLEMENTARY_ANGLE_LABELS.has(measurementId);
 
             // 注意：这里的 sweep 在前面已被处理为“内角”（0~180°）。
