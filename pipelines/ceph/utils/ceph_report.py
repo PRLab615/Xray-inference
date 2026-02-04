@@ -661,15 +661,13 @@ def _compute_impa(landmarks, sex: str = "male", dentition: str = "permanent"):
     # 牙轴向量：从根尖指向切端
     axis = l1 - l1a
     # 下颌平面向量：从 Go 指向 Me
-    mp = me - go
+    mp = go - me
     
     # 计算夹角
     angle = _angle_between_vectors(axis, mp)
     
     # IMPA 测量的是上内角，正常约 93°
-    # 如果计算出的是锐角（外角），需要取补角
-    if angle < 90:
-        angle = 180 - angle
+    # 不需要强制补角，直接计算 Go-v_int-L1A
     
     level = _evaluate_by_threshold("IMPA_Angle", angle, sex, dentition)
     return {"value": float(angle), "unit": "degrees", "conclusion": level, "status": "ok"}
