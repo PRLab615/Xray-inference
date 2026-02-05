@@ -21,6 +21,7 @@ if project_root not in sys.path:
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
 from tools.timer import timer
 from pipelines.pano.modules.teeth_seg.pre_post import process_teeth_masks  # 后处理
+from ..contour_smooth_utils import smooth_contour_by_preset
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,7 @@ class TeethSegmentationModule:
 def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
     """
     调用后处理，生成缺牙/智齿/乳牙报告，并保留原始掩码数据和segments。
+    应用平滑处理到segments（迁移自前端）。
     """
     processed_results = process_teeth_masks(
         raw_results["masks"],
@@ -234,9 +236,29 @@ def process_teeth_results(raw_results: Dict[str, Any]) -> Dict[str, Any]:
         raw_results.get("confidences")  # 传递置信度信息
     )
     
-    # 保留原始掩码数据和segments，以便后续生成 ToothAnalysis
+    # [NEW] 应用平滑处理到segments（迁移自前端）
+    # 使用 standard 模式：RDP抽稀 + Chaikin平滑
+    segments = raw_results.get("segments", None)
+    if segments is not None and len(segments) > 0:
+        smoothed_segments = []
+        for seg in segments:
+            # 转换为标准格式 [[x,y], ...]
+            if isinstance(seg, np.ndarray):
+                contour = seg.tolist() if seg.ndim == 2 else []
+            else:
+                contour = seg
+            
+            # 应用平滑处理
+            if contour and len(contour) >= 3:
+                contour = smooth_contour_by_preset(contour, "teeth")
+            
+            smoothed_segments.append(contour)
+        
+        segments = smoothed_segments
+    
+    # 保留原始掩码数据和平滑后的segments，以便后续生成 ToothAnalysis
     processed_results["raw_masks"] = raw_results["masks"]
-    processed_results["segments"] = raw_results.get("segments", None)  # 多边形坐标
+    processed_results["segments"] = segments  # 平滑后的多边形坐标 (标准格式：[[x,y], ...])
     processed_results["original_shape"] = raw_results["original_shape"]
     
     return processed_results

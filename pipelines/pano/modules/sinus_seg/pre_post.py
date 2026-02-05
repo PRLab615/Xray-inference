@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import torch
 import logging
+from ..contour_smooth_utils import smooth_contour_by_preset
 
 
 class SinusPrePostProcessor:
@@ -55,13 +56,15 @@ class SinusPrePostProcessor:
             contour_points = []
             if contours:
                 largest = max(contours, key=cv2.contourArea)
-                # 稀疏化轮廓点，减少 JSON 体积 (epsilon 可调)
-                epsilon = 0.002 * cv2.arcLength(largest, True)
-                approx = cv2.approxPolyDP(largest, epsilon, True)
-                # 转换为标准 Python list [[x,y], [x,y]...]
-                contour_points = approx.squeeze().tolist()
+                # 转换为标准格式 [[x,y], [x,y], ...]
+                contour_points = largest.squeeze().tolist()
                 if not isinstance(contour_points[0], list):  # 处理只有一个点的情况
                     contour_points = [contour_points]
+                
+                # [NEW] 应用平滑处理（迁移自前端，替代原有的 approxPolyDP）
+                # 使用 aggressive 模式：滑动平均 + RDP抽稀 + Chaikin平滑
+                if contour_points and len(contour_points) >= 3:
+                    contour_points = smooth_contour_by_preset(contour_points, "sinus")
 
             # 抠图
             x1 = max(0, x - pad)

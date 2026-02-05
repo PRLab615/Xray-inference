@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import torch
 import logging
+from ..contour_smooth_utils import smooth_contour_by_preset
 
 
 class NeuralPrePostProcessor:
@@ -148,16 +149,21 @@ class NeuralPrePostProcessor:
         contour_coords = []
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
-            # 转为 list
+            # 转换为标准格式 [[x,y], [x,y], ...]
             contour_coords = largest_contour.squeeze().tolist()
             if contour_coords and not isinstance(contour_coords[0], list):
                 contour_coords = [contour_coords]
+            
+            # [NEW] 应用平滑处理（迁移自前端）
+            # 使用 aggressive 模式：滑动平均 + RDP抽稀 + Chaikin平滑
+            if contour_coords and len(contour_coords) >= 3:
+                contour_coords = smooth_contour_by_preset(contour_coords, "neural")
 
         return {
             "area": int(area),
             "exists": True,
             "confidence": 0.95,  # 模拟置信度
-            "contour": contour_coords,
+            "contour": contour_coords,  # 输出标准格式：[[x,y], [x,y], ...]
             "mask": binary_mask
         }
 

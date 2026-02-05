@@ -20,6 +20,7 @@ if project_root not in sys.path:
 # 导入统一的权重获取工具
 from tools.weight_fetcher import ensure_weight_file, WeightFetchError
 from tools.timer import timer
+from ..contour_smooth_utils import smooth_contour_by_preset
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +217,11 @@ class AlveolarCrestSegmentationModule:
                 # 如果没有轮廓，从 mask 提取
                 if not contour:
                     contour = self._extract_contour_from_mask(mask)
+                
+                # [NEW] 应用平滑处理（迁移自前端）
+                # 使用 standard 模式：RDP抽稀 + Chaikin平滑
+                if contour and len(contour) >= 3:
+                    contour = smooth_contour_by_preset(contour, "alveolarcrest")
 
                 # 提取置信度
                 confidences = results[0].boxes.conf.cpu().numpy() if results[0].boxes is not None else np.array([])
@@ -269,15 +275,19 @@ class AlveolarCrestSegmentationModule:
             if contours:
                 # 取最大轮廓
                 largest_contour = max(contours, key=cv2.contourArea)
-                # 多边形近似（减少点数）
-                epsilon = 0.005 * cv2.arcLength(largest_contour, True)
-                approx_contour = cv2.approxPolyDP(largest_contour, epsilon, True)
-
-                coords = approx_contour.squeeze()
+                # 转换为标准格式 [[x, y], ...]
+                coords = largest_contour.squeeze()
                 if coords.ndim == 1:
-                    return [[float(coords[0]), float(coords[1])]]
+                    result = [[float(coords[0]), float(coords[1])]]
                 else:
-                    return [[float(pt[0]), float(pt[1])] for pt in coords]
+                    result = [[float(pt[0]), float(pt[1])] for pt in coords]
+                
+                # [NEW] 应用平滑处理（迁移自前端，替代原有的 approxPolyDP）
+                # 使用 standard 模式：RDP抽稀 + Chaikin平滑
+                if result and len(result) >= 3:
+                    result = smooth_contour_by_preset(result, "alveolarcrest")
+                
+                return result
 
             return []
 
