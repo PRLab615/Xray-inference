@@ -7,6 +7,7 @@
 import cv2
 import numpy as np
 import torch
+from ..contour_smooth_utils import smooth_contour_by_preset
 
 
 class MandiblePrePostProcessor:
@@ -221,11 +222,16 @@ class MandiblePrePostProcessor:
         contour_coords = []
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
-            # 转换为 [[x, y], [x, y], ...] 格式
+            # 转换为标准格式 [[x, y], [x, y], ...]
             contour_coords = largest_contour.squeeze().tolist()
             # 确保是二维列表
             if contour_coords and not isinstance(contour_coords[0], list):
                 contour_coords = [contour_coords]
+            
+            # [NEW] 应用平滑处理（迁移自前端）
+            # 使用 aggressive 模式：滑动平均 + RDP抽稀 + Chaikin平滑
+            if contour_coords and len(contour_coords) >= 3:
+                contour_coords = smooth_contour_by_preset(contour_coords, "mandible")
         
         # 模拟置信度（可以根据实际需求调整）
         confidence = 0.95 if area > 100 else 0.85
@@ -234,7 +240,7 @@ class MandiblePrePostProcessor:
             "area": int(area),
             "exists": True,
             "confidence": confidence,
-            "contour": contour_coords,
+            "contour": contour_coords,  # 输出标准格式：[[x,y], [x,y], ...]
             "mask": binary_mask
         }
 
@@ -310,4 +316,9 @@ class MandiblePrePostProcessor:
         coords = largest.squeeze().tolist()
         if coords and not isinstance(coords[0], list):
             coords = [coords]
+        
+        # [NEW] 应用平滑处理（迁移自前端）
+        if coords and len(coords) >= 3:
+            coords = smooth_contour_by_preset(coords, "mandible")
+        
         return {"condyle_contour": coords}

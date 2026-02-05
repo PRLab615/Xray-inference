@@ -232,10 +232,10 @@ def _gopo_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
 def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     """
     Wits 值可视化（Bisected Occlusal Plane 版）
-    - 使用后牙中点 (U6/L6) 和 前牙中点 (UI/L1) 定义 BOP
+    - 使用后牙中点 (U6/L6) 和 前牙中点 (U1/L1) 定义 BOP
     - 绘制 BOP 连线、A/B 垂线、A0-B0 测量段
     """
-    required = ["A", "B", "U6", "L6", "UI", "L1"]
+    required = ["A", "B", "U6", "L6", "U1", "L1"]
     if not _has_points(landmarks, required):
         return None
 
@@ -243,12 +243,12 @@ def _wits_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     b = landmarks["B"]
     u6 = landmarks["U6"]
     l6 = landmarks["L6"]
-    ui = landmarks["UI"]
+    u1 = landmarks["U1"]
     l1 = landmarks["L1"]
 
     # 计算中点（虚拟点）
     molar_mid = (u6 + l6) / 2.0
-    incisal_mid = (ui + l1) / 2.0
+    incisal_mid = (u1 + l1) / 2.0
 
     molar_mid_fmt = _format_point(molar_mid)
     incisal_mid_fmt = _format_point(incisal_mid)
@@ -323,17 +323,17 @@ def _fh_mp_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
 
 def _u1_sn_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     """U1_SN_Angle：计算 SN 与 U1-U1A 延长线交点，并补充延长线段 + 角度圆弧。"""
-    required = ["S", "N", "UI", "U1A"]
+    required = ["S", "N", "U1", "U1A"]
     if not _has_points(landmarks, required):
         return None
 
-    s, n, ui, u1a = (landmarks[k] for k in required)
-    v_int = _get_intersection_point(s, n, ui, u1a)
+    s, n, u1, u1a = (landmarks[k] for k in required)
+    v_int = _get_intersection_point(s, n, u1, u1a)
     v_int_fmt = _format_point(v_int) if v_int is not None else None
 
     elements = [
         _line("S", "N", "Solid", "Reference"),
-        _line("UI", "U1A", "Solid", "Measurement"),
+        _line("U1", "U1A", "Solid", "Measurement"),
     ]
 
     if v_int_fmt is not None:
@@ -472,17 +472,17 @@ def _pcd_s_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
 
 def _u1_na_angle_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     """U1_NA_Angle：计算 NA 与 U1-U1A 延长线交点，并补充延长线段 + 角度圆弧。"""
-    required = ["N", "A", "UI", "U1A"]
+    required = ["N", "A", "U1", "U1A"]
     if not _has_points(landmarks, required):
         return None
 
-    n, a, ui, u1a = (landmarks[k] for k in required)
-    v_int = _get_intersection_point(n, a, ui, u1a)
+    n, a, u1, u1a = (landmarks[k] for k in required)
+    v_int = _get_intersection_point(n, a, u1, u1a)
     v_int_fmt = _format_point(v_int) if v_int is not None else None
 
     elements = [
         _line("N", "A", "Solid", "Reference"),
-        _line("UI", "U1A", "Solid", "Measurement"),
+        _line("U1", "U1A", "Solid", "Measurement"),
     ]
 
     if v_int_fmt is not None:
@@ -498,7 +498,7 @@ def _u1_na_angle_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str,
 
 
 def _u1_na_length_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-    required = ["UI", "N", "A"]
+    required = ["U1", "N", "A"]
     if not _has_points(landmarks, required):
         return None
     u1, n, a = (landmarks[k] for k in required)
@@ -509,7 +509,7 @@ def _u1_na_length_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str
     virtual_points = {"v_u1_on_na": foot_fmt}
     elements = [
         _line("N", "A", "Solid", "Reference"),
-        _line("UI", "v_u1_on_na", "Dashed", "Measurement"),
+        _line("U1", "v_u1_on_na", "Dashed", "Measurement"),
     ]
     return {"VirtualPoints": virtual_points, "Elements": elements}
 
@@ -587,16 +587,16 @@ def _l1_nb_distance_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[s
 
 def _u1_l1_angle_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
     """U1_L1_Inter_Incisor_Angle：上/下切牙轴线夹角，增加角度圆弧。"""
-    required = ["UI", "U1A", "L1", "L1A"]
+    required = ["U1", "U1A", "L1", "L1A"]
     if not _has_points(landmarks, required):
         return None
 
-    ui, u1a, l1, l1a = (landmarks[k] for k in required)
-    v_int = _get_intersection_point(ui, u1a, l1, l1a)
+    u1, u1a, l1, l1a = (landmarks[k] for k in required)
+    v_int = _get_intersection_point(u1, u1a, l1, l1a)
     v_int_fmt = _format_point(v_int) if v_int is not None else None
 
     elements = [
-        _line("UI", "U1A", "Solid", "Measurement"),
+        _line("U1", "U1A", "Solid", "Measurement"),
         _line("L1", "L1A", "Solid", "Measurement"),
     ]
 
@@ -694,13 +694,13 @@ def _sn_mp_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
 
 
 def _u1_pp_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]:
-    """U1-PP：UI 到 PP(ANS-PNS) 的垂距，必须画垂线（UI->PP垂足）。"""
-    required = ["UI", "ANS", "PNS"]
+    """U1-PP：U1 到 PP(ANS-PNS) 的垂距，必须画垂线（U1->PP垂足）。"""
+    required = ["U1", "ANS", "PNS"]
     if not _has_points(landmarks, required):
         return None
 
-    ui, ans, pns = (landmarks[k] for k in required)
-    foot = _project_point_onto_line(ui, ans, pns)
+    u1, ans, pns = (landmarks[k] for k in required)
+    foot = _project_point_onto_line(u1, ans, pns)
     foot_fmt = _format_point(foot)
     if foot_fmt is None:
         return None
@@ -708,7 +708,7 @@ def _u1_pp_payload(landmarks: Dict[str, np.ndarray]) -> Optional[Dict[str, Any]]
     virtual_points = {"v_u1_on_pp": foot_fmt}
     elements = [
         _line("ANS", "PNS", "Dashed", "Reference"),
-        _line("UI", "v_u1_on_pp", "Dashed", "Measurement"),
+        _line("U1", "v_u1_on_pp", "Dashed", "Measurement"),
     ]
     return {"VirtualPoints": virtual_points, "Elements": elements}
 

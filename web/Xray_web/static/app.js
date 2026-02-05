@@ -653,7 +653,7 @@ function renderMeasurementVisualization(measurement) {
             }
             console.info(`[Airway] Using Visualization.Polygon with ${pts.length/2} points`);
         } else if (vis && vis.Coordinates) {
-            // 兼容 Coordinates: [[x,y], ...] 或多多边形 [[...],[...]] 或矩形 [x1,y1,x2,y2]
+            // [BACKEND-TODO] 后端需输出标准格式：[[x,y], [x,y], ...] 且已完成平滑处理
             const polys = normalizeMaskPolygons(vis.Coordinates, scale);
             if (polys && polys.length > 0) {
                 pts = polys[0];
@@ -1142,167 +1142,43 @@ function getSqSegDist(p, p1, p2) {
     return dx * dx + dy * dy;
 }
 
-/**
- * 简化点集 (Ramer-Douglas-Peucker 算法)
- * @param {Array} points - [{x,y}, {x,y}...] 或 [x,y,x,y...]
- * @param {Number} tolerance - 容差 (像素单位，例如 1.5 ~ 2.5)
- * @param {Boolean} isFlat - 输入是否为扁平数组 [x,y,x,y...]
- * @return {Array} 简化后的数组
- */
-function simplifyPoints(points, tolerance = 1, isFlat = true) {
-    if (points.length <= 2) return points;
-
-    // 1. 统一格式转换为对象数组 [{x,y}...]
-    let srcPoints = [];
-    if (isFlat) {
-        for (let i = 0; i < points.length; i += 2) {
-            srcPoints.push({ x: points[i], y: points[i + 1] });
-        }
-    } else {
-        srcPoints = points;
-    }
-
-    // RDP 核心逻辑
-    const sqTolerance = tolerance * tolerance;
-    
-    function simplifyDPStep(points, first, last, sqTolerance, simplified) {
-        var maxSqDist = sqTolerance,
-            index = first;
-
-        for (var i = first + 1; i < last; i++) {
-            var sqDist = getSqSegDist(points[i], points[first], points[last]);
-            if (sqDist > maxSqDist) {
-                index = i;
-                maxSqDist = sqDist;
-            }
-        }
-
-        if (maxSqDist > sqTolerance) {
-            if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
-            simplified.push(points[index]);
-            if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
-        }
-    }
-
-    var simplified = [srcPoints[0]];
-    simplifyDPStep(srcPoints, 0, srcPoints.length - 1, sqTolerance, simplified);
-    simplified.push(srcPoints[srcPoints.length - 1]);
-
-    // 2. 转回扁平数组 [x,y,x,y...] 以供 Konva 使用
-    if (isFlat) {
-        const res = [];
-        for (let i = 0; i < simplified.length; i++) {
-            res.push(simplified[i].x, simplified[i].y);
-        }
-        return res;
-    }
-    return simplified;
-}
+// [REMOVED] 平滑处理函数已迁移到后端
+// 前端现在直接使用后端处理好的轮廓数据，不再进行客户端平滑计算
 
 /**
- * 滑动平均平滑 (去除突兀的毛刺)
- * @param {Array} points - 扁平数组 [x,y, x,y, ...]
- * @param {Number} windowSize - 窗口大小 (奇数，建议 3 或 5)。值越大越平滑，但细节丢失越多。
- * @return {Array} 平滑后的数组
+ * [SIMPLIFIED] 坐标缩放和扁平化
+ * 后端统一输出标准格式：[[x,y], [x,y], ...]
+ * 前端只负责：坐标缩放 + 转换为Konva扁平数组 [x,y,x,y,...]
+ * 
+ * @param {Array} coords - 标准格式坐标数组 [[x,y], [x,y], ...]
+ * @param {Number} scale - 缩放比例
+ * @return {Array} 扁平坐标数组 [x,y,x,y,...]
  */
-function movingAverageSmooth(points, windowSize = 3) {
-    if (points.length < 6) return points; // 点太少不处理
+function scaleAndFlattenCoords(coords, scale) {
+    if (!coords || !Array.isArray(coords)) return [];
     
-    const len = points.length / 2; // 点的数量
-    const res = [];
-    const offset = Math.floor(windowSize / 2);
-
-    for (let i = 0; i < len; i++) {
-        let sumX = 0;
-        let sumY = 0;
-
-        // 计算窗口内的平均值
-        for (let j = -offset; j <= offset; j++) {
-            // 处理闭合轮廓的索引越界 (循环取点)
-            let idx = (i + j + len) % len; 
-            sumX += points[idx * 2];
-            sumY += points[idx * 2 + 1];
+    const flattened = [];
+    coords.forEach(pt => {
+        if (Array.isArray(pt) && pt.length >= 2) {
+            flattened.push(pt[0] * scale, pt[1] * scale);
         }
-
-        res.push(sumX / windowSize, sumY / windowSize);
-    }
-
-    return res;
+    });
+    
+    return flattened;
 }
 
-// 平滑折线：Chaikin 算法（支持闭合多边形）
-// points: [x1, y1, x2, y2, ...]
-// iterations: 平滑迭代次数，建议 1-3
-function smoothPolyline(points, iterations = 1) {
-    if (!Array.isArray(points) || points.length < 6) return points;
-    // 转换为二维点数组
-    let pts = [];
-    for (let i = 0; i < points.length; i += 2) {
-        pts.push([points[i], points[i + 1]]);
-    }
-    const chaikin = (arr) => {
-        const res = [];
-        const n = arr.length;
-        for (let i = 0; i < n; i++) {
-            const p0 = arr[i];
-            const p1 = arr[(i + 1) % n];
-            const Q = [0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1]];
-            const R = [0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1]];
-            res.push(Q, R);
-        }
-        return res;
-    };
-    for (let k = 0; k < iterations; k++) {
-        pts = chaikin(pts);
-    }
-    // 展平
-    const out = [];
-    for (let i = 0; i < pts.length; i++) {
-        out.push(pts[i][0], pts[i][1]);
-    }
-    return out;
-}
-
-// 归一化分割坐标为一个或多个多边形点列（已缩放）
-// 支持三种格式：
-// 1) [[x,y], [x,y], ...]
-// 2) 多个多边形： [ [[x,y],...], [[x,y],...] ]
-// 3) 矩形: [x1, y1, x2, y2]
+// 保留旧函数名作为别名，待后端统一格式后可完全移除
 function normalizeMaskPolygons(coords, scale) {
-    if (!coords) return [];
-    const polys = [];
-    // 矩形
-    if (Array.isArray(coords) && coords.length === 4 && coords.every(v => typeof v === 'number')) {
-        const [x1, y1, x2, y2] = coords;
-        const p = [
-            x1 * scale, y1 * scale,
-            x2 * scale, y1 * scale,
-            x2 * scale, y2 * scale,
-            x1 * scale, y2 * scale
-        ];
-        polys.push(p);
-        return polys;
+    // 临时兼容：如果是旧格式，尝试处理
+    if (!coords || !Array.isArray(coords)) return [];
+    
+    // 如果是标准格式 [[x,y], ...]，直接处理
+    if (coords[0] && Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+        return [scaleAndFlattenCoords(coords, scale)];
     }
-    // 单多边形 [[x,y], ...]
-    if (Array.isArray(coords) && Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
-        // 也可能是多多边形
-        if (Array.isArray(coords[0][0])) {
-            // 多个多边形
-            coords.forEach(poly => {
-                if (Array.isArray(poly)) {
-                    const p = [];
-                    poly.forEach(pt => { if (Array.isArray(pt) && pt.length >= 2) { p.push(pt[0] * scale, pt[1] * scale); }});
-                    if (p.length >= 6) polys.push(p);
-                }
-            });
-        } else {
-            // 单个多边形
-            const p = [];
-            coords.forEach(pt => { if (Array.isArray(pt) && pt.length >= 2) { p.push(pt[0] * scale, pt[1] * scale); }});
-            if (p.length >= 6) polys.push(p);
-        }
-        return polys;
-    }
+    
+    // 其他格式暂时返回空（后端修改后应该不会触发）
+    console.warn('[normalizeMaskPolygons] 收到非标准格式数据，后端需要统一输出 [[x,y],...] 格式', coords);
     return [];
 }
 
@@ -4320,7 +4196,8 @@ function drawToothSegments(data, stage, scale) {
                 return;
             }
             
-            // 将坐标数组转换为 Konva.Line 需要的格式
+            // [BACKEND-TODO] 后端需输出标准格式：[[x,y], [x,y], ...] 且已完成平滑处理
+            // 前端只负责：坐标缩放 + 转换为Konva扁平数组格式
             // 输入格式: [[x1, y1], [x2, y2], ...]
             // 输出格式: [x1, y1, x2, y2, ...]
             let points = [];
@@ -4338,18 +4215,7 @@ function drawToothSegments(data, stage, scale) {
                 return;
             }
             
-            // ----------------------------------------------------
-            // 优化步骤 1: RDP 抽稀 (关键步骤！去除阶梯状像素点)
-            // tolerance = 1.5 ~ 2.5 之间效果最好。
-            // 值越小保留细节越多但锯齿越多，值越大线条越直但可能变形。
-            // ----------------------------------------------------
-            points = simplifyPoints(points, 2.0, true);
-            
-            // ----------------------------------------------------
-            // 优化步骤 2: Chaikin 平滑
-            // 在 RDP 把它变直后，再用 Chaikin 把角变圆
-            // ----------------------------------------------------
-            points = smoothPolyline(points, 3); // 迭代次数 3 次通常足够了
+            // [REMOVED] 平滑处理已迁移到后端，前端只做缩放和渲染
             
             // 创建多边形线条（使用圆润的线条样式；半透明填充便于悬停触发 tooltip）
             const line = new Konva.Line({
@@ -4596,13 +4462,12 @@ function drawRegionalFindings(data, stage, scale) {
             }
 
             // 处理下颌升支 Mask
+            // [BACKEND-TODO] 后端需输出标准格式：[[x,y], [x,y], ...] 且已完成平滑处理
             sideData.mandible.forEach(coords => {
                 const polys = normalizeMaskPolygons(coords, scale);
                 polys.forEach(pArr => {
-                    // 预处理：平滑
-                    let pts = movingAverageSmooth(pArr, 5);
-                    pts = simplifyPoints(pts, 2.5, true);
-                    pts = smoothPolyline(pts, 4);
+                    // [REMOVED] 平滑处理已迁移到后端，前端只做缩放和渲染
+                    let pts = pArr;
                     if (pts.length < 6) return;
 
                     // 计算分割线 Y (基于乙状切迹)
@@ -4781,14 +4646,12 @@ function drawRegionalFindings(data, stage, scale) {
             
             // =========== 修改结束 ===========
             
-            // 归一化坐标，支持多边形/多多边形/矩形
+            // [BACKEND-TODO] 后端需输出标准格式：[[x,y], [x,y], ...] 且已完成平滑处理
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 更强的平滑：先滑动平均去毛刺 -> 再RDP抽稀 -> Chaikin平滑
-                    let pts = movingAverageSmooth(pArr, 5);
-                    pts = simplifyPoints(pts, 2.5, true);
-                    pts = smoothPolyline(pts, 4);
+                    // [REMOVED] 平滑处理已迁移到后端，前端只做缩放和渲染
+                    let pts = pArr;
 
                     const poly = new Konva.Line({
                         points: pts,
@@ -4867,13 +4730,12 @@ function drawRegionalFindings(data, stage, scale) {
             let strokeColor = '#A29BFE';  // 浅紫蓝色
             let fillColor = 'rgba(162, 155, 254, 0.20)'; // 对应的半透明填充颜色
             
-            // 归一化坐标，支持多边形/多多边形/矩形
+            // [BACKEND-TODO] 后端需输出标准格式：[[x,y], [x,y], ...] 且已完成平滑处理
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // 应用优化：先抽稀 -> 再平滑
-                    let pts = simplifyPoints(pArr, 2.0, true); // 抽稀
-                    pts = smoothPolyline(pts, 3);              // 平滑
+                    // [REMOVED] 平滑处理已迁移到后端，前端只做缩放和渲染
+                    let pts = pArr;
 
                     const poly = new Konva.Line({
                         points: pts,
@@ -4988,25 +4850,12 @@ function drawRegionalFindings(data, stage, scale) {
             let strokeColor = '#E74C3C';  // 红色
             let fillColor = 'rgba(231, 76, 60, 0.25)'; // 对应的半透明填充颜色
             
-            // 归一化坐标，支持多边形/多多边形/矩形
+            // [BACKEND-TODO] 后端需输出标准格式：[[x,y], [x,y], ...] 且已完成平滑处理
             const polys = normalizeMaskPolygons(coords, scale);
             if (polys.length > 0) {
                 polys.forEach(pArr => {
-                    // ============================================================
-                    // 针对神经管的 3 步优化处理（与髁突、下颌分支一致）
-                    // ============================================================
-                    
-                    // 1. 【去毛刺】滑动平均 (新增步骤)
-                    // windowSize = 5：神经管较大，可以用 5 甚至 7 来强力去除突出的像素点
-                    let pts = movingAverageSmooth(pArr, 5);
-
-                    // 2. 【去阶梯】RDP 抽稀
-                    // tolerance = 2.5：神经管轮廓平缓，可以适当加大容差，让线条更直
-                    pts = simplifyPoints(pts, 2.5, true);
-
-                    // 3. 【变圆润】Chaikin 平滑
-                    // 迭代 3-4 次，让转折处非常圆滑
-                    pts = smoothPolyline(pts, 4);
+                    // [REMOVED] 平滑处理已迁移到后端，前端只做缩放和渲染
+                    let pts = pArr;
 
                     const poly = new Konva.Line({
                         points: pts,
@@ -5015,16 +4864,10 @@ function drawRegionalFindings(data, stage, scale) {
                         strokeWidth: CONFIG.STROKE_WIDTH,
                         lineCap: 'round',
                         lineJoin: 'round',
-                        // 经过上面三步，点已经很顺滑了，tension 设为 0 即可，
-                        // 也可以尝试 0.1 给一点点弹性，但不要太大，否则容易产生波浪
                         tension: 0,
                         fill: fillColor,
-                        // 移除阴影效果，让线条更细、更清晰
-                        // shadowColor: strokeColor,
-                        // shadowBlur: 6,
-                        // shadowOpacity: 0.6,
-                        listening: true,  // 确保事件监听启用
-                        perfectDrawEnabled: false,  // 优化性能
+                        listening: true,
+                        perfectDrawEnabled: false,
                         strokeScaleEnabled: false // 禁止线条随缩放变粗
                     });
                     
