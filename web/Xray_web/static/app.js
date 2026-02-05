@@ -5480,12 +5480,6 @@ function buildPanoReport(data) {
             hasJointContent = true;
         }
         
-        // 总体描述
-        if (joint.Detail) {
-            jointSection.appendChild(createKeyValue('诊断描述', joint.Detail));
-            hasJointContent = true;
-        }
-        
         // 总体置信度
         if (joint.Confidence !== undefined) {
             jointSection.appendChild(createKeyValue('置信度', (joint.Confidence * 100).toFixed(1) + '%'));
