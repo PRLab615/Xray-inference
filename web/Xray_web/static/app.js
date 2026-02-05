@@ -4176,6 +4176,8 @@ async function renderPanoramic(data) {
 function drawToothSegments(data, stage, scale) {
     // 创建牙齿分割图层
     const toothLayer = new Konva.Layer();
+    // 创建分割点位图层
+    const pointsLayer = new Konva.Layer();
     const periodontalMap = buildPeriodontalAbsorptionMap(data);
     
     // 遍历 ToothAnalysis 数组，绘制分割区域
@@ -4183,6 +4185,8 @@ function drawToothSegments(data, stage, scale) {
         console.log('开始绘制牙齿分割区域，总数:', data.ToothAnalysis.length);
         
         let drawnCount = 0;
+        let pointsCount = 0;
+        
         data.ToothAnalysis.forEach(tooth => {
             // 检查是否有分割掩码数据
             if (!tooth.SegmentationMask || !tooth.SegmentationMask.Coordinates) {
@@ -4249,15 +4253,42 @@ function drawToothSegments(data, stage, scale) {
             
             toothLayer.add(line);
             drawnCount++;
+            
+            // 绘制分割点位（在连线的每个顶点上绘制圆点）
+            for (let i = 0; i < points.length; i += 2) {
+                const x = points[i];
+                const y = points[i + 1];
+                
+                // 创建圆点标记
+                const circle = new Konva.Circle({
+                    x: x,
+                    y: y,
+                    radius: 0.5, // 点的半径（调小以避免覆盖分割线）
+                    fill: '#ffffff', // 白色填充
+                    stroke: '#ffffff', // 白色边框，增强可见性
+                    strokeWidth: 0.3,
+                    listening: false, // 不响应鼠标事件，避免干扰分割区域的 tooltip
+                    strokeScaleEnabled: false
+                });
+                
+                // 添加点击切换图层显示/隐藏功能
+                addClickToggleToNode(circle, 'segmentationPoints');
+                
+                pointsLayer.add(circle);
+                pointsCount++;
+            }
         });
         
         console.log('牙齿分割区域绘制完成，已绘制:', drawnCount, '个');
+        console.log('分割点位绘制完成，已绘制:', pointsCount, '个点');
     } else {
         console.warn('未找到牙齿分析数据，data.ToothAnalysis:', data.ToothAnalysis);
     }
     
     stage.add(toothLayer);
+    stage.add(pointsLayer);
     appState.konvaLayers.toothSegments = toothLayer;
+    appState.konvaLayers.segmentationPoints = pointsLayer;
 }
 
 /**
@@ -4268,6 +4299,10 @@ function drawToothSegments(data, stage, scale) {
  * @param {number} scale - 缩放比例
  */
 function drawRegionalFindings(data, stage, scale) {
+    // 获取或复用已有的分割点位图层（与牙齿分割共享）
+    const pointsLayer = appState.konvaLayers.segmentationPoints || new Konva.Layer();
+    let totalPointsCount = 0;
+    
     // 1. 种植体图层
     const implantLayer = new Konva.Layer();
     let implantCount = 0;
@@ -4507,6 +4542,23 @@ function drawRegionalFindings(data, stage, scale) {
                             addClickToggleToNode(polyTop, 'mandible');
                             mandibleLayer.add(polyTop);
                             mandibleCount++;
+                            
+                            // 绘制髁突点位
+                            for (let i = 0; i < condyle.length; i += 2) {
+                                const circle = new Konva.Circle({
+                                    x: condyle[i],
+                                    y: condyle[i + 1],
+                                    radius: 0.5,
+                                    fill: '#ffffff',
+                                    stroke: '#ffffff',
+                                    strokeWidth: 0.3,
+                                    listening: false,
+                                    strokeScaleEnabled: false
+                                });
+                                addClickToggleToNode(circle, 'segmentationPoints');
+                                pointsLayer.add(circle);
+                                totalPointsCount++;
+                            }
 
                             // 2. 绘制升支 (主体 + 喙突)
                             const polyBottom = new Konva.Line({
@@ -4533,6 +4585,23 @@ function drawRegionalFindings(data, stage, scale) {
                             addClickToggleToNode(polyBottom, 'mandible');
                             mandibleLayer.add(polyBottom);
                             mandibleCount++;
+                            
+                            // 绘制升支点位
+                            for (let i = 0; i < ramus.length; i += 2) {
+                                const circle = new Konva.Circle({
+                                    x: ramus[i],
+                                    y: ramus[i + 1],
+                                    radius: 0.5,
+                                    fill: '#ffffff',
+                                    stroke: '#ffffff',
+                                    strokeWidth: 0.3,
+                                    listening: false,
+                                    strokeScaleEnabled: false
+                                });
+                                addClickToggleToNode(circle, 'segmentationPoints');
+                                pointsLayer.add(circle);
+                                totalPointsCount++;
+                            }
                             
                             // 3. 绘制分割线 (Visual Requirement) - 改为绿色
                             const splitLine = new Konva.Line({
@@ -4571,6 +4640,23 @@ function drawRegionalFindings(data, stage, scale) {
                         addClickToggleToNode(poly, 'mandible');
                         mandibleLayer.add(poly);
                         mandibleCount++;
+                        
+                        // 绘制整体下颌升支点位
+                        for (let i = 0; i < pts.length; i += 2) {
+                            const circle = new Konva.Circle({
+                                x: pts[i],
+                                y: pts[i + 1],
+                                radius: 0.5,
+                                fill: '#ffffff',
+                                stroke: '#ffffff',
+                                strokeWidth: 0.3,
+                                listening: false,
+                                strokeScaleEnabled: false
+                            });
+                            addClickToggleToNode(circle, 'segmentationPoints');
+                            pointsLayer.add(circle);
+                            totalPointsCount++;
+                        }
                     }
                 });
             });
@@ -4698,6 +4784,23 @@ function drawRegionalFindings(data, stage, scale) {
                     
                     sinusLayer.add(poly);
                     sinusCount++;
+                    
+                    // 绘制上颌窦点位
+                    for (let i = 0; i < pts.length; i += 2) {
+                        const circle = new Konva.Circle({
+                            x: pts[i],
+                            y: pts[i + 1],
+                            radius: 0.5,
+                            fill: '#ffffff',
+                            stroke: '#ffffff',
+                            strokeWidth: 0.3,
+                            listening: false,
+                            strokeScaleEnabled: false
+                        });
+                        addClickToggleToNode(circle, 'segmentationPoints');
+                        pointsLayer.add(circle);
+                        totalPointsCount++;
+                    }
                 });
             }
         });
@@ -4775,6 +4878,23 @@ function drawRegionalFindings(data, stage, scale) {
                     
                     alveolarcrestLayer.add(poly);
                     alveolarcrestCount++;
+                    
+                    // 绘制牙槽骨点位
+                    for (let i = 0; i < pts.length; i += 2) {
+                        const circle = new Konva.Circle({
+                            x: pts[i],
+                            y: pts[i + 1],
+                            radius: 0.5,
+                            fill: '#ffffff',
+                            stroke: '#ffffff',
+                            strokeWidth: 0.3,
+                            listening: false,
+                            strokeScaleEnabled: false
+                        });
+                        addClickToggleToNode(circle, 'segmentationPoints');
+                        pointsLayer.add(circle);
+                        totalPointsCount++;
+                    }
                 });
             }
         });
@@ -4900,6 +5020,23 @@ function drawRegionalFindings(data, stage, scale) {
                     
                     neuralLayer.add(poly);
                     neuralCount++;
+                    
+                    // 绘制神经管点位
+                    for (let i = 0; i < pts.length; i += 2) {
+                        const circle = new Konva.Circle({
+                            x: pts[i],
+                            y: pts[i + 1],
+                            radius: 0.5,
+                            fill: '#ffffff',
+                            stroke: '#ffffff',
+                            strokeWidth: 0.3,
+                            listening: false,
+                            strokeScaleEnabled: false
+                        });
+                        addClickToggleToNode(circle, 'segmentationPoints');
+                        pointsLayer.add(circle);
+                        totalPointsCount++;
+                    }
                 });
             }
         });
@@ -4910,6 +5047,16 @@ function drawRegionalFindings(data, stage, scale) {
     if (neuralCount > 0) {
         stage.add(neuralLayer);
         appState.konvaLayers.neural = neuralLayer;
+    }
+    
+    // 添加分割点位图层（如果有点位的话）
+    if (totalPointsCount > 0) {
+        // 如果点位图层还没有添加到 stage，则添加
+        if (!appState.konvaLayers.segmentationPoints) {
+            stage.add(pointsLayer);
+            appState.konvaLayers.segmentationPoints = pointsLayer;
+        }
+        console.log('区域性发现分割点位绘制完成，已绘制:', totalPointsCount, '个点');
     }
 }
 
@@ -6292,6 +6439,7 @@ const LAYER_CONFIG = {
     profile_contour: { name: '侧貌轮廓', taskType: 'cephalometric' },
     // 全景片图层
     toothSegments: { name: '牙齿分割', taskType: 'panoramic' },
+    segmentationPoints: { name: '分割点位', taskType: 'panoramic' },
     implants: { name: '种植体', taskType: 'panoramic' },
     mandible: { name: '下颌升支', taskType: 'panoramic' },
     sinus: { name: '上颌窦', taskType: 'panoramic' },
