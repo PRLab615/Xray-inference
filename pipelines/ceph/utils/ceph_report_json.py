@@ -40,7 +40,7 @@ LABEL_FULL_NAMES = {
     "Gn": "Gnathion",
     "Go": "Gonion",
     "L1": "Incision inferius",
-    "UI": "Incision superius",
+    "U1": "Incision superius",
     "Bo": "Bo",
     "Pt": "Pt",
     "ANS": "Anterior nasal spine",

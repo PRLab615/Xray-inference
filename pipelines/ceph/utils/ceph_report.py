@@ -21,7 +21,7 @@ KEYPOINT_MAP = {
     "P9": "Gn",     # Gnathion - 颏顶点
     "P10": "Go",    # Gonion - 下颌角点
     "P11": "L1",    # Lower Incisor - 下切牙切缘
-    "P12": "UI",    # Upper Incisor - 上切牙切缘
+    "P12": "U1",    # Upper Incisor - 上切牙切缘
     "P13": "PNS",   # Posterior Nasal Spine - 后鼻棘
     "P14": "ANS",   # Anterior Nasal Spine - 前鼻棘
     "P15": "Ar",    # Articulare - 关节点
@@ -571,14 +571,14 @@ def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent",
                   spacing: float = DEFAULT_SPACING_MM_PER_PIXEL):
     """
     Wits 值：使用 Bisected Occlusal Plane (BOP) 作为参考平面
-    BOP 定义：后牙咬合高度中点 (U6/L6 中点) 与 前牙切牙重叠中点 (UI/L1 中点) 的连线
+    BOP 定义：后牙咬合高度中点 (U6/L6 中点) 与 前牙切牙重叠中点 (U1/L1 中点) 的连线
     由 A、B 点向 BOP 做垂线，得 A0、B0 点
     测 A0 - B0 距离（沿 BOP 方向）
 
     正值：A0 在 B0 前方（II 类倾向）
     负值：B0 在 A0 前方（III 类倾向）
     """
-    required = ["P5", "P6", "P21", "P22", "P12", "P11"]  # A, B, U6, L6, UI, L1
+    required = ["P5", "P6", "P21", "P22", "P12", "P11"]  # A, B, U6, L6, U1, L1
     if not _has_points(landmarks, required):
         missing = [k for k in required if k not in landmarks]
         return _missing_measurement("mm", missing, landmarks)
@@ -587,12 +587,12 @@ def _compute_wits(landmarks, sex: str = "male", dentition: str = "permanent",
     b = landmarks["P6"]
     u6 = landmarks["P21"]
     l6 = landmarks["P22"]
-    ui = landmarks["P12"]
+    u1 = landmarks["P12"]
     l1 = landmarks["P11"]
 
     # 计算中点
     molar_mid = (u6 + l6) / 2.0
-    incisal_mid = (ui + l1) / 2.0
+    incisal_mid = (u1 + l1) / 2.0
 
     # OP 向量：从后牙中点指向前牙中点（后 → 前，确保方向一致）
     op_vec = incisal_mid - molar_mid
@@ -620,7 +620,7 @@ def _compute_u1_sn(landmarks, sex: str = "male", dentition: str = "permanent"):
     牙轴方向：从根尖指向切端（向下向前）
     SN 方向：从 S 指向 N（向前）
     """
-    required = ["P12", "P19", "P1", "P2"]  # UI(切端), U1A(根尖), S, N
+    required = ["P12", "P19", "P1", "P2"]  # U1(切端), U1A(根尖), S, N
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     u1, u1a, s, n = (landmarks[k] for k in required)
@@ -692,7 +692,7 @@ def _compute_u1_na_angle(landmarks, sex: str = "male", dentition: str = "permane
     牙轴方向：从根尖指向切端
     NA 方向：从 N 指向 A
     """
-    required = ["P12", "P19", "P2", "P5"]  # UI(切端), U1A(根尖), N, A
+    required = ["P12", "P19", "P2", "P5"]  # U1(切端), U1A(根尖), N, A
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
     u1, u1a, n, a = (landmarks[k] for k in required)
@@ -799,11 +799,11 @@ def _compute_interincisor_angle(landmarks, sex: str = "male", dentition: str = "
     上切牙轴：从根尖指向切端（向下向前）
     下切牙轴：从根尖指向切端（向上向前）
     """
-    required = ["P12", "P19", "P11", "P20"]  # UI, U1A, L1, L1A
+    required = ["P12", "P19", "P11", "P20"]  # U1, U1A, L1, L1A
     if not _has_points(landmarks, required):
         return _missing_measurement("degrees", required, landmarks)
-    
-    # 上切牙轴：从根尖(U1A)指向切端(UI)
+
+    # 上切牙轴：从根尖(U1A)指向切端(U1)
     u_axis = landmarks["P12"] - landmarks["P19"]
     # 下切牙轴：从根尖(L1A)指向切端(L1)
     l_axis = landmarks["P11"] - landmarks["P20"]
