@@ -82,24 +82,49 @@ const SHORT_LABEL_MAP = {
     "D'": 'D\''
 };
 
+// // 全局配置常量
+// const CONFIG = {
+//     // 动态构建 API 地址，使用当前访问的主机名
+//     AI_BACKEND_SYNC_URL: `http://${CURRENT_HOST}:8081/api/v1/analyze`,      // 同步/伪同步接口
+//     AI_BACKEND_ASYNC_URL: `http://${CURRENT_HOST}:8081/api/v1/analyze_async`, // 纯异步接口
+//     // FLASK_UPLOAD_URL: `http://${CURRENT_HOST}:9005/upload`,  // Flask 服务器上传接口
+//     // CALLBACK_URL: `http://${CURRENT_HOST}:9005/callback`,
+//
+//     // [修改这里]：去掉前缀，改为相对路径。这样无论网页在哪个端口（比如 8080），它都会自动跟随！
+//     FLASK_UPLOAD_URL: `/upload`,
+//     CALLBACK_URL: `/callback`,
+//
+//     POLL_INTERVAL: 3000,       // 3秒
+
+
+// 获取当前访问的端口
+const CURRENT_PORT = window.location.port;
+
+// 智能路由逻辑：判断当前是公网还是内网
+// 如果当前是通过 8080 端口（或直接用 IP/域名访问没带端口），说明是外网环境，后端去请求 8081
+// 如果是其他端口（比如本地的 9005），说明是内网环境，后端去直接请求本地真实的 9010
+const IS_PUBLIC_NETWORK = (CURRENT_PORT === '8080' || CURRENT_PORT === '' || CURRENT_PORT === '80');
+const AI_API_PORT = IS_PUBLIC_NETWORK ? '8081' : '9010';
+
 // 全局配置常量
 const CONFIG = {
-    // 动态构建 API 地址，使用当前访问的主机名
-    AI_BACKEND_SYNC_URL: `http://${CURRENT_HOST}:9010/api/v1/analyze`,      // 同步/伪同步接口
-    AI_BACKEND_ASYNC_URL: `http://${CURRENT_HOST}:9010/api/v1/analyze_async`, // 纯异步接口
-    FLASK_UPLOAD_URL: `http://${CURRENT_HOST}:9005/upload`,  // Flask 服务器上传接口
-    CALLBACK_URL: `http://${CURRENT_HOST}:9005/callback`,
+    // 根据环境，动态使用 8081 还是 9010
+    AI_BACKEND_SYNC_URL: `http://${CURRENT_HOST}:${AI_API_PORT}/api/v1/analyze`,
+    AI_BACKEND_ASYNC_URL: `http://${CURRENT_HOST}:${AI_API_PORT}/api/v1/analyze_async`,
+
+    // 相对路径，内外网都能自动适配当前端口
+    FLASK_UPLOAD_URL: `/upload`,
+    CALLBACK_URL: `/callback`,
+
     POLL_INTERVAL: 3000,       // 3秒
     POLL_TIMEOUT: 360000,      // 6分钟
     STROKE_WIDTH: 0.7,          // 统一线条宽度（像素）
+
     // 气道可视化数据源策略：
-    // 'auto'（默认）：优先 Polygon，其次 Coordinates，最后从 Landmarks 重建
-    // 'prefer_landmarks'：总是从 11 个关键点重建（保证与点位逐一对应）
-    // 'prefer_polygon'：总是使用 Polygon（若缺失再退化）
-    // 'prefer_coordinates'：总是使用 Coordinates（若缺失再退化）
     AIRWAY_SOURCE: 'auto',
     AIRWAY_DEBUG_POINTS: false,
     AIRWAY_POINT_RADIUS: 2.2,
+
     // 参考平面线条颜色
     REFERENCE_PLANE_COLOR: '#ff69b4' // HotPink, 高对比度
 };
